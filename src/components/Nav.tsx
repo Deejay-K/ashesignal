@@ -14,6 +14,8 @@ const LINKS = [
   { href: "/sentiment", label: "Sentiment" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/setups", label: "Setups" },
+  { href: "/alerts", label: "Alerts" },
+  { href: "/performance", label: "Performance" },
 ];
 
 interface SearchRes {

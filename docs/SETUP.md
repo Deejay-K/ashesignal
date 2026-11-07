@@ -70,7 +70,32 @@ Restart `npm run dev`. A **Sign in** button appears in the nav. Sign in with a m
 3. **Deploy** → you get `https://ashesignal.vercel.app` (or similar). Every `git push` to `main` redeploys.
 4. If you set up Supabase: go back to **Authentication → URL Configuration** and set Site URL to the Vercel URL and add `https://<vercel-url>/auth/callback` to Redirect URLs.
 
-## 6. Checks
+## 5. Stage 3 — the worker (auto-resolve setups, engine performance, alerts)
+
+The worker is three protected endpoints on your deployed app. Something has to call them on a schedule:
+
+**a. Re-run the schema** — Supabase → SQL Editor → paste `supabase/schema.sql` again → Run (it only adds the new columns/tables).
+
+**b. Secrets in Vercel** (Project → Settings → Environment Variables), then redeploy:
+```
+SUPABASE_SERVICE_ROLE_KEY = your sb_secret_… key
+CRON_SECRET               = any long random string (e.g. 32 random characters)
+NEXT_PUBLIC_SITE_URL      = https://ashesignal.vercel.app   (your real URL)
+```
+
+**c. Scheduling — pick one:**
+- *Free, every 5 minutes (recommended):* GitHub → your repo → **Settings → Secrets and variables → Actions** → add `APP_URL` (`https://ashesignal.vercel.app`) and `CRON_SECRET` (same value as Vercel). The workflow `.github/workflows/worker.yml` is already in the repo; GitHub starts running it automatically. Check **Actions** tab for green runs.
+- *Vercel Cron:* `vercel.json` already schedules the three endpoints once a day (Hobby plan limit). Vercel Pro allows `*/5 * * * *`.
+
+**d. Verify:** open `https://<your-url>/api/cron/resolve?secret=<CRON_SECRET>` in a browser → you should get `{"ok":true,…}`. Then `/performance` starts filling after the first `/api/cron/signals` run.
+
+## 6. Notifications (optional)
+
+- **Push:** run `npx web-push generate-vapid-keys` once in the terminal, put the two keys in Vercel as `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`, plus `VAPID_SUBJECT=mailto:you@example.com`. Redeploy, then on `/account` press **Enable push**. iPhone: add the site to the Home Screen first (Safari → Share → Add to Home Screen), then enable.
+- **Email:** sign up at resend.com (free: 3k emails/month), create an API key → `RESEND_API_KEY` in Vercel. Until you verify a domain, mail comes from `onboarding@resend.dev` and can only be sent to your own Resend account email. Tick "Email me" on `/account`.
+- Every fired alert always shows in the Inbox on `/alerts`, even with neither configured.
+
+## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).
 - `npx tsx scripts/selftest.ts` runs the analysis-engine regression test.
@@ -82,5 +107,6 @@ Restart `npm run dev`. A **Sign in** button appears in the nav. Sign in with a m
 |---|---|---|
 | Market data, charts, analysis, scanner, discover, risk calc | ✓ | ✓ |
 | Watchlist | this browser only | synced (Supabase) |
-| Save setups + personal hit-rate (`/setups`) | ✗ | ✓ |
+| Save setups, auto-resolved vs live price, personal hit-rate (`/setups`) | ✗ | ✓ |
+| Alerts (price, %, RSI, MACD, pattern, breakout, volume, F&G) + push/email/inbox | ✗ | ✓ |
 | Risk profile (balance, risk %, exposure, leverage) | this browser only | synced |

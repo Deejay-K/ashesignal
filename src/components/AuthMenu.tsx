@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { getWatchlist, setWatchlistSignedIn, syncFromAccount } from "@/lib/watchlist";
 
 export default function AuthMenu() {
   const sb = supabaseBrowser();
   const router = useRouter();
+  const path = usePathname();
   const [email, setEmail] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
@@ -26,7 +27,6 @@ export default function AuthMenu() {
     const { data: sub } = sb.auth.onAuthStateChange(async (event, session) => {
       setEmail(session?.user?.email ?? null);
       if (event === "SIGNED_IN") {
-        // one-time merge of the guest watchlist into the account
         const guest = getWatchlist();
         if (guest.length) {
           await fetch("/api/me/watchlist", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ items: guest }) });
@@ -36,28 +36,20 @@ export default function AuthMenu() {
       }
       if (event === "SIGNED_OUT") {
         setWatchlistSignedIn(false);
+        router.refresh();
       }
     });
     return () => sub.subscription.unsubscribe();
   }, [sb, router]);
 
   if (!sb || !ready) return null;
-  if (!email)
-    return (
-      <Link href="/login" className="btn-ghost whitespace-nowrap">Sign in</Link>
-    );
+  if (!email) return <Link href="/login" className="btn whitespace-nowrap !py-1.5 text-sm">Sign in</Link>;
+  const initial = email[0]?.toUpperCase() ?? "?";
   return (
-    <div className="flex items-center gap-2">
-      <Link href="/setups" className="hidden text-xs text-fg-2 hover:text-fg sm:block">{email}</Link>
-      <button
-        className="btn-ghost"
-        onClick={async () => {
-          await sb.auth.signOut();
-          router.refresh();
-        }}
-      >
-        Sign out
-      </button>
-    </div>
+    <Link href="/account" className={`flex items-center gap-2 rounded-full border border-border py-1 pl-1 pr-3 text-xs hover:border-mint ${path === "/account" ? "border-mint" : ""}`} title={`Signed in as ${email}`}>
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-mint text-[11px] font-bold text-[#06281d]">{initial}</span>
+      <span className="hidden max-w-[160px] truncate text-fg-2 sm:inline">{email}</span>
+      <span className="sm:hidden">Account</span>
+    </Link>
   );
 }

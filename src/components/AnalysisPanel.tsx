@@ -297,6 +297,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
       <Block title="Taking profit" items={s.takeProfitWhen} />
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Link href={riskHref} className="btn inline-block text-sm">Size this trade →</Link>
+        <Link href={`/alerts?${new URLSearchParams({ symbol: asset.symbol ?? "", id: asset.id ?? "", tf, price: String(s.takeProfits[0].price) }).toString()}`} className="btn-ghost">Set alert</Link>
         <button className="btn-ghost" onClick={save} disabled={saved === "saving" || saved === "saved"}>
           {saved === "saved" ? "Saved ✓" : saved === "saving" ? "Saving…" : "Save setup"}
         </button>

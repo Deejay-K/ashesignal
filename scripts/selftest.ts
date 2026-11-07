@@ -75,4 +75,26 @@ const lev = sizePosition({ tradingBalance: 1000, riskPct: 2, leverage: 10, side:
 check("leverage sizing ok", lev.ok && lev.marginUsd <= 1000, { notional: lev.positionValueUsd, margin: lev.marginUsd, capped: lev.capped });
 
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASS");
-process.exit(fails ? 1 : 0);
+if (fails) process.exit(1);
+
+// ---- Stage 3: setup resolver ----
+import { resolveAgainst } from "../src/lib/alerts/resolve";
+{
+  const mk = (seq: [number, number][]): Candle[] => seq.map(([h, l], i) => ({ time: 1_800_000_000 + i * 900, open: (h + l) / 2, high: h, low: l, close: (h + l) / 2, volume: 1 }));
+  const created = new Date(1_800_000_000 * 1000).toISOString();
+  const base = { id: "x", side: "LONG" as const, entry: 100, tp1: 105, tp2: 110, tp3: 120, sl1: 95, createdAt: created };
+  let f2 = 0;
+  const c2 = (n: string, ok: boolean, info?: unknown) => { console.log(`${ok ? "PASS" : "FAIL"} ${n}`, info ?? ""); if (!ok) f2++; };
+  c2("open while inside range", resolveAgainst(mk([[102, 99], [103, 98]]), base).status === "open");
+  c2("tp1 then running", resolveAgainst(mk([[106, 99]]), base).status === "tp1");
+  c2("sl first in same candle", resolveAgainst(mk([[106, 94]]), base).status === "sl");
+  c2("tp2 then stopped keeps tp2", resolveAgainst(mk([[111, 99], [100, 94]]), base).status === "tp2");
+  c2("tp3 terminal", resolveAgainst(mk([[121, 99]]), base).status === "tp3");
+  const sh = { ...base, side: "SHORT" as const, tp1: 95, tp2: 90, tp3: 80, sl1: 105 };
+  c2("short tp1", resolveAgainst(mk([[101, 94]]), sh).status === "tp1");
+  c2("short sl", resolveAgainst(mk([[106, 99]]), sh).status === "sl");
+  const r = resolveAgainst(mk([[108, 97]]), base);
+  c2("mfe/mae recorded", r.maxFavorablePct === 8 && r.maxAdversePct === 3, r);
+  console.log(f2 ? `\n${f2} RESOLVER FAILED` : "RESOLVER PASS");
+  if (f2) process.exit(1);
+}

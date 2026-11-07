@@ -1,0 +1,18 @@
+# Free 5-minute worker: GitHub Actions pings the cron endpoints on the deployed app.
+# Set two repository secrets: APP_URL (https://ashesignal.vercel.app) and CRON_SECRET (same value as in Vercel).
+name: AsheSignal worker
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve setups & signals
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/resolve?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Evaluate alerts
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/alerts?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Log engine signals (hourly)
+        if: ${{ github.event_name == 'workflow_dispatch' || endsWith(github.run_id, '0') }}
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/signals?secret=${{ secrets.CRON_SECRET }}" || true

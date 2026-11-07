@@ -1,14 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { Section } from "@/components/ui";
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <Login />
+    </Suspense>
+  );
+}
+
+function Login() {
   const sb = supabaseBrowser();
+  const sp = useSearchParams();
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(sp.get("error"));
+  useEffect(() => {
+    sb?.auth.getUser().then(({ data }) => {
+      if (data.user) window.location.href = "/account";
+    });
+  }, [sb]);
   const [busy, setBusy] = useState(false);
   const redirectTo = typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined;
 
@@ -35,7 +50,7 @@ export default function LoginPage() {
               e.preventDefault();
               setBusy(true);
               setErr(null);
-              const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
+              const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo + "?next=/account" } });
               setBusy(false);
               if (error) setErr(error.message);
               else setSent(true);
@@ -50,7 +65,7 @@ export default function LoginPage() {
         <button
           className="btn-ghost w-full"
           onClick={async () => {
-            const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo } });
+            const { error } = await sb.auth.signInWithOAuth({ provider: "google", options: { redirectTo: redirectTo + "?next=/account" } });
             if (error) setErr(error.message);
           }}
         >

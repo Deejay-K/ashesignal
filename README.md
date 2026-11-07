@@ -34,12 +34,14 @@ Push to a GitHub repo, import in Vercel, add env vars (optional), deploy. All pa
 | `/sentiment` | Fear & Greed gauge, 2-year F&G vs BTC overlay, zone guide, streak stats |
 | `/watchlist` | Guest: this browser. Signed in: synced to your Supabase account (guest list merged on first sign-in). |
 | `/setups` | Saved setups with manual outcome tracking and personal win-rate (account required) |
-| `/login` | Magic-link / Google sign-in (optional — guest mode needs no account) |
+| `/login`, `/account` | Magic-link / Google sign-in, account overview, notification settings |
+| `/alerts` | 13 alert types (price, % move, RSI, MACD cross, pattern, breakout/breakdown, TP/SL, volume spike, Fear & Greed zone) with push, email and inbox |
+| `/performance` | The engine grading itself: every emitted signal on the top-30 coins logged and resolved against real price — win rate, TP/SL counts, MFE/MAE by timeframe, kind and side |
 
 Every number shows its **source and quality** (verified / estimated / unavailable).
 
 ## What is *not* in Stage 1 (and the plan)
 
-Signal performance tracking + alerts (Stage 3), wallet/portfolio tracking (Stage 4), LLM narrative layer (Stage 5). Per-token social sentiment and whale feeds need paid or keyed APIs — see the limitations section in the architecture doc.
+Wallet/portfolio tracking (Stage 4), LLM narrative layer (Stage 5). Per-token social sentiment and whale feeds need paid or keyed APIs — see the limitations section in the architecture doc.
 
 Not financial advice. Analysis is probabilistic; use the risk calculator and never trade more than you can lose.
