@@ -110,19 +110,21 @@ function Risk() {
           <div className="card p-4">
             <div className="mb-2 text-[11px] uppercase tracking-wider text-fg-3">Profit at targets</div>
             {out.profits.length ? (
-              <table>
-                <tbody>
-                  {out.profits.map((x) => (
-                    <tr key={x.label}>
-                      <td className="text-fg-2">{x.label}</td>
-                      <td className="num">{fmtUsd(x.price)}</td>
-                      <td className="num text-fg-3">{x.pct > 0 ? "+" : ""}{x.pct}%</td>
-                      <td className="num up text-right">+{fmtUsd(x.profitUsd)}</td>
-                      <td className="num text-right"><b>{x.rr}R</b></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="table-scroll">
+                <table>
+                  <tbody>
+                    {out.profits.map((x) => (
+                      <tr key={x.label}>
+                        <td className="text-fg-2">{x.label}</td>
+                        <td className="num">{fmtUsd(x.price)}</td>
+                        <td className="num text-fg-3">{x.pct > 0 ? "+" : ""}{x.pct}%</td>
+                        <td className="num up text-right">+{fmtUsd(x.profitUsd)}</td>
+                        <td className="num text-right"><b>{x.rr}R</b></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             ) : (
               <p className="text-sm text-fg-3">Enter at least TP1.</p>
             )}

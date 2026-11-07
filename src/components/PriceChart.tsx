@@ -38,6 +38,7 @@ export default function PriceChart({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  if (typeof window !== "undefined" && window.innerWidth < 640) height = Math.min(height, 300);
   const seriesRef = useRef<{ candle: ISeriesApi<"Candlestick">; vol: ISeriesApi<"Histogram">; count: number; first: number } | null>(null);
 
   // Fast path: same series (same first candle, length within +1) → update the last bar only.

@@ -67,7 +67,7 @@ export default function DiscoverPage() {
           <h1 className="text-xl font-bold">Discover</h1>
           <p className="text-xs text-fg-3">{d ? `Updated ${timeAgo(d.generatedAt)} · refreshes every 2 min` : "Loading…"}</p>
         </div>
-        <div className="ml-auto grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:w-auto sm:grid-cols-5">
           <label className="text-xs text-fg-3">Chain<select value={chain} onChange={(e) => setChain(e.target.value)}><option value="all">all (DEX lists)</option>{chains.map((c) => <option key={c}>{c}</option>)}</select></label>
           <label className="text-xs text-fg-3">Market cap<select value={capBand} onChange={(e) => setCapBand(e.target.value)}><option value="all">any</option><option value="micro">micro &lt; $1M</option><option value="small">small $1M–100M</option><option value="mid">mid $100M–10B</option><option value="large">large &gt; $10B</option></select></label>
           <label className="text-xs text-fg-3">Min liquidity $<input type="number" value={minLiq || ""} onChange={(e) => setMinLiq(Number(e.target.value))} placeholder="0" /></label>

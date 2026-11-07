@@ -53,11 +53,11 @@ export default function Nav() {
   };
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2.5">
+    <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      <div className="mx-auto flex max-w-7xl items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
         <Link href="/" className="flex items-center gap-2 font-bold tracking-tight">
           <span className="inline-block h-6 w-6 rounded-md bg-mint" style={{ boxShadow: "0 0 18px rgba(54,189,148,.45)" }} />
-          <span>AsheSignal</span>
+          <span className="hidden sm:inline">AsheSignal</span>
         </Link>
         <nav className="ml-4 hidden items-center gap-1 md:flex">
           {LINKS.map((l) => (
@@ -78,7 +78,7 @@ export default function Nav() {
             onKeyDown={(e) => {
               if (e.key === "Enter" && res?.isAddress) go(`/scanner?address=${encodeURIComponent(q.trim())}`);
             }}
-            placeholder="Search coin, ticker or paste a contract address…"
+            placeholder="Search or paste address…"
             className="text-sm"
           />
           {open && res && (res.coins.length || res.pairs.length || res.isAddress) ? (

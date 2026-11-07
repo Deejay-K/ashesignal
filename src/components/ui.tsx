@@ -26,7 +26,7 @@ export function StatCard({ label, value, sub, children }: { label: string; value
   return (
     <div className="card p-4">
       <div className="text-[11px] uppercase tracking-wider text-fg-3">{label}</div>
-      <div className="num mt-1 text-xl font-semibold">{value}</div>
+      <div className="num mt-1 truncate text-lg font-semibold sm:text-xl">{value}</div>
       {sub ? <div className="mt-1 text-xs text-fg-2">{sub}</div> : null}
       {children}
     </div>

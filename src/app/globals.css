@@ -36,7 +36,10 @@
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 }
 
-html { color-scheme: dark; }
+html { color-scheme: dark; -webkit-text-size-adjust: 100%; }
+html, body { max-width: 100%; overflow-x: hidden; }
+*, *::before, *::after { box-sizing: border-box; min-width: 0; }
+img, svg, canvas, video { max-width: 100%; height: auto; }
 body {
   background: var(--bg);
   color: var(--fg);
@@ -45,7 +48,7 @@ body {
 }
 
 .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-.card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; }
+.card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; min-width: 0; max-width: 100%; }
 .card-3 { background: var(--bg-3); border: 1px solid var(--border); border-radius: 10px; }
 .up { color: var(--mint); }
 .down { color: var(--red); }
@@ -62,9 +65,23 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 0; b
 .btn:disabled { opacity: 0.5; }
 .btn-ghost { border: 1px solid var(--border); color: var(--fg-2); padding: 6px 10px; border-radius: 8px; font-size: 13px; }
 .btn-ghost[data-active="true"] { background: var(--mint-dim); color: var(--mint); border-color: var(--mint); }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table-scroll { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: max-content; }
+
 th { text-align: left; color: var(--fg-3); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 td { padding: 9px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
 ::-webkit-scrollbar { height: 8px; width: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+
+/* phones */
+@media (max-width: 640px) {
+  .card { border-radius: 10px; }
+  table { font-size: 12px; }
+  th, td { padding: 7px 8px; }
+  input, select { font-size: 16px; } /* prevents iOS zoom-on-focus */
+  main { padding-bottom: 72px; } /* room for the bottom tab bar */
+}
+@supports (padding: env(safe-area-inset-bottom)) {
+  .bottom-nav { padding-bottom: calc(6px + env(safe-area-inset-bottom)); }
+}

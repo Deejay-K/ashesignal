@@ -119,20 +119,20 @@ export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asse
           </div>
         }
       >
-        <div className="mb-3 flex flex-wrap items-center gap-1">
+        <div className="mb-3 flex items-center gap-1 overflow-x-auto pb-1 sm:flex-wrap">
           {TIMEFRAMES.map((t) => (
-            <button key={t} className="btn-ghost" data-active={t === tf} onClick={() => setTf(t)}>
+            <button key={t} className="btn-ghost shrink-0" data-active={t === tf} onClick={() => setTf(t)}>
               {t}
             </button>
           ))}
-          <span className="mx-2 hidden h-5 w-px bg-border sm:block" />
+          <span className="mx-1 h-5 w-px shrink-0 bg-border" />
           {(["ema20", "ema50", "sma200", "bollinger", "levels", "setup", "patterns"] as const).map((k) => (
-            <button key={k} className="btn-ghost" data-active={!!overlays[k]} onClick={() => setOverlays((o) => ({ ...o, [k]: !o[k] }))}>
+            <button key={k} className="btn-ghost shrink-0" data-active={!!overlays[k]} onClick={() => setOverlays((o) => ({ ...o, [k]: !o[k] }))}>
               {k === "ema20" ? "EMA20" : k === "ema50" ? "EMA50" : k === "sma200" ? "SMA200" : k === "bollinger" ? "BB" : k}
             </button>
           ))}
         </div>
-        {loading && !candles.length ? <div className="h-[420px] animate-pulse rounded-lg bg-bg-3" /> : candles.length ? <PriceChart candles={candles} analysis={analysis} overlays={overlays} /> : <Empty>{err ?? "No chart data for this timeframe."}</Empty>}
+        {loading && !candles.length ? <div className="h-[300px] animate-pulse rounded-lg bg-bg-3 sm:h-[420px]" /> : candles.length ? <PriceChart candles={candles} analysis={analysis} overlays={overlays} /> : <Empty>{err ?? "No chart data for this timeframe."}</Empty>}
         {meta?.note ? <p className="mt-2 text-xs text-amber">{meta.note}</p> : null}
       </Section>
 
@@ -220,17 +220,19 @@ function TimeframeReport({ a, asset }: { a: TimeframeAnalysis; asset: AssetQuery
           </Section>
         )}
         <Section title="Key levels">
-          <table>
-            <tbody>
-              {[...a.levels].reverse().map((l) => (
-                <tr key={l.price}>
-                  <td><span className={`pill ${l.kind === "support" ? "pill-mint" : "pill-red"}`}>{l.kind}</span></td>
-                  <td className="num">{fmtUsd(l.price)}</td>
-                  <td className="num text-fg-3">{l.touches}× · {fmtPct(((l.price - a.price) / a.price) * 100, 1)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table>
+              <tbody>
+                {[...a.levels].reverse().map((l) => (
+                  <tr key={l.price}>
+                    <td><span className={`pill ${l.kind === "support" ? "pill-mint" : "pill-red"}`}>{l.kind}</span></td>
+                    <td className="num">{fmtUsd(l.price)}</td>
+                    <td className="num text-fg-3">{l.touches}× · {fmtPct(((l.price - a.price) / a.price) * 100, 1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <div className="mt-3 text-xs text-fg-3">Fib (last 120 candles)</div>
           <div className="num mt-1 grid grid-cols-4 gap-1 text-xs text-fg-2">
             {a.fib.map((f) => (

@@ -42,7 +42,7 @@ export default async function TokenPage({ params }: { params: Promise<{ id: stri
       <div className="flex flex-wrap items-center gap-3">
         {c.image ? <img src={c.image} alt="" className="h-10 w-10 rounded-full" /> : null}
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold">
+          <h1 className="flex flex-wrap items-center gap-2 text-lg font-bold sm:text-xl">
             {c.name} <span className="text-fg-3">{c.symbol}</span>
             {c.marketCapRank ? <span className="pill pill-gray">#{c.marketCapRank}</span> : null}
             <WatchButton id={c.id} symbol={c.symbol} name={c.name} />
@@ -51,7 +51,7 @@ export default async function TokenPage({ params }: { params: Promise<{ id: stri
             {c.categories.slice(0, 4).map((k) => <span key={k} className="pill pill-gray">{k}</span>)}
           </div>
         </div>
-        <div className="ml-auto text-right">
+        <div className="w-full sm:ml-auto sm:w-auto sm:text-right">
           <div className="num text-2xl font-semibold">{fmtUsd(c.priceUsd)}</div>
           <div className={`num text-sm ${pctClass(c.change24hPct)}`}>{fmtPct(c.change24hPct)} 24h</div>
         </div>

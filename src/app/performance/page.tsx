@@ -58,14 +58,16 @@ function Group({ title, g }: { title: string; g: G[] }) {
   return (
     <Section title={title}>
       {g.length ? (
-        <table>
-          <thead><tr><th>Group</th><th className="text-right">N</th><th className="text-right">Win %</th><th className="text-right">TP1/2/3</th><th className="text-right">SL</th><th className="text-right">MFE / MAE</th></tr></thead>
-          <tbody>
-            {g.map((x) => (
-              <tr key={x.key}><td className="font-medium">{x.key}</td><td className="num text-right">{x.total}<span className="text-fg-3"> ({x.open} open)</span></td><td className={`num text-right ${x.winRate == null ? "" : x.winRate >= 50 ? "up" : "down"}`}>{x.winRate ?? "—"}</td><td className="num text-right text-fg-2">{x.tp1}/{x.tp2}/{x.tp3}</td><td className="num text-right down">{x.sl}</td><td className="num text-right text-fg-2">{x.avgMfe}% / {x.avgMae}%</td></tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table>
+            <thead><tr><th>Group</th><th className="text-right">N</th><th className="text-right">Win %</th><th className="text-right">TP1/2/3</th><th className="text-right">SL</th><th className="text-right">MFE / MAE</th></tr></thead>
+            <tbody>
+              {g.map((x) => (
+                <tr key={x.key}><td className="font-medium">{x.key}</td><td className="num text-right">{x.total}<span className="text-fg-3"> ({x.open} open)</span></td><td className={`num text-right ${x.winRate == null ? "" : x.winRate >= 50 ? "up" : "down"}`}>{x.winRate ?? "—"}</td><td className="num text-right text-fg-2">{x.tp1}/{x.tp2}/{x.tp3}</td><td className="num text-right down">{x.sl}</td><td className="num text-right text-fg-2">{x.avgMfe}% / {x.avgMae}%</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : <Empty>No data yet.</Empty>}
     </Section>
   );
