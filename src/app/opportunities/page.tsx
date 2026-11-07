@@ -32,7 +32,8 @@ function OpportunitiesInner() {
   const sp = useSearchParams();
   const router = useRouter();
   const tab = (TABS.find((t) => t.key === sp.get("cat"))?.key ?? "confirmed") as OppCategory;
-  const [d, setD] = useState<{ items: Opportunity[]; updatedAt: number | null; counts?: Record<OppCategory, number>; note?: string } | null>(null);
+  const [d, setD] = useState<{ items: Opportunity[]; updatedAt: number | null; counts?: Record<OppCategory, number>; note?: string; live?: string[] } | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [f, setF] = useState<Filters>(EMPTY);
   const [sort, setSort] = useState<SortKey>("confidence");
   const [showHistory, setShowHistory] = useState(false);
@@ -40,6 +41,7 @@ function OpportunitiesInner() {
     let alive = true;
     const load = () => fetch("/api/opportunities?cat=all").then((r) => r.json()).then((x) => { if (alive) setD(x); }).catch(() => {});
     load();
+    (window as unknown as { __oppReload?: () => void }).__oppReload = load;
     const id = setInterval(load, 120_000);
     return () => { alive = false; clearInterval(id); };
   }, []);
@@ -105,7 +107,10 @@ function OpportunitiesInner() {
           <h1 className="text-xl font-bold">Trading Discovery</h1>
           <p className="text-xs text-fg-3">The engine re-grades every tracked token on each worker run and moves it between categories automatically{d?.updatedAt ? ` · updated ${timeAgo(d.updatedAt)}` : ""}</p>
         </div>
-        <button className="btn-ghost ml-auto text-xs" onClick={() => setShowHistory((s) => !s)}>{showHistory ? "Hide" : "Show"} category history</button>
+        <div className="ml-auto flex gap-2">
+          <button className="btn-ghost text-xs" disabled={refreshing} onClick={async () => { setRefreshing(true); try { const r = await fetch("/api/opportunities?cat=all&live=1"); setD(await r.json()); } catch {} setRefreshing(false); }}>{refreshing ? "Scanning live…" : "Refresh live"}</button>
+          <button className="btn-ghost text-xs" onClick={() => setShowHistory((s) => !s)}>{showHistory ? "Hide" : "Show"} category history</button>
+        </div>
       </div>
 
       <div className="opp-tabs" role="tablist">
@@ -121,6 +126,7 @@ function OpportunitiesInner() {
         {tab === "speculative" ? <strong className="mr-1">Warning: speculative.</strong> : null}
         {tab === "confirmed" ? <strong className="mr-1">Green flag.</strong> : null}
         {active.blurb} Manual trading only: AsheSignal never places orders or touches funds.
+        {d?.live?.includes(tab) ? <span className="mt-1 block text-fg-3">Live snapshot computed just now from current market data{tab === "confirmed" || tab === "watching" ? " (top 40 Binance coins, 4h and 1d)" : tab === "speculative" ? " (top trending DEX pools)" : " (top 12 coins by market cap)"}. The worker extends this to the full list as it runs; "Refresh live" recomputes on demand.</span> : null}
       </p>
 
       {showHistory ? <CategoryHistory /> : null}
@@ -152,7 +158,7 @@ function OpportunitiesInner() {
         <div className="text-[11px] text-fg-3">{items.length} of {all.length} shown</div>
       </div>
 
-      {!d ? <div className="card h-40 animate-pulse" /> : d.note ? <Empty>{d.note}</Empty> : !all.length ? (
+      {!d ? <div className="card h-40 animate-pulse"><div className="p-4 text-xs text-fg-3">Loading. If the worker has not filled this category yet, a live scan runs now (10 to 40 seconds).</div></div> : d.note ? <Empty>{d.note}</Empty> : !all.length ? (
         <Empty>
           Nothing in {active.label} yet. {tab === "confirmed" ? "That is normal in quiet markets: the engine only confirms when the criteria are met. Check Watching for setups that are close." : tab === "watching" ? "The worker fills this within about an hour of its first run." : tab === "speculative" ? "The speculative worker scans trending and new DEX pools every 5 minutes; cards appear after the first runs." : "The spot worker scores 5 coins per run over the top 150; the first tier fills within a couple of hours."}
         </Empty>

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Opportunity, RiskLevel } from "@/lib/market/opportunities";
+import { liveTaCategories, liveSpeculative, liveSpot } from "@/lib/market/live-opportunities";
+
+export const maxDuration = 60;
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +18,25 @@ function riskFromMetrics(r: any): RiskLevel {
 
 export async function GET(req: NextRequest) {
   const sb = supabaseAdmin();
-  if (!sb) return NextResponse.json({ items: [], note: "Trading discovery needs the worker (SUPABASE_SERVICE_ROLE_KEY + GitHub Actions). Set it up in docs/SETUP.md section 14." });
   const cat = req.nextUrl.searchParams.get("cat") ?? "all";
+  const wantLive = req.nextUrl.searchParams.get("live") === "1";
   const items: Opportunity[] = [];
+  const live: string[] = [];
+  const want = (c: string) => cat === "all" || cat === c;
+  const fill = async () => {
+    // Live fallback: any category the worker has not filled yet is computed on request from current market data.
+    const has = (c: string) => items.some((i) => i.category === c);
+    const jobs: Promise<void>[] = [];
+    if ((want("confirmed") || want("watching")) && (wantLive || (!has("confirmed") && !has("watching")))) jobs.push(liveTaCategories(40).then((x) => { const add = x.filter((i) => want(i.category)); if (add.length) { items.push(...add); live.push("confirmed", "watching"); } }));
+    if (want("speculative") && (wantLive || !has("speculative"))) jobs.push(liveSpeculative(6).then((x) => { if (x.length) { items.push(...x); live.push("speculative"); } }));
+    if (want("spot") && (wantLive || !has("spot"))) jobs.push(liveSpot(12).then((x) => { if (x.length) { items.push(...x); live.push("spot"); } }));
+    await Promise.all(jobs);
+  };
+  if (!sb) {
+    await fill();
+    const newest0 = items.reduce((m, i) => Math.max(m, Date.parse(i.updatedAt)), 0);
+    return NextResponse.json({ items, updatedAt: newest0 || null, live, note: items.length ? undefined : "Live snapshot unavailable and no worker configured (SUPABASE_SERVICE_ROLE_KEY). See docs/SETUP.md section 14.", counts: counts(items) });
+  }
 
   if (cat === "all" || cat === "confirmed" || cat === "watching") {
     let q = sb.from("coin_metrics").select("*").neq("category", "none").not("category", "is", null);
@@ -71,6 +90,11 @@ export async function GET(req: NextRequest) {
       });
     }
   }
+  await fill();
   const newest = items.reduce((m, i) => Math.max(m, Date.parse(i.updatedAt)), 0);
-  return NextResponse.json({ items, updatedAt: newest || null, counts: { confirmed: items.filter((i) => i.category === "confirmed").length, watching: items.filter((i) => i.category === "watching").length, speculative: items.filter((i) => i.category === "speculative").length, spot: items.filter((i) => i.category === "spot").length } });
+  return NextResponse.json({ items, updatedAt: newest || null, live, counts: counts(items) });
+}
+
+function counts(items: Opportunity[]) {
+  return { confirmed: items.filter((i) => i.category === "confirmed").length, watching: items.filter((i) => i.category === "watching").length, speculative: items.filter((i) => i.category === "speculative").length, spot: items.filter((i) => i.category === "spot").length };
 }

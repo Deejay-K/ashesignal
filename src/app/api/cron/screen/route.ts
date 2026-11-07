@@ -24,8 +24,9 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const BATCH = 10;
   const batches = Math.ceil(coins.length / BATCH);
-  const batch = url.searchParams.get("batch") != null ? Number(url.searchParams.get("batch")) % batches : Math.floor(new Date().getMinutes() / 5) % batches;
-  const slice = coins.slice(batch * BATCH, batch * BATCH + BATCH);
+  const all = url.searchParams.get("all") === "1";
+  const batch = all ? -1 : url.searchParams.get("batch") != null ? Number(url.searchParams.get("batch")) % batches : Math.floor(new Date().getMinutes() / 5) % batches;
+  const slice = all ? coins : coins.slice(batch * BATCH, batch * BATCH + BATCH);
   const rows: Record<string, unknown>[] = [];
   const { data: prevRows } = await sb.from("coin_metrics").select("asset_key, timeframe, category, category_since").in("asset_key", slice.map((c) => `cg:${c.id}`));
   const prev = new Map((prevRows ?? []).map((r) => [`${r.asset_key}|${r.timeframe}`, r]));
