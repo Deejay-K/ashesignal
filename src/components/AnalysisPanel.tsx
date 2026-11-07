@@ -413,6 +413,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
     try { await navigator.clipboard.writeText(lines.join("\n")); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
   };
   const riskHref = `/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: asset.symbol ?? "", tf, leverage: String(s.leverage.recommended) }).toString()}`;
+  const guideHref = `/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0].price), stop2: String(s.stopLosses[1]?.price ?? ""), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: asset.symbol ?? "", leverage: String(s.leverage.recommended) }).toString()}`;
   return (
     <Section
       title={<span className={s.side === "LONG" ? "up" : "down"}>{s.side} {s.kind === "watch" ? "levels" : "setup"} · {tf}</span>}
@@ -441,6 +442,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
       <Block title="Taking profit" items={s.takeProfitWhen} />
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Link href={riskHref} className="btn inline-block text-sm">Size this trade →</Link>
+        <Link href={guideHref} className="btn-ghost inline-block text-sm" title="Click-by-click steps to place this setup on your exchange">How to place it</Link>
         <Link href={`/alerts?${new URLSearchParams({ symbol: asset.symbol ?? "", id: asset.id ?? "", tf, price: String(s.takeProfits[0].price) }).toString()}`} className="btn-ghost">Set alert</Link>
         <button className="btn-ghost" onClick={copy}>{copied ? "Copied" : "Copy"}</button>
         <a className="btn-ghost" target="_blank" rel="noreferrer" href={`/api/og?${new URLSearchParams({ symbol: asset.symbol ?? asset.id ?? "", tf, side: s.side, kind: s.kind, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1].price), rr: String(s.riskRewardTp2), lev: String(s.leverage.recommended), conf: String(s.confidence), style: s.style, theme: typeof document !== "undefined" ? document.documentElement.getAttribute("data-theme") ?? "foundry" : "foundry" }).toString()}`}>Share card</a>

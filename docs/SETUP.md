@@ -160,6 +160,10 @@ Run `supabase/schema.sql` again (adds `coin_metrics.venue` and allows OKX/Bybit 
 
 To add another exchange later: one `Venue` (public candles + tickers) in `src/lib/providers/exchanges.ts`, one `VENUE_META` entry in `src/lib/venues.ts`, and optionally one read-only `ExchangeAdapter` in `src/lib/exchanges/`. Nothing else changes.
 
+## 16. Stage 18 - trade guide and simpler risk calculator
+
+Nothing to configure. `/guide` gives click-by-click steps to place a setup on the active exchange (spot or perpetual) with the setup's own numbers; it opens from "How to place it" on every setup card and discovery card, from the risk calculator, and from the More menu. `/risk` has a Simple mode, a 2-minute walkthrough, a "?" on every field and a plain-language answer ("Buy X units; if the stop hits you lose Y").
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).
