@@ -25,7 +25,8 @@ export function copyTradeText(o: Opportunity): string {
   const d: any = o.detail; const s = d?.setup; const sp = o.spec; const st = o.spot;
   const venue = currentVenue();
   const lines: string[] = [`${o.symbol} (${o.name}) - ${o.category.toUpperCase()} - AsheSignal`];
-  if (o.category !== "speculative") lines.push(`Pair on ${VENUE_META[venue].label}: ${VENUE_META[venue].instrument(o.symbol, VENUE_META[venue].quotes[0])} - ${tradeLink(venue, o.symbol)}`);
+  const tv = o.venues?.length ? o.venues[0] : venue;
+  if (o.category !== "speculative") lines.push(`Pair on ${VENUE_META[tv].label}: ${VENUE_META[tv].instrument(o.symbol, VENUE_META[tv].quotes[0])} - ${tradeLink(tv, o.symbol)}${o.venues?.length ? ` (also on: ${o.venues.slice(1).map((v) => VENUE_META[v].label).join(", ") || "none of the others"})` : ""}`);
   if (s) {
     lines.push(`Direction: ${s.side}${o.category === "watching" ? " (NOT confirmed yet, provisional levels)" : ""}`);
     lines.push(`Timeframe: ${o.timeframe}`);
@@ -72,7 +73,7 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
       <header className="flex flex-wrap items-center gap-2 p-3">
         <span className="opp-dot" aria-hidden />
         <div className="min-w-0">
-          <div className="flex items-center gap-2"><span className="font-semibold">{o.symbol}</span><span className="truncate text-xs text-fg-3">{o.name}</span>{o.chain ? <span className="pill pill-gray">{o.chain}</span> : null}{o.tier ? <span className="pill pill-gray">{o.tier}</span> : null}</div>
+          <div className="flex flex-wrap items-center gap-1.5"><span className="font-semibold">{o.symbol}</span><span className="truncate text-xs text-fg-3">{o.name}</span>{o.category === "speculative" && o.chain ? <span className="pill pill-gray">{o.chain}</span> : null}{o.tier ? <span className="pill pill-gray">{o.tier}</span> : null}{(o.venues ?? []).map((v) => <span key={v} className={`pill ${v === o.venues[0] && isVenueId(currentVenue()) && v === currentVenue() ? "pill-mint" : "pill-gray"}`} title={`Listed on ${VENUE_META[v].label}`}>{VENUE_META[v].label}</span>)}{o.category !== "speculative" && o.venues && !o.venues.length ? <span className="pill pill-amber" title="Not on any of the five supported exchanges; DEX only">DEX only</span> : null}</div>
           <div className="num text-xs text-fg-2">{fmtUsd(o.price)}{o.marketCap ? <span className="text-fg-3"> · mcap {fmtUsd(o.marketCap, { compact: true })}</span> : null}{o.volume24h ? <span className="text-fg-3"> · vol {fmtUsd(o.volume24h, { compact: true })}</span> : null}</div>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1.5 text-xs">
@@ -98,9 +99,9 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
         <button className="btn-ghost" onClick={() => setOpen((v) => !v)}>{open ? "Less" : "Details and why"}</button>
         <button className={o.category === "confirmed" ? "btn" : "btn-ghost"} onClick={copy} title="Copies direction, entry, TPs, SLs, sizing to your clipboard. Nothing is sent to any exchange.">{copied ? "Copied" : "Copy Trade Setup"}</button>
         <Link className="btn-ghost" href={o.href}>Full analysis</Link>
-        {o.category !== "speculative" ? <a className="btn-ghost" target="_blank" rel="noreferrer" href={tradeLink(isVenueId(o.chain) ? o.chain : currentVenue(), o.symbol)} title="Opens the spot pair on your exchange in a new tab. You place the order yourself.">Open on {VENUE_META[isVenueId(o.chain) ? o.chain : currentVenue()].label} ↗</a> : null}
+        {o.category !== "speculative" && o.venues?.length ? <a className="btn-ghost" target="_blank" rel="noreferrer" href={tradeLink(o.venues[0], o.symbol)} title={o.venues[0] === currentVenue() ? "Opens the spot pair on your active exchange in a new tab. You place the order yourself." : `Not listed on your active exchange; opens on ${VENUE_META[o.venues[0]].label} instead.`}>Open on {VENUE_META[o.venues[0]].label} ↗</a> : null}
         {s ? <Link className="btn-ghost" href={`/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, tf: o.timeframe ?? "", leverage: String(s.leverage?.recommended ?? 1) })}`}>Size it</Link> : null}
-        {s ? <Link className="btn-ghost" href={`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0]?.price ?? ""), stop2: String(s.stopLosses[1]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, leverage: String(s.leverage?.recommended ?? 1), venue: isVenueId(o.chain) ? o.chain : currentVenue() })}`}>How to place it</Link> : null}
+        {s ? <Link className="btn-ghost" href={`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0]?.price ?? ""), stop2: String(s.stopLosses[1]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, leverage: String(s.leverage?.recommended ?? 1), venue: o.venues?.[0] ?? currentVenue() })}`}>How to place it</Link> : null}
         <button className="btn-ghost" onClick={loadHist}>{hist ? "Hide history" : "History"}</button>
         <span className="ml-auto text-fg-3">in category {timeAgo(Date.parse(o.firstSeen))} · updated {timeAgo(Date.parse(o.updatedAt))}</span>
       </footer>

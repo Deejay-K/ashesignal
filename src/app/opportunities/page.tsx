@@ -6,6 +6,7 @@ import { Disclaimer, Empty } from "@/components/ui";
 import { timeAgo } from "@/lib/format";
 import type { Opportunity, OppCategory } from "@/lib/market/opportunities";
 import { RISK_ORDER } from "@/lib/market/opportunities";
+import { VENUE_IDS, VENUE_META, type VenueId } from "@/lib/venues";
 import OpportunityCard from "@/components/OpportunityCard";
 import CategoryHistory from "@/components/CategoryHistory";
 
@@ -49,6 +50,7 @@ function OpportunitiesInner() {
 
   const all = useMemo(() => (d?.items ?? []).filter((i) => i.category === tab), [d, tab]);
   const chains = useMemo(() => [...new Set(all.map((i) => i.chain).filter(Boolean) as string[])].sort(), [all]);
+  const venueOpts = useMemo(() => VENUE_IDS.filter((v) => all.some((i) => i.venues?.includes(v))).map((v) => [v, `${VENUE_META[v].label} (${all.filter((i) => i.venues?.includes(v)).length})`] as [string, string]), [all]);
   const tokenCats = useMemo(() => [...new Set(all.flatMap((i) => i.tokenCategories))].sort().slice(0, 40), [all]);
   const tfs = useMemo(() => [...new Set(all.map((i) => i.timeframe).filter(Boolean) as string[])], [all]);
 
@@ -56,7 +58,7 @@ function OpportunitiesInner() {
     const inBand = (v: number | null, b?: [number, number]) => !b || (v != null && v >= b[0] && v < b[1]);
     return all.filter((i) => {
       if (f.q && !(`${i.symbol} ${i.name}`.toLowerCase().includes(f.q.toLowerCase()))) return false;
-      if (f.chain && i.chain !== f.chain) return false;
+      if (f.chain && !(i.venues?.includes(f.chain as VenueId) || i.chain === f.chain)) return false;
       if (f.mcap && !inBand(i.marketCap, BANDS[f.mcap])) return false;
       if (f.liq && !inBand(i.liquidity, LIQ[f.liq])) return false;
       if (f.vol && !inBand(i.volume24h, VOL[f.vol])) return false;
@@ -136,7 +138,7 @@ function OpportunitiesInner() {
           <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-wider text-fg-3">Token
             <input className="!py-1 w-32 text-xs" placeholder="Search" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} />
           </label>
-          {sel("chain", chains.map((c) => [c, c]), tab === "speculative" || tab === "spot" ? "Blockchain" : "Exchange")}
+          {tab === "speculative" ? sel("chain", chains.map((c) => [c, c]), "Blockchain") : sel("chain", venueOpts, "Listed on")}
           {sel("mcap", [["micro", "Micro < $10M"], ["small", "Small $10M - $300M"], ["mid", "Mid $300M - $10B"], ["large", "Large > $10B"]], "Market cap")}
           {sel("liq", [["thin", "Thin < $100k"], ["ok", "$100k - $5M"], ["deep", "Deep > $5M"]], "Liquidity")}
           {sel("vol", [["low", "< $1M"], ["mid", "$1M - $100M"], ["high", "> $100M"]], "Volume 24h")}

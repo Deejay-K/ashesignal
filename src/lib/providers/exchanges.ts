@@ -13,7 +13,11 @@ export interface Venue {
   ticker(id: string): Promise<{ last: number; volumeQuote24h: number | null; change24hPct: number | null }>;
   /** All spot tickers against a USD-like quote in one call (for gainers/losers/unusual-volume scans). */
   allTickers?(): Promise<{ base: string; instrument: string; last: number; volumeQuote24h: number; change24hPct: number }[]>;
+  /** Base tickers with a USD-like spot pair on this venue (cached about an hour). */
+  bases?(): Promise<Set<string>>;
 }
+
+const basesFrom = (ids: Iterable<string>, split: (id: string) => string | null) => { const out = new Set<string>(); for (const id of ids) { const b = split(id); if (b) out.add(b); } return out; };
 
 const QUOTES = ["USDT", "USD", "USDC"];
 
@@ -54,6 +58,10 @@ export const kraken: Venue = {
     const last = +t.c[0];
     return { last, volumeQuote24h: +t.v[1] * last, change24hPct: ((last - +t.o) / +t.o) * 100 };
   },
+  async bases() {
+    const m = await krakenPairMap();
+    return basesFrom(m.keys(), (alt) => (/USD$/.test(alt) && !/USDT$|PYUSD$|USDC$/.test(alt) ? alt.slice(0, -3).replace(/^XBT$/, "BTC") : null));
+  },
   async allTickers() {
     const m = await krakenPairMap();
     const byId = new Map<string, string>();
@@ -73,14 +81,19 @@ export const kraken: Venue = {
 /* ---------------- Coinbase ---------------- */
 const CB_TF: Partial<Record<Timeframe, number>> = { "1m": 60, "5m": 300, "15m": 900, "30m": 900, "1h": 3600, "4h": 3600, "12h": 21600, "1d": 86400, "1w": 86400, "1M": 86400 };
 let cbProducts: Set<string> | null = null;
+async function cbProductSet() {
+  if (!cbProducts) {
+    const r = await fetchJson<{ id: string; status: string }[]>("https://api.exchange.coinbase.com/products", { provider: "coinbase", ttl: 3_600_000 });
+    cbProducts = new Set(r.filter((p) => p.status === "online").map((p) => p.id));
+  }
+  return cbProducts;
+}
 export const coinbase: Venue = {
   name: "coinbase",
+  async bases() { return basesFrom(await cbProductSet(), (id) => { const [b, q] = id.split("-"); return q === "USD" || q === "USDT" || q === "USDC" ? b : null; }); },
   async resolve(t) {
-    if (!cbProducts) {
-      const r = await fetchJson<{ id: string; status: string }[]>("https://api.exchange.coinbase.com/products", { provider: "coinbase", ttl: 3_600_000 });
-      cbProducts = new Set(r.filter((p) => p.status === "online").map((p) => p.id));
-    }
-    for (const q of ["USD", "USDT", "USDC"]) if (cbProducts.has(`${t.toUpperCase()}-${q}`)) return `${t.toUpperCase()}-${q}`;
+    const set = await cbProductSet();
+    for (const q of ["USD", "USDT", "USDC"]) if (set.has(`${t.toUpperCase()}-${q}`)) return `${t.toUpperCase()}-${q}`;
     return null;
   },
   async klines(id, tf, limit) {
@@ -104,14 +117,19 @@ export const coinbase: Venue = {
 /* ---------------- OKX ---------------- */
 const OKX_TF: Record<Timeframe, string> = { "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1H", "4h": "4H", "12h": "12H", "1d": "1D", "1w": "1W", "1M": "1M" };
 let okxInst: Set<string> | null = null;
+async function okxInstSet() {
+  if (!okxInst) {
+    const r = await fetchJson<{ data: { instId: string; state: string }[] }>("https://www.okx.com/api/v5/public/instruments?instType=SPOT", { provider: "okx", ttl: 3_600_000 });
+    okxInst = new Set(r.data.filter((i) => i.state === "live").map((i) => i.instId));
+  }
+  return okxInst;
+}
 export const okx: Venue = {
   name: "okx",
+  async bases() { return basesFrom(await okxInstSet(), (id) => { const [b, q] = id.split("-"); return q === "USDT" || q === "USDC" ? b : null; }); },
   async resolve(t) {
-    if (!okxInst) {
-      const r = await fetchJson<{ data: { instId: string; state: string }[] }>("https://www.okx.com/api/v5/public/instruments?instType=SPOT", { provider: "okx", ttl: 3_600_000 });
-      okxInst = new Set(r.data.filter((i) => i.state === "live").map((i) => i.instId));
-    }
-    for (const q of ["USDT", "USDC"]) if (okxInst.has(`${t.toUpperCase()}-${q}`)) return `${t.toUpperCase()}-${q}`;
+    const set = await okxInstSet();
+    for (const q of ["USDT", "USDC"]) if (set.has(`${t.toUpperCase()}-${q}`)) return `${t.toUpperCase()}-${q}`;
     return null;
   },
   async klines(id, tf, limit) {
@@ -132,14 +150,19 @@ export const okx: Venue = {
 /* ---------------- Bybit ---------------- */
 const BYBIT_TF: Record<Timeframe, string> = { "1m": "1", "5m": "5", "15m": "15", "30m": "30", "1h": "60", "4h": "240", "12h": "720", "1d": "D", "1w": "W", "1M": "M" };
 let bybitSyms: Set<string> | null = null;
+async function bybitSymSet() {
+  if (!bybitSyms) {
+    const r = await fetchJson<{ result: { list: { symbol: string; status: string }[] } }>("https://api.bybit.com/v5/market/instruments-info?category=spot&limit=1000", { provider: "bybit", ttl: 3_600_000 });
+    bybitSyms = new Set(r.result.list.filter((i) => i.status === "Trading").map((i) => i.symbol));
+  }
+  return bybitSyms;
+}
 export const bybit: Venue = {
   name: "bybit",
+  async bases() { return basesFrom(await bybitSymSet(), (id) => (id.endsWith("USDT") ? id.slice(0, -4) : id.endsWith("USDC") ? id.slice(0, -4) : null)); },
   async resolve(t) {
-    if (!bybitSyms) {
-      const r = await fetchJson<{ result: { list: { symbol: string; status: string }[] } }>("https://api.bybit.com/v5/market/instruments-info?category=spot&limit=1000", { provider: "bybit", ttl: 3_600_000 });
-      bybitSyms = new Set(r.result.list.filter((i) => i.status === "Trading").map((i) => i.symbol));
-    }
-    for (const q of ["USDT", "USDC"]) if (bybitSyms.has(`${t.toUpperCase()}${q}`)) return `${t.toUpperCase()}${q}`;
+    const set = await bybitSymSet();
+    for (const q of ["USDT", "USDC"]) if (set.has(`${t.toUpperCase()}${q}`)) return `${t.toUpperCase()}${q}`;
     return null;
   },
   async klines(id, tf, limit) {

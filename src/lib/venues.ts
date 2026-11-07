@@ -38,10 +38,31 @@ export const binanceVenue: Venue & { allTickers: () => Promise<BulkTicker[]> } =
   resolve: (t) => binance.resolveSymbol(t),
   klines: (id, tf, limit) => binance.getKlines(id, tf, limit),
   async ticker(id) { const t = await binance.getTicker24h(id); return { last: t.lastPrice, volumeQuote24h: t.quoteVolume, change24hPct: t.priceChangePercent }; },
+  async bases() { const set = await binance.getTradingSymbols(); const out = new Set<string>(); for (const sym of set) for (const q of ["USDT", "FDUSD", "USDC"]) if (sym.endsWith(q)) { out.add(sym.slice(0, -q.length)); break; } return out; },
   async allTickers() { const r = await binance.getAllUsdtTickers(); return r.map((t) => ({ base: t.symbol.replace(/USDT$/, ""), instrument: t.symbol, last: t.lastPrice, volumeQuote24h: t.quoteVolume, change24hPct: t.priceChangePercent })); },
 };
 
-export type AnyVenue = Venue & { allTickers?: () => Promise<BulkTicker[]> };
+export type AnyVenue = Venue & { allTickers?: () => Promise<BulkTicker[]>; bases?: () => Promise<Set<string>> };
+
+let listingsMemo: { at: number; value: Promise<Record<VenueId, Set<string>>> } | null = null;
+/** Which venues list which base tickers; one call per venue, cached 30 min. Failures yield an empty set for that venue. */
+export function venueListings(): Promise<Record<VenueId, Set<string>>> {
+  if (listingsMemo && Date.now() - listingsMemo.at < 30 * 60_000) return listingsMemo.value;
+  const value = (async () => {
+    const out = {} as Record<VenueId, Set<string>>;
+    await Promise.all(VENUE_IDS.map(async (id) => { try { out[id] = (await VENUES_BY_ID[id].bases?.()) ?? new Set(); } catch { out[id] = new Set(); } }));
+    return out;
+  })();
+  listingsMemo = { at: Date.now(), value };
+  return value;
+}
+/** Venues that list a ticker, active one first. */
+export function venuesFor(symbol: string, listings: Record<VenueId, Set<string>>, active?: VenueId | null): VenueId[] {
+  const s = symbol.toUpperCase();
+  const all = VENUE_IDS.filter((v) => listings[v]?.has(s));
+  if (active && all.includes(active)) return [active, ...all.filter((v) => v !== active)];
+  return all;
+}
 export const VENUES_BY_ID: Record<VenueId, AnyVenue> = { binance: binanceVenue, okx, bybit, kraken, coinbase };
 
 /** Venues in try-order: the active one first, then the rest in default liquidity order. */

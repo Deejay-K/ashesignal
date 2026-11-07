@@ -58,7 +58,7 @@ export function liveTaCategories(n = 40, venue?: VenueId | null): Promise<Opport
           risk: s?.kind === "confirmed" && a.volatility.atrPct < 0.04 ? "low" : a.volatility.atrPct > 0.1 || s?.kind === "watch" ? "high" : "medium",
           timeframe: TFS[i], rr: s?.riskRewardTp2 ?? null, confidence: s?.confidence ?? null,
           upsidePct: tp2 != null && s ? Math.abs((tp2 - s.entry.mid) / s.entry.mid) * 100 : null, tokenCategories: [],
-          firstSeen: now, updatedAt: now, href: `/token/${c.id}?tf=${TFS[i]}`,
+          venues: [], firstSeen: now, updatedAt: now, href: `/token/${c.id}?tf=${TFS[i]}`,
           detail: d as unknown as Record<string, unknown>, spec: null, spot: null, tier: null,
           liquidityNote: c.volume24hUsd != null && c.marketCapUsd ? `${((c.volume24hUsd / c.marketCapUsd) * 100).toFixed(1)}% of market cap traded in 24h` : null,
         });
@@ -93,7 +93,7 @@ export function liveSpeculative(n = 4): Promise<Opportunity[]> {
         bias: d.ta ? (d.ta.outlook.includes("bull") ? "bullish" : d.ta.outlook.includes("bear") ? "bearish" : "neutral") : (rep.market.change.h24 ?? 0) > 0 ? "bullish" : "bearish",
         risk: rep.verdict.riskLevel, timeframe: d.ta?.timeframe ?? null, rr: null, confidence: d.targets.justified && d.ta ? Math.round(50 + Math.abs(d.ta.score) / 4) : null,
         upsidePct: tp != null ? Math.abs((tp - price) / price) * 100 : null, tokenCategories: ["trending"],
-        firstSeen: now, updatedAt: now, href: `/scanner?address=${encodeURIComponent(rep.address)}`, detail: null, spec: d, spot: null, tier: null, liquidityNote: d.liquidity.note,
+        venues: [], firstSeen: now, updatedAt: now, href: `/scanner?address=${encodeURIComponent(rep.address)}`, detail: null, spec: d, spot: null, tier: null, liquidityNote: d.liquidity.note,
       });
     }));
     return out;
@@ -122,7 +122,7 @@ export function liveSpot(n = 6): Promise<Opportunity[]> {
         id: `cg:${c.id}`, assetKey: `cg:${c.id}`, category: "spot", symbol: c.symbol, name: c.name, chain: d.fundamentals.chains[0] ?? null, price: c.priceUsd, marketCap: c.marketCapUsd, volume24h: c.volume24hUsd, liquidity: c.volume24hUsd, side: null,
         bias: d.structure.trend === "up" ? "bullish" : d.structure.trend === "down" ? "bearish" : "neutral", risk: d.tier === "established" ? "low" : d.tier === "emerging" ? "medium" : "high",
         timeframe: "1w", rr: null, confidence: d.score, upsidePct: pt != null && c.priceUsd ? ((pt - c.priceUsd) / c.priceUsd) * 100 : null, tokenCategories: d.fundamentals.categories,
-        firstSeen: now, updatedAt: now, href: `/token/${c.id}`, detail: null, spec: null, spot: d, tier: d.tier, liquidityNote: null,
+        venues: [], firstSeen: now, updatedAt: now, href: `/token/${c.id}`, detail: null, spec: null, spot: d, tier: d.tier, liquidityNote: null,
       });
     }
     return out;

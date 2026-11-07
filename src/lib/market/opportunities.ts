@@ -2,6 +2,7 @@
 
 import type { SpecDetail } from "./speculative";
 import type { SpotDetail } from "./spot";
+import type { VenueId } from "@/lib/venues";
 
 export type OppCategory = "confirmed" | "watching" | "speculative" | "spot";
 export type RiskLevel = "low" | "medium" | "high" | "extreme";
@@ -12,7 +13,8 @@ export interface Opportunity {
   category: OppCategory;
   symbol: string;
   name: string;
-  chain: string | null;       // "binance" for CEX-screened coins, DEX chain id otherwise
+  chain: string | null;       // DEX chain id (speculative/spot), or the candle source venue for CEX-screened coins
+  venues: VenueId[];          // exchanges that list this coin (active exchange first); empty for DEX-only tokens
   price: number | null;
   marketCap: number | null;
   volume24h: number | null;

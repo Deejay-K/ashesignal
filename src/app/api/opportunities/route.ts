@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Opportunity, RiskLevel } from "@/lib/market/opportunities";
 import { liveTaCategories, liveSpeculative, liveSpot, within } from "@/lib/market/live-opportunities";
 import { venueFromRequest } from "@/lib/venue-pref";
+import { venueListings, venuesFor } from "@/lib/venues";
 
 export const maxDuration = 60;
 
@@ -23,6 +24,9 @@ export async function GET(req: NextRequest) {
   const wantLive = req.nextUrl.searchParams.get("live") === "1";
   const items: Opportunity[] = [];
   const live: string[] = [];
+  const active = venueFromRequest(req);
+  const listingsP = venueListings();
+  const tag = async () => { const l = await listingsP; for (const i of items) i.venues = i.category === "speculative" ? [] : venuesFor(i.symbol, l, active); };
   const want = (c: string) => cat === "all" || cat === c;
   const fill = async () => {
     // Live fallback: any category the worker has not filled yet is computed on request from current market data.
@@ -35,6 +39,7 @@ export async function GET(req: NextRequest) {
   };
   if (!sb) {
     await fill();
+    await tag();
     const newest0 = items.reduce((m, i) => Math.max(m, Date.parse(i.updatedAt)), 0);
     return NextResponse.json({ items, updatedAt: newest0 || null, live, note: items.length ? undefined : "Live snapshot unavailable and no worker configured (SUPABASE_SERVICE_ROLE_KEY). See docs/SETUP.md section 14.", counts: counts(items) });
   }
@@ -54,7 +59,7 @@ export async function GET(req: NextRequest) {
         bias: r.outlook?.includes("bull") ? "bullish" : r.outlook?.includes("bear") ? "bearish" : "neutral",
         risk: riskFromMetrics(r), timeframe: r.timeframe, rr: s?.rr ?? r.setup_rr ?? null, confidence: s?.confidence ?? r.setup_confidence ?? null,
         upsidePct: tp2 != null && entry ? Math.abs((tp2 - entry) / entry) * 100 : null, tokenCategories: [],
-        firstSeen: r.category_since ?? r.updated_at, updatedAt: r.updated_at, href: `/token/${r.asset_key.replace(/^cg:/, "")}?tf=${r.timeframe}`,
+        venues: [], firstSeen: r.category_since ?? r.updated_at, updatedAt: r.updated_at, href: `/token/${r.asset_key.replace(/^cg:/, "")}?tf=${r.timeframe}`,
         detail: d, spec: null, spot: null, tier: null, liquidityNote: r.liquidity_note ?? null,
       });
     }
@@ -70,7 +75,7 @@ export async function GET(req: NextRequest) {
         bias: d.ta ? (String(d.ta.outlook).includes("bull") ? "bullish" : String(d.ta.outlook).includes("bear") ? "bearish" : "neutral") : (r.change_24h ?? 0) > 0 ? "bullish" : "bearish",
         risk: r.risk_level ?? "extreme", timeframe: d.ta?.timeframe ?? null, rr: null, confidence: d.targets?.justified && d.ta ? Math.round(50 + Math.abs(d.ta.score) / 4) : null,
         upsidePct: tp != null && r.price ? Math.abs((tp - r.price) / r.price) * 100 : null, tokenCategories: [r.source_tag].filter(Boolean),
-        firstSeen: r.first_seen, updatedAt: r.updated_at, href: `/scanner?address=${encodeURIComponent(r.address)}`,
+        venues: [], firstSeen: r.first_seen, updatedAt: r.updated_at, href: `/scanner?address=${encodeURIComponent(r.address)}`,
         detail: null, spec: d, spot: null, tier: null, liquidityNote: d.liquidity?.note ?? null,
       });
     }
@@ -86,12 +91,13 @@ export async function GET(req: NextRequest) {
         bias: d.structure?.trend === "up" ? "bullish" : d.structure?.trend === "down" ? "bearish" : "neutral",
         risk: r.tier === "established" ? "low" : r.tier === "emerging" ? "medium" : "high", timeframe: "1w", rr: null, confidence: r.spot_score,
         upsidePct: pt != null && r.price ? ((pt - r.price) / r.price) * 100 : null, tokenCategories: d.fundamentals?.categories ?? [],
-        firstSeen: r.updated_at, updatedAt: r.updated_at, href: `/token/${r.asset_key.replace(/^cg:/, "")}`,
+        venues: [], firstSeen: r.updated_at, updatedAt: r.updated_at, href: `/token/${r.asset_key.replace(/^cg:/, "")}`,
         detail: null, spec: null, spot: d, tier: r.tier, liquidityNote: null,
       });
     }
   }
   await fill();
+  await tag();
   const newest = items.reduce((m, i) => Math.max(m, Date.parse(i.updatedAt)), 0);
   return NextResponse.json({ items, updatedAt: newest || null, live, counts: counts(items) });
 }
