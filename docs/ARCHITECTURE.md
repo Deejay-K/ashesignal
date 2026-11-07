@@ -95,7 +95,7 @@ All tables have RLS: `auth.uid() = user_id`.
 | Stage | Scope | Status |
 |---|---|---|
 | **1 — Functional core** | Data layer, 10-TF charts with overlays, full TA + pattern engine, LONG/SHORT setups, multi-TF consensus, discovery, address scanner + security, risk calculator, F&G, guest watchlist, responsive UI | ✅ built |
-| **2 — Accounts** | Supabase auth (magic link/Google), profile risk defaults, synced watchlists, saved setups, saved chart configs | schema ready |
+| **2 — Accounts** | Supabase auth (magic link/Google), synced watchlist with guest-merge on sign-in, saved setups with manual outcome + personal win-rate (`/setups`), risk profile sync. App runs fully in guest mode when Supabase is not configured. | ✅ built |
 | **3 — Tracking & alerts** | Cron worker, `signal_log` resolution → hit-rate stats per timeframe/asset, alert rules + Web Push/email, large-transfer (whale) watch via Alchemy/Helius | planned |
 | **4 — Portfolio** | Read-only wallet tracking (EVM via Alchemy, Solana via Helius), holdings, P&L, allocation, Binance WebSocket live ticks, Coinbase/Kraken/OKX/Bybit OHLCV fallbacks | planned |
 | **5 — AI layer** | Optional LLM narrative over the engine's structured output (explain-why in prose, scenario writing), with the numeric engine remaining the source of truth | planned |

@@ -2,7 +2,7 @@
 
 Crypto trading-intelligence platform by **Ashe Foundry**: real market data, multi-timeframe technical analysis, LONG/SHORT setups with TP/SL and invalidation, risk-first position sizing, a contract-address scanner with security checks, discovery lists, and the Fear & Greed index.
 
-> Read `docs/ARCHITECTURE.md` first — it has the stack decision, provider limits/costs, the setup-generation logic, the DB design and the stage plan.
+> **Setup instructions: `docs/SETUP.md`.** Read `docs/ARCHITECTURE.md` — it has the stack decision, provider limits/costs, the setup-generation logic, the DB design and the stage plan.
 
 ## Run it
 
@@ -32,12 +32,14 @@ Push to a GitHub repo, import in Vercel, add env vars (optional), deploy. All pa
 | `/scanner` | Paste an EVM or Solana address → chain detection, token identity, liquidity-weighted price across pools, volume, txns, buy/sell ratio, pair age, GoPlus security checks (honeypot, taxes, mint/freeze, proxy, blacklist, holder concentration, LP lock…) with **verified vs unverified** marked, trading-activity red flags, and full TA on the main pool |
 | `/risk` | Position-size calculator: balance, risk %, max loss $, max exposure %, leverage, fees → units, notional, margin, max loss, profit at TP1–3 in $ and R, exposure, remaining capital, liquidation estimate, warnings. Prefills from any setup via "Size this trade". |
 | `/sentiment` | Fear & Greed gauge, 2-year F&G vs BTC overlay, zone guide, streak stats |
-| `/watchlist` | Guest mode (localStorage). Stage 2 syncs it to your account. |
+| `/watchlist` | Guest: this browser. Signed in: synced to your Supabase account (guest list merged on first sign-in). |
+| `/setups` | Saved setups with manual outcome tracking and personal win-rate (account required) |
+| `/login` | Magic-link / Google sign-in (optional — guest mode needs no account) |
 
 Every number shows its **source and quality** (verified / estimated / unavailable).
 
 ## What is *not* in Stage 1 (and the plan)
 
-Accounts & cloud sync (Stage 2, schema in `supabase/schema.sql`), signal performance tracking + alerts (Stage 3), wallet/portfolio tracking (Stage 4), LLM narrative layer (Stage 5). Per-token social sentiment and whale feeds need paid or keyed APIs — see the limitations section in the architecture doc.
+Signal performance tracking + alerts (Stage 3), wallet/portfolio tracking (Stage 4), LLM narrative layer (Stage 5). Per-token social sentiment and whale feeds need paid or keyed APIs — see the limitations section in the architecture doc.
 
 Not financial advice. Analysis is probabilistic; use the risk calculator and never trade more than you can lose.

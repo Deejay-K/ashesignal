@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { sizePosition, type RiskInputs } from "@/lib/risk/position";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { Disclaimer, Section, StatCard } from "@/components/ui";
+import { supabaseBrowser } from "@/lib/supabase/client";
 
 const KEY = "ashesignal.risk.profile.v1";
 
@@ -29,12 +30,32 @@ function Risk() {
   });
   const symbol = sp.get("symbol");
 
+  const [account, setAccount] = useState<"none" | "loading" | "synced">("none");
   useEffect(() => {
     try {
       const saved = localStorage.getItem(KEY);
       if (saved) setP((x) => ({ ...x, ...JSON.parse(saved) }));
     } catch {}
+    const sb = supabaseBrowser();
+    if (!sb) return;
+    setAccount("loading");
+    fetch("/api/me/profile")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j?.profile) return setAccount("none");
+        const pr = j.profile;
+        setP((x) => ({ ...x, tradingBalance: pr.trading_balance ?? x.tradingBalance, portfolioValue: pr.portfolio_value ?? x.portfolioValue, riskPct: pr.risk_pct ?? x.riskPct, maxExposurePct: pr.max_exposure_pct ?? x.maxExposurePct, leverage: pr.default_leverage ?? x.leverage }));
+        setAccount("synced");
+      })
+      .catch(() => setAccount("none"));
   }, []);
+  useEffect(() => {
+    if (account !== "synced") return;
+    const t = setTimeout(() => {
+      fetch("/api/me/profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ trading_balance: p.tradingBalance, portfolio_value: p.portfolioValue, risk_pct: p.riskPct, max_exposure_pct: p.maxExposurePct, default_leverage: p.leverage }) }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [p, account]);
   useEffect(() => {
     try {
       localStorage.setItem(KEY, JSON.stringify(p));
@@ -56,7 +77,7 @@ function Risk() {
         <p className="text-sm text-fg-2">Size is derived from your risk budget ÷ stop distance. The calculator will never size above your limits. {symbol ? <span className="pill pill-mint ml-1">prefilled from {symbol} setup</span> : null}</p>
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
-        <Section title="Your capital (saved in this browser)">
+        <Section title={account === "synced" ? "Your capital (synced to your account)" : "Your capital (saved in this browser)"}>
           <div className="grid grid-cols-2 gap-2 text-xs text-fg-3">
             <label>Trading balance $<input {...num("tradingBalance")} /></label>
             <label>Total portfolio $<input {...num("portfolioValue")} /></label>

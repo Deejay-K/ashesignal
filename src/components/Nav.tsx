@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { fmtUsd } from "@/lib/format";
+import AuthMenu from "./AuthMenu";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
@@ -12,6 +13,7 @@ const LINKS = [
   { href: "/risk", label: "Risk" },
   { href: "/sentiment", label: "Sentiment" },
   { href: "/watchlist", label: "Watchlist" },
+  { href: "/setups", label: "Setups" },
 ];
 
 interface SearchRes {
@@ -102,6 +104,7 @@ export default function Nav() {
             </div>
           ) : null}
         </div>
+        <AuthMenu />
         <button className="btn-ghost md:hidden" onClick={() => setMenu((m) => !m)} aria-label="Menu">☰</button>
       </div>
       {menu ? (

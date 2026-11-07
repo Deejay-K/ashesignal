@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { supabaseBrowser } from "@/lib/supabase/client";
 import Link from "next/link";
 import PriceChart, { type ChartOverlays } from "./PriceChart";
 import { Empty, OutlookBadge, QualityBadge, Section } from "./ui";
@@ -185,7 +186,7 @@ function TimeframeReport({ a, asset }: { a: TimeframeAnalysis; asset: AssetQuery
       </Section>
 
       <div className="space-y-4">
-        {a.setup ? <SetupCard s={a.setup} asset={asset} tf={a.timeframe} /> : (
+        {a.setup ? <SetupCard s={a.setup} asset={asset} tf={a.timeframe} score={a.score} /> : (
           <Section title="Trade setup">
             <Empty>No setup on {a.timeframe}: {a.setupReason}</Empty>
           </Section>
@@ -265,7 +266,16 @@ function PatternCol({ title, items }: { title: string; items: TimeframeAnalysis[
   );
 }
 
-export function SetupCard({ s, asset, tf }: { s: Setup; asset: AssetQuery; tf: Timeframe }) {
+export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery; tf: Timeframe; score?: number }) {
+  const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "guest" | "error">("idle");
+  const save = async () => {
+    setSaved("saving");
+    const sb = supabaseBrowser();
+    const user = sb ? (await sb.auth.getUser()).data.user : null;
+    if (!user) return setSaved("guest");
+    const r = await fetch("/api/me/setups", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ setup: s, symbol: asset.symbol ?? asset.id ?? "?", timeframe: tf, score, assetKey: asset.id ? `cg:${asset.id}` : asset.pool ? `pool:${asset.network}:${asset.pool}` : `sym:${asset.symbol}` }) });
+    setSaved(r.ok ? "saved" : "error");
+  };
   const riskHref = `/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: asset.symbol ?? "", tf }).toString()}`;
   return (
     <Section
@@ -285,7 +295,14 @@ export function SetupCard({ s, asset, tf }: { s: Setup; asset: AssetQuery; tf: T
       <Block title="Invalidated if" items={s.invalidation} tone="down" />
       <Block title="Exit early if" items={s.exitEarlyIf} />
       <Block title="Taking profit" items={s.takeProfitWhen} />
-      <Link href={riskHref} className="btn mt-3 inline-block text-sm">Size this trade →</Link>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Link href={riskHref} className="btn inline-block text-sm">Size this trade →</Link>
+        <button className="btn-ghost" onClick={save} disabled={saved === "saving" || saved === "saved"}>
+          {saved === "saved" ? "Saved ✓" : saved === "saving" ? "Saving…" : "Save setup"}
+        </button>
+        {saved === "guest" ? <Link href="/login" className="text-xs text-amber">Sign in to save setups</Link> : null}
+        {saved === "error" ? <span className="text-xs text-red">Save failed</span> : null}
+      </div>
     </Section>
   );
 }
