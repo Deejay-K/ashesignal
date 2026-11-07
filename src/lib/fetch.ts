@@ -23,6 +23,8 @@ const HOST_LIMITS: Record<string, { perMinute: number }> = {
   "api.coingecko.com": { perMinute: 25 },
   "pro-api.coingecko.com": { perMinute: 400 },
   "api.binance.com": { perMinute: 300 },
+  "api1.binance.com": { perMinute: 300 },
+  "data-api.binance.vision": { perMinute: 300 },
   "api.dexscreener.com": { perMinute: 250 },
   "api.geckoterminal.com": { perMinute: 25 },
   "api.gopluslabs.io": { perMinute: 30 },

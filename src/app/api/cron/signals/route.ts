@@ -21,12 +21,18 @@ const TFS: Timeframe[] = ["1h", "4h", "1d"];
  *   ?all=1       → every coin in one request (only on a plan with long function timeouts)
  */
 export async function GET(req: Request) {
+  try {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sb = supabaseAdmin();
   if (!sb) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 501 });
   const top = await safe(getMarkets(1, 60, false));
   if (!top.ok) return NextResponse.json({ error: top.error }, { status: 502 });
-  const syms = await getTradingSymbols();
+  let syms: Set<string>;
+  try {
+    syms = await getTradingSymbols();
+  } catch (e) {
+    return NextResponse.json({ error: "binance unreachable: " + (e as Error).message }, { status: 502 });
+  }
   const url = new URL(req.url);
   const allCoins = top.data.filter((c) => syms.has(`${c.symbol}USDT`)).slice(0, 30);
   const BATCH = 8;
@@ -60,4 +66,7 @@ export async function GET(req: Request) {
     logged = rows.length;
   }
   return NextResponse.json({ ok: true, batch: batch < 0 ? "all" : `${batch + 1}/${batches}`, coins: coins.map((c) => c.symbol), logged, at: new Date().toISOString() });
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+  }
 }
