@@ -6,16 +6,18 @@ import type { DiscoverItem, DiscoverResult } from "@/lib/market/discover";
 import { fmtPct, fmtUsd, pctClass, timeAgo } from "@/lib/format";
 import { Disclaimer, Empty, RiskBadge, Section } from "@/components/ui";
 import type { LiquidityChange } from "@/lib/market/liquidity";
+import { VENUE_EVENT } from "@/lib/venue-pref";
+import { VENUE_META } from "@/lib/venues";
 
-const CATS: { key: keyof Omit<DiscoverResult, "errors" | "generatedAt">; label: string; note: string }[] = [
-  { key: "bullish", label: "Bullish setups", note: "4h analysis score ≥ +15 on Binance-listed top-40" },
-  { key: "bearish", label: "Bearish breakdowns", note: "4h analysis score ≤ −15 on Binance-listed top-40" },
+const CATS: { key: keyof Omit<DiscoverResult, "errors" | "generatedAt" | "venue">; label: string; note: string }[] = [
+  { key: "bullish", label: "Bullish setups", note: "4h analysis score ≥ +15 on the top-40 listed on your active exchange" },
+  { key: "bearish", label: "Bearish breakdowns", note: "4h analysis score ≤ −15 on the top-40 listed on your active exchange" },
   { key: "trending", label: "Trending", note: "CoinGecko search trending" },
   { key: "dexTrending", label: "Trending DEX / memecoins", note: "GeckoTerminal trending pools - all chains" },
   { key: "newPools", label: "Newly launched", note: "Newest DEX pools - extreme risk by default" },
-  { key: "unusualVolume", label: "Unusual volume", note: "24h turnover > 15% of market cap (Binance)" },
-  { key: "gainers", label: "Gainers 24h", note: "Binance USDT pairs > $2M volume" },
-  { key: "losers", label: "Losers 24h", note: "Binance USDT pairs > $2M volume" },
+  { key: "unusualVolume", label: "Unusual volume", note: "24h turnover > 15% of market cap on your active exchange" },
+  { key: "gainers", label: "Gainers 24h", note: "Active exchange, USD-quoted pairs > $2M volume" },
+  { key: "losers", label: "Losers 24h", note: "Active exchange, USD-quoted pairs > $2M volume" },
   { key: "recovering", label: "Recovering", note: "> 30% below ATH and up > 8% today" },
 ];
 
@@ -39,7 +41,8 @@ export default function DiscoverPage() {
     fetch("/api/liquidity").then((r) => r.json()).then(setLiq).catch(() => {});
     fetch("/api/whales").then((r) => r.json()).then(setWh).catch(() => {});
     const t = setInterval(load, 120_000);
-    return () => clearInterval(t);
+    window.addEventListener(VENUE_EVENT, load);
+    return () => { clearInterval(t); window.removeEventListener(VENUE_EVENT, load); };
   }, []);
 
   const chains = useMemo(() => {
@@ -70,7 +73,7 @@ export default function DiscoverPage() {
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <h1 className="text-xl font-bold">Discover</h1>
-          <p className="text-xs text-fg-3">{d ? `Updated ${timeAgo(d.generatedAt)} · refreshes every 2 min` : "Loading…"}</p>
+          <p className="text-xs text-fg-3">{d ? `Updated ${timeAgo(d.generatedAt)} · refreshes every 2 min · CEX lists from ${VENUE_META[d.venue]?.label ?? d.venue}` : "Loading…"}</p>
         </div>
         <div className="grid w-full grid-cols-2 gap-2 sm:ml-auto sm:w-auto sm:grid-cols-5">
           <label className="text-xs text-fg-3">Chain<select value={chain} onChange={(e) => setChain(e.target.value)}><option value="all">all (DEX lists)</option>{chains.map((c) => <option key={c}>{c}</option>)}</select></label>

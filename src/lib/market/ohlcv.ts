@@ -1,13 +1,12 @@
 // OHLCV resolution: picks the best candle source for a given asset.
-//   1. Binance spot pair (verified, all timeframes)
+//   1. The active exchange (user preference), then the other CEX venues in liquidity order (verified)
 //   2. GeckoTerminal DEX pool (verified, most timeframes; 30m/1w/1M resampled)
 //   3. CoinGecko market_chart (estimated: hourly/daily closes only, no OHLC)
 
 import { TF_MS, type Candle, type OhlcvResult, type Timeframe } from "@/lib/types";
-import * as binance from "@/lib/providers/binance";
 import * as gt from "@/lib/providers/geckoterminal";
 import * as cg from "@/lib/providers/coingecko";
-import { VENUES } from "@/lib/providers/exchanges";
+import { venueOrder, type VenueId } from "@/lib/venues";
 import { resample } from "@/lib/ta/resample";
 export { resample };
 
@@ -15,29 +14,19 @@ export interface AssetRef {
   symbol?: string; // ticker e.g. "SOL"
   coingeckoId?: string;
   pool?: { network: string; address: string }; // GeckoTerminal network + pool
+  venue?: VenueId | null; // active exchange: tried first; others are fallbacks
 }
 
 export async function getOhlcv(ref: AssetRef, tf: Timeframe, limit = 500): Promise<OhlcvResult> {
-  // 1) Binance
+  // 1) CEX venues: the active exchange first, then the others as fallbacks
   if (ref.symbol) {
-    try {
-      const sym = await binance.resolveSymbol(ref.symbol);
-      if (sym) {
-        const candles = await binance.getKlines(sym, tf, limit);
-        if (candles.length) return { candles, source: "binance", symbol: sym, quality: "verified" };
-      }
-    } catch (e) {
-      console.warn("binance ohlcv failed", (e as Error).message);
-    }
-  }
-  // 1b) other CEX venues (OKX → Bybit → Kraken → Coinbase)
-  if (ref.symbol) {
-    for (const v of VENUES) {
+    const order = venueOrder(ref.venue);
+    for (const v of order) {
       try {
         const id = await v.resolve(ref.symbol);
         if (!id) continue;
         const candles = await v.klines(id, tf, limit);
-        if (candles.length) return { candles, source: v.name, symbol: id, quality: "verified", note: candles.length < 60 ? `${v.name} only returned ${candles.length} candles on ${tf}.` : undefined };
+        if (candles.length) return { candles, source: v.name, symbol: id, quality: "verified", note: v !== order[0] ? `Not listed on ${order[0].name}; candles from ${v.name}.` : candles.length < 60 ? `${v.name} only returned ${candles.length} candles on ${tf}.` : undefined };
       } catch (e) {
         console.warn(`${v.name} ohlcv failed`, (e as Error).message);
       }

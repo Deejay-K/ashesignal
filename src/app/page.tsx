@@ -13,6 +13,9 @@ import MarketBriefing from "@/components/MarketBriefing";
 import TradeConditions from "@/components/TradeConditions";
 import Term from "@/components/Term";
 import Welcome from "@/components/Welcome";
+import { cookies } from "next/headers";
+import { VENUE_COOKIE } from "@/lib/venue-pref";
+import { DEFAULT_VENUE, VENUE_META, isVenueId, type VenueId } from "@/lib/venues";
 import DiscoveryStrip from "@/components/DiscoveryStrip";
 import type { DiscoverItem } from "@/lib/market/discover";
 
@@ -20,7 +23,9 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function Dashboard() {
-  const [g, coins, fng, disc] = await Promise.all([safe(getGlobal()), safe(getMarkets(1, 50, true)), safe(getFearGreed(30)), safe(discover())]);
+  const jar = await cookies();
+  const venue = isVenueId(jar.get(VENUE_COOKIE)?.value) ? (jar.get(VENUE_COOKIE)!.value as VenueId) : DEFAULT_VENUE;
+  const [g, coins, fng, disc] = await Promise.all([safe(getGlobal()), safe(getMarkets(1, 50, true)), safe(getFearGreed(30)), safe(discover(venue))]);
   const ov = g.ok ? g.data : null;
   const f = fng.ok ? fng.data : [];
   const d = disc.ok ? disc.data : null;
@@ -44,10 +49,10 @@ export default async function Dashboard() {
       <MarketBriefing />
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Section title="Top bullish (4h, Binance top-40)" right={<Link className="link text-xs" href="/discover">more →</Link>}>
+        <Section title={`Top bullish (4h, ${VENUE_META[d?.venue ?? venue].label} top-40)`} right={<Link className="link text-xs" href="/discover">more →</Link>}>
           <PickList items={d?.bullish ?? []} />
         </Section>
-        <Section title="Top bearish (4h, Binance top-40)" right={<Link className="link text-xs" href="/discover">more →</Link>}>
+        <Section title={`Top bearish (4h, ${VENUE_META[d?.venue ?? venue].label} top-40)`} right={<Link className="link text-xs" href="/discover">more →</Link>}>
           <PickList items={d?.bearish ?? []} />
         </Section>
         <Section title="Trending" right={<Link className="link text-xs" href="/discover">more →</Link>}>

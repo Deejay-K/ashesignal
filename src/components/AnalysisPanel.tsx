@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { mergeCandle, subscribeKline } from "@/lib/live";
+import { currentVenue, VENUE_EVENT } from "@/lib/venue-pref";
+import { VENUE_META, splitInstrument, type VenueId } from "@/lib/venues";
 import Link from "next/link";
 import PriceChart, { defaultVisiblePatterns, type ChartOverlays } from "./PriceChart";
 import type { Pattern } from "@/lib/ta/patterns";
@@ -25,6 +27,7 @@ export interface AssetQuery {
 function qs(a: AssetQuery, extra: Record<string, string> = {}) {
   const p = new URLSearchParams();
   Object.entries({ ...a, ...extra }).forEach(([k, v]) => v && p.set(k, v));
+  p.set("venue", currentVenue());
   return p.toString();
 }
 
@@ -61,7 +64,7 @@ export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asse
     setTimeout(() => setPrefSaved("idle"), 2000);
   };
   const [candles, setCandles] = useState<Candle[]>([]);
-  const [meta, setMeta] = useState<{ source: string; quality: string; note?: string } | null>(null);
+  const [meta, setMeta] = useState<{ source: string; quality: string; note?: string; symbol?: string } | null>(null);
   const [analysis, setAnalysis] = useState<TimeframeAnalysis | null>(null);
   const [multi, setMulti] = useState<MultiTfAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,7 +74,10 @@ export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asse
     if (typeof window === "undefined") return base;
     try { const p = JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}") as ChartPrefs; return { ...base, ...(p.overlays ?? {}) }; } catch { return base; }
   });
-  const key = useMemo(() => qs(asset), [asset]);
+  const [venueTick, setVenueTick] = useState(0);
+  useEffect(() => { const on = () => setVenueTick((n) => n + 1); window.addEventListener(VENUE_EVENT, on); return () => window.removeEventListener(VENUE_EVENT, on); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const key = useMemo(() => qs(asset), [asset, venueTick]);
 
   useEffect(() => {
     let alive = true;
@@ -83,7 +89,7 @@ export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asse
         if (!alive) return;
         setAnalysis(a.analysis ?? null);
         setVisible(null);
-        setMeta({ source: a.source, quality: a.quality, note: a.note });
+        setMeta({ source: a.source, symbol: a.symbol, quality: a.quality, note: a.note });
         const o = await fetch(`/api/ohlcv?${qs(asset, { tf })}`).then((r) => r.json());
         if (!alive) return;
         setCandles(o.candles ?? []);
@@ -156,6 +162,7 @@ export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asse
           <div className="flex items-center gap-2">
             {live ? <span className="pill pill-mint"><span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-mint" /> live</span> : null}
             {meta ? <QualityBadge quality={meta.quality} source={meta.source} note={meta.note} /> : null}
+            {meta && VENUE_META[meta.source as VenueId] && meta.symbol ? <a className="link text-xs" target="_blank" rel="noreferrer" href={VENUE_META[meta.source as VenueId].tradeUrl(splitInstrument(meta.source as VenueId, meta.symbol).base, splitInstrument(meta.source as VenueId, meta.symbol).quote)}>Trade {meta.symbol} on {VENUE_META[meta.source as VenueId].label} ↗</a> : null}
           </div>
         }
       >

@@ -136,7 +136,7 @@ function OpportunitiesInner() {
           <label className="flex flex-col gap-0.5 text-[10px] uppercase tracking-wider text-fg-3">Token
             <input className="!py-1 w-32 text-xs" placeholder="Search" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} />
           </label>
-          {sel("chain", chains.map((c) => [c, c]), "Blockchain")}
+          {sel("chain", chains.map((c) => [c, c]), tab === "speculative" || tab === "spot" ? "Blockchain" : "Exchange")}
           {sel("mcap", [["micro", "Micro < $10M"], ["small", "Small $10M - $300M"], ["mid", "Mid $300M - $10B"], ["large", "Large > $10B"]], "Market cap")}
           {sel("liq", [["thin", "Thin < $100k"], ["ok", "$100k - $5M"], ["deep", "Deep > $5M"]], "Liquidity")}
           {sel("vol", [["low", "< $1M"], ["mid", "$1M - $100M"], ["high", "> $100M"]], "Volume 24h")}

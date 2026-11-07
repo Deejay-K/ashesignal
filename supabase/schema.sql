@@ -392,3 +392,8 @@ create table if not exists public.spot_picks (
 alter table public.spot_picks enable row level security;
 drop policy if exists "spot readable" on public.spot_picks;
 create policy "spot readable" on public.spot_picks for select using (true);
+
+-- ---------- Stage 17: multi-exchange ----------
+alter table public.coin_metrics add column if not exists venue text;   -- binance | okx | bybit | kraken | coinbase
+alter table public.exchange_accounts drop constraint if exists exchange_accounts_exchange_check;
+alter table public.exchange_accounts add constraint exchange_accounts_exchange_check check (exchange in ('kraken','coinbase','binance','okx','bybit'));

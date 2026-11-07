@@ -7,7 +7,8 @@ import { getMarkets, getCoin, getMarketChart } from "@/lib/providers/coingecko";
 /** Resolve with whatever is ready after ms; the underlying work keeps filling the memo for the next request. */
 function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> { return Promise.race([p, new Promise<T>((res) => setTimeout(() => res(fallback), ms))]); }
 export { within };
-import { getKlines, getTradingSymbols } from "@/lib/providers/binance";
+import { getOhlcv } from "./ohlcv";
+import type { VenueId } from "@/lib/venues";
 import { getTrendingPools } from "@/lib/providers/geckoterminal";
 import { analyzeTimeframe } from "@/lib/ta/analysis";
 import { safe } from "@/lib/fetch";
@@ -31,19 +32,19 @@ const EXCLUDE = /usd|usdt|usdc|dai|fdusd|tusd|pyusd|usde|wrapped|wbtc|weth|steth
 const GT_TO_DEX: Record<string, string> = { eth: "ethereum", bsc: "bsc", base: "base", solana: "solana", arbitrum: "arbitrum", polygon_pos: "polygon", avax: "avalanche", optimism: "optimism" };
 
 /** Confirmed + Watching for the top N Binance-listed coins on 4h and 1d (about 2N kline calls, cached). */
-export function liveTaCategories(n = 40): Promise<Opportunity[]> {
-  return cached(`ta:${n}`, 3 * 60_000, async () => {
-    const [top, symsR] = await Promise.all([safe(getMarkets(1, 100, false)), safe(getTradingSymbols())]);
-    if (!top.ok || !symsR.ok) return [];
-    const coins = top.data.filter((c) => symsR.data.has(`${c.symbol}USDT`) && !EXCLUDE.test(c.symbol)).slice(0, n);
+export function liveTaCategories(n = 40, venue?: VenueId | null): Promise<Opportunity[]> {
+  return cached(`ta:${n}:${venue ?? ""}`, 3 * 60_000, async () => {
+    const top = await safe(getMarkets(1, 100, false));
+    if (!top.ok) return [];
+    const coins = top.data.filter((c) => !EXCLUDE.test(c.symbol)).slice(0, n);
     const TFS: Timeframe[] = ["4h", "1d"];
     const now = new Date().toISOString();
     const out: Opportunity[] = [];
     await Promise.all(coins.map(async (c) => {
-      const ks = await Promise.all(TFS.map((tf) => safe(getKlines(`${c.symbol}USDT`, tf, 300))));
+      const ks = await Promise.all(TFS.map((tf) => safe(getOhlcv({ symbol: c.symbol, coingeckoId: c.id, venue }, tf, 300))));
       ks.forEach((k, i) => {
-        if (!k.ok) return;
-        const a = analyzeTimeframe(TFS[i], k.data);
+        if (!k.ok || k.data.quality !== "verified" || !k.data.candles.length) return;
+        const a = analyzeTimeframe(TFS[i], k.data.candles);
         if (!a) return;
         const cat = categorize(a);
         if (cat.category === "none") return;
@@ -51,7 +52,7 @@ export function liveTaCategories(n = 40): Promise<Opportunity[]> {
         const s = a.setup;
         const tp2 = s?.takeProfits[1]?.price ?? s?.takeProfits[0]?.price ?? null;
         out.push({
-          id: `cg:${c.id}|${TFS[i]}`, assetKey: `cg:${c.id}`, category: cat.category, symbol: c.symbol, name: c.name, chain: "binance",
+          id: `cg:${c.id}|${TFS[i]}`, assetKey: `cg:${c.id}`, category: cat.category, symbol: c.symbol, name: c.name, chain: k.data.source,
           price: a.price, marketCap: c.marketCapUsd, volume24h: c.volume24hUsd, liquidity: c.volume24hUsd, side: s?.side ?? null,
           bias: a.outlook.includes("bull") ? "bullish" : a.outlook.includes("bear") ? "bearish" : "neutral",
           risk: s?.kind === "confirmed" && a.volatility.atrPct < 0.04 ? "low" : a.volatility.atrPct > 0.1 || s?.kind === "watch" ? "high" : "medium",

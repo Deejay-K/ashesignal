@@ -38,6 +38,7 @@ Push to a GitHub repo, import in Vercel, add env vars (optional), deploy. All pa
 | `/alerts` | 17 alert types (per-alert push/email choice) (incl. DEX liquidity change and new listings) (price, % move, RSI, MACD cross, pattern, breakout/breakdown, TP/SL, volume spike, Fear & Greed zone) with push, email and inbox |
 | `/portfolio` | Read-only wallet tracking across 6 EVM chains + Solana: holdings, prices, allocation, network split, transactions, value history, manual cost basis → unrealized P&L |
 | Exchange accounts (on `/portfolio`) | Read-only Kraken / Coinbase / Binance keys, encrypted at rest: balances, trade history, FIFO realized P&L and fees |
+| Active exchange (Account / More menu) | Binance, OKX, Bybit, Kraken or Coinbase drive charts, analysis, Discover, prices and trade links; automatic fallback for unlisted coins; read-only account connections for all five. |
 | `/opportunities` | Trading Discovery: Confirmed Trades (green), Watching, Speculative (warning), Spot Investments; filters, sorting, why-explanations, category history, Copy Trade Setup. Manual trading only. |
 | `/screener` | Top 100 coins with live engine metrics on 1h/4h/1d: presets (confirmed longs, oversold bounce, breakouts, squeezes...) and filters on score, RSI, volume, ATR, R:R |
 | Backtest (on every chart) | Replays the engine over the chart history: win rate, expectancy, profit factor, drawdown, equity curve, trade list |

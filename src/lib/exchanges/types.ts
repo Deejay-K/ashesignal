@@ -1,4 +1,4 @@
-export type ExchangeId = "kraken" | "coinbase" | "binance";
+export type ExchangeId = "kraken" | "coinbase" | "binance" | "okx" | "bybit";
 
 export interface ExchangeBalance {
   asset: string; // normalised ticker, e.g. BTC

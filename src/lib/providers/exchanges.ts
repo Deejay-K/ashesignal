@@ -7,10 +7,12 @@ import { TF_MS, type Candle, type Timeframe } from "@/lib/types";
 import { resample } from "@/lib/ta/resample";
 
 export interface Venue {
-  name: "kraken" | "coinbase" | "okx" | "bybit";
+  name: "binance" | "kraken" | "coinbase" | "okx" | "bybit";
   resolve(ticker: string): Promise<string | null>;
   klines(id: string, tf: Timeframe, limit: number): Promise<Candle[]>;
   ticker(id: string): Promise<{ last: number; volumeQuote24h: number | null; change24hPct: number | null }>;
+  /** All spot tickers against a USD-like quote in one call (for gainers/losers/unusual-volume scans). */
+  allTickers?(): Promise<{ base: string; instrument: string; last: number; volumeQuote24h: number; change24hPct: number }[]>;
 }
 
 const QUOTES = ["USDT", "USD", "USDC"];
@@ -51,6 +53,20 @@ export const kraken: Venue = {
     const t = Object.values(r.result)[0];
     const last = +t.c[0];
     return { last, volumeQuote24h: +t.v[1] * last, change24hPct: ((last - +t.o) / +t.o) * 100 };
+  },
+  async allTickers() {
+    const m = await krakenPairMap();
+    const byId = new Map<string, string>();
+    for (const [alt, id] of m) if (alt.endsWith("USD") && !alt.endsWith("USDT") && !alt.endsWith("PYUSD")) byId.set(id, alt);
+    const r = await fetchJson<{ result: Record<string, { c: string[]; v: string[]; o: string }> }>("https://api.kraken.com/0/public/Ticker", { provider: "kraken", ttl: 30_000 });
+    const out: { base: string; instrument: string; last: number; volumeQuote24h: number; change24hPct: number }[] = [];
+    for (const [id, t] of Object.entries(r.result)) {
+      const alt = byId.get(id);
+      if (!alt || +t.o <= 0) continue;
+      const base = alt.slice(0, -3).replace(/^XBT$/, "BTC");
+      out.push({ base, instrument: id, last: +t.c[0], volumeQuote24h: +t.v[1] * +t.c[0], change24hPct: ((+t.c[0] - +t.o) / +t.o) * 100 });
+    }
+    return out;
   },
 };
 
@@ -107,6 +123,10 @@ export const okx: Venue = {
     const t = r.data[0];
     return { last: +t.last, volumeQuote24h: +t.volCcy24h, change24hPct: ((+t.last - +t.open24h) / +t.open24h) * 100 };
   },
+  async allTickers() {
+    const r = await fetchJson<{ data: { instId: string; last: string; volCcy24h: string; open24h: string }[] }>("https://www.okx.com/api/v5/market/tickers?instType=SPOT", { provider: "okx", ttl: 30_000 });
+    return r.data.filter((t) => t.instId.endsWith("-USDT") && +t.open24h > 0).map((t) => ({ base: t.instId.replace("-USDT", ""), instrument: t.instId, last: +t.last, volumeQuote24h: +t.volCcy24h, change24hPct: ((+t.last - +t.open24h) / +t.open24h) * 100 }));
+  },
 };
 
 /* ---------------- Bybit ---------------- */
@@ -130,6 +150,10 @@ export const bybit: Venue = {
     const r = await fetchJson<{ result: { list: { lastPrice: string; turnover24h: string; price24hPcnt: string }[] } }>(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${id}`, { provider: "bybit", ttl: 15_000 });
     const t = r.result.list[0];
     return { last: +t.lastPrice, volumeQuote24h: +t.turnover24h, change24hPct: +t.price24hPcnt * 100 };
+  },
+  async allTickers() {
+    const r = await fetchJson<{ result: { list: { symbol: string; lastPrice: string; turnover24h: string; price24hPcnt: string }[] } }>("https://api.bybit.com/v5/market/tickers?category=spot", { provider: "bybit", ttl: 30_000 });
+    return r.result.list.filter((t) => t.symbol.endsWith("USDT")).map((t) => ({ base: t.symbol.replace(/USDT$/, ""), instrument: t.symbol, last: +t.lastPrice, volumeQuote24h: +t.turnover24h, change24hPct: +t.price24hPcnt * 100 }));
   },
 };
 

@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { fmtUsd } from "@/lib/format";
 import AuthMenu from "./AuthMenu";
 import ThemePicker from "./ThemePicker";
+import VenuePicker from "./VenuePicker";
 
 export const NAV_LINKS = [
   { href: "/", label: "Dashboard", primary: 1 },
@@ -110,7 +111,8 @@ export default function Nav() {
                     {l.label}
                   </Link>
                 ))}
-                <div className="mt-1 border-t border-border px-2 pt-2 text-xs text-fg-3">Theme <ThemePicker compact /></div>
+                <div className="mt-1 border-t border-border px-2 pt-2 text-xs text-fg-3">Exchange <VenuePicker compact /></div>
+                <div className="px-2 pt-1 text-xs text-fg-3">Theme <ThemePicker compact /></div>
               </div>
             ) : null}
           </div>
@@ -174,6 +176,7 @@ export default function Nav() {
               {l.label}
             </Link>
           ))}
+          <div className="col-span-2 flex items-center gap-2 pt-1 text-xs text-fg-3">Exchange <VenuePicker compact /></div>
           <div className="col-span-2 flex items-center gap-2 pt-1 text-xs text-fg-3">Theme <ThemePicker compact /></div>
         </nav>
       ) : null}

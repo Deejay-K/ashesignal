@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getCoin } from "@/lib/providers/coingecko";
-import { resolveSymbol } from "@/lib/providers/binance";
+import { cookies } from "next/headers";
+import { VENUE_COOKIE } from "@/lib/venue-pref";
+import { DEFAULT_VENUE, VENUE_META, isVenueId, venueOrder, type VenueId } from "@/lib/venues";
 import { safe } from "@/lib/fetch";
 import { fmtPct, fmtUsd, pctClass } from "@/lib/format";
 import AnalysisPanel from "@/components/AnalysisPanel";
@@ -34,8 +36,14 @@ export default async function TokenPage({ params }: { params: Promise<{ id: stri
     );
   }
   const c = r.data;
-  const binanceSym = await safe(resolveSymbol(c.symbol));
-  const hasCex = binanceSym.ok && !!binanceSym.data;
+  const jar = await cookies();
+  const venue = isVenueId(jar.get(VENUE_COOKIE)?.value) ? (jar.get(VENUE_COOKIE)!.value as VenueId) : DEFAULT_VENUE;
+  let cexTitle: string | null = null;
+  for (const v of venueOrder(venue)) {
+    const id = await safe(v.resolve(c.symbol));
+    if (id.ok && id.data) { cexTitle = `${id.data} · ${VENUE_META[v.name as VenueId].label}${v.name !== venue ? ` (not listed on ${VENUE_META[venue].label})` : ""}`; break; }
+  }
+  const hasCex = !!cexTitle;
   const chains = Object.entries(c.platforms).filter(([k, v]) => k && v);
   const cexVol = c.tickers.reduce((s, t) => s + (t.volumeUsd ?? 0), 0);
 
@@ -68,7 +76,7 @@ export default async function TokenPage({ params }: { params: Promise<{ id: stri
         <StatCard label="Community" value={c.sentimentUpPct != null ? `${c.sentimentUpPct.toFixed(0)}% 👍` : "-"} sub={<span className="num">{c.twitterFollowers ? `X ${(c.twitterFollowers / 1000).toFixed(0)}K` : ""}{c.redditSubscribers ? ` · r/ ${(c.redditSubscribers / 1000).toFixed(0)}K` : ""}{c.watchlistUsers ? ` · ${(c.watchlistUsers / 1000).toFixed(0)}K watching` : ""}{!c.twitterFollowers && !c.redditSubscribers ? "CoinGecko votes" : ""}</span>} />
       </div>
 
-      <AnalysisPanel asset={{ symbol: c.symbol, id: c.id }} title={hasCex ? `${binanceSym.data} · Binance` : `${c.symbol} · CoinGecko (no Binance pair)`} />
+      <AnalysisPanel asset={{ symbol: c.symbol, id: c.id }} title={hasCex ? cexTitle! : `${c.symbol} · CoinGecko (no exchange pair)`} />
 
       <AiBriefing id={c.id} />
 

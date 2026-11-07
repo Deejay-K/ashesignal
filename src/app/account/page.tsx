@@ -7,6 +7,8 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 import { Empty, Section } from "@/components/ui";
 import PushToggle from "@/components/PushToggle";
 import ThemePicker from "@/components/ThemePicker";
+import VenuePicker from "@/components/VenuePicker";
+import ExchangePanel from "@/components/ExchangePanel";
 
 export default function AccountPage() {
   const sb = supabaseBrowser();
@@ -25,13 +27,19 @@ export default function AccountPage() {
   }, [sb]);
 
   if (email === undefined) return <div className="h-32 animate-pulse rounded-lg bg-bg-3" />;
+  const venueSection = (
+    <Section title="Active exchange" right={<Link href="/glossary#active-exchange" className="link text-xs">what this changes</Link>}>
+      <VenuePicker />
+      <p className="mt-2 text-xs text-fg-3">Charts, analysis, setups, Discover lists, the price board and trade links all follow the active exchange; coins it does not list fall back to the next exchange automatically. Saved on this device and synced to your account when signed in. Switch any time here or from the More menu.</p>
+    </Section>
+  );
   const themeSection = (
     <Section title="Theme">
       <ThemePicker />
       <p className="mt-2 text-xs text-fg-3">Saved on this device; synced to your account when signed in.</p>
     </Section>
   );
-  if (!sb) return <div className="mx-auto max-w-2xl space-y-4"><Empty>Accounts are not configured on this deployment (docs/SETUP.md step 3).</Empty>{themeSection}</div>;
+  if (!sb) return <div className="mx-auto max-w-2xl space-y-4"><Empty>Accounts are not configured on this deployment (docs/SETUP.md step 3).</Empty>{venueSection}{themeSection}</div>;
   if (!email)
     return (
       <div className="mx-auto max-w-2xl space-y-4">
@@ -39,6 +47,7 @@ export default function AccountPage() {
           <p className="text-sm text-fg-2">You are in <b>guest mode</b>. Watchlist and risk profile live in this browser only; setups and alerts are not saved.</p>
           <Link href="/login" className="btn mt-3 inline-block text-sm">Sign in</Link>
         </Section>
+        {venueSection}
         {themeSection}
       </div>
     );
@@ -58,6 +67,11 @@ export default function AccountPage() {
         ))}
       </div>
       <p className="text-sm text-fg-2">New here? The <Link href="/glossary" className="link">glossary</Link> explains every label in the app.</p>
+      {venueSection}
+      <Section title="Exchange connections (read-only)">
+        <p className="mb-2 text-xs text-fg-3">Connect the exchanges you use. Keys are verified read-only, encrypted at rest and only ever used to read balances and trade history; AsheSignal never places orders. Balances and realized P&L show on the Portfolio page.</p>
+        <ExchangePanel />
+      </Section>
       {themeSection}
       <Section title="Notifications">
         <PushToggle />

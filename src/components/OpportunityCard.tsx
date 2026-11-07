@@ -6,6 +6,8 @@ import { RiskBadge } from "@/components/ui";
 import { fmtPct, fmtUsd, pctClass, timeAgo } from "@/lib/format";
 import type { Opportunity } from "@/lib/market/opportunities";
 import Term from "@/components/Term";
+import { currentVenue } from "@/lib/venue-pref";
+import { VENUE_META, isVenueId, tradeLink } from "@/lib/venues";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -21,7 +23,9 @@ function List({ items, bullet = "·" }: { items: string[]; bullet?: string }) {
 
 export function copyTradeText(o: Opportunity): string {
   const d: any = o.detail; const s = d?.setup; const sp = o.spec; const st = o.spot;
+  const venue = currentVenue();
   const lines: string[] = [`${o.symbol} (${o.name}) - ${o.category.toUpperCase()} - AsheSignal`];
+  if (o.category !== "speculative") lines.push(`Pair on ${VENUE_META[venue].label}: ${VENUE_META[venue].instrument(o.symbol, VENUE_META[venue].quotes[0])} - ${tradeLink(venue, o.symbol)}`);
   if (s) {
     lines.push(`Direction: ${s.side}${o.category === "watching" ? " (NOT confirmed yet, provisional levels)" : ""}`);
     lines.push(`Timeframe: ${o.timeframe}`);
@@ -94,6 +98,7 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
         <button className="btn-ghost" onClick={() => setOpen((v) => !v)}>{open ? "Less" : "Details and why"}</button>
         <button className={o.category === "confirmed" ? "btn" : "btn-ghost"} onClick={copy} title="Copies direction, entry, TPs, SLs, sizing to your clipboard. Nothing is sent to any exchange.">{copied ? "Copied" : "Copy Trade Setup"}</button>
         <Link className="btn-ghost" href={o.href}>Full analysis</Link>
+        {o.category !== "speculative" ? <a className="btn-ghost" target="_blank" rel="noreferrer" href={tradeLink(isVenueId(o.chain) ? o.chain : currentVenue(), o.symbol)} title="Opens the spot pair on your exchange in a new tab. You place the order yourself.">Open on {VENUE_META[isVenueId(o.chain) ? o.chain : currentVenue()].label} ↗</a> : null}
         {s ? <Link className="btn-ghost" href={`/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, tf: o.timeframe ?? "", leverage: String(s.leverage?.recommended ?? 1) })}`}>Size it</Link> : null}
         <button className="btn-ghost" onClick={loadHist}>{hist ? "Hide history" : "History"}</button>
         <span className="ml-auto text-fg-3">in category {timeAgo(Date.parse(o.firstSeen))} · updated {timeAgo(Date.parse(o.updatedAt))}</span>

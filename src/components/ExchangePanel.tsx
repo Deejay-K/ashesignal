@@ -17,6 +17,8 @@ const HELP: Record<ExchangeId, string> = {
   kraken: "Kraken: Settings > API > Add key. Tick ONLY 'Query Funds' and 'Query Closed Orders & Trades'. Paste the API Key and Private Key.",
   coinbase: "Coinbase: portal.cdp.coinbase.com > API keys > Create API key > permission 'View' only. Easiest: open the JSON file Coinbase downloaded, copy ALL of its text and paste it into the box below. It works with either ECDSA or Ed25519 keys.",
   binance: "Binance: API Management > Create > 'Enable Reading' only, no trading or withdrawals. Not available to Canadian residents.",
+  okx: "OKX: Profile > API > Create V5 API key > permission 'Read' only. You set a passphrase when creating it; paste API key, secret key and that passphrase.",
+  bybit: "Bybit: Account > API > Create New Key > System-generated > 'Read-Only', no withdrawal. Paste API key and secret.",
 };
 
 export default function ExchangePanel({ onChange }: { onChange?: () => void }) {
@@ -71,6 +73,7 @@ export default function ExchangePanel({ onChange }: { onChange?: () => void }) {
                   <>
                     <label>API key<input className="num" required value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} autoComplete="off" /></label>
                     <label>Secret<input className="num" type="password" required value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} autoComplete="off" /></label>
+                    {form.exchange === "okx" ? <label>Passphrase (set when the key was created)<input className="num" type="password" required value={form.passphrase} onChange={(e) => setForm({ ...form, passphrase: e.target.value })} autoComplete="off" /></label> : null}
                   </>
                 )}
                 <label>Label (optional)<input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} /></label>

@@ -5,6 +5,7 @@ import { categorize, detailSnapshot } from "../src/lib/market/categorize";
 import { sizePosition } from "../src/lib/risk/position";
 import { rsi, macd, bollinger, atr } from "../src/lib/ta/indicators";
 import type { Candle } from "../src/lib/types";
+import { venueOrder, splitInstrument, VENUE_IDS, VENUE_META, tradeLink } from "../src/lib/venues";
 
 function synth(n: number, drift: number, vol: number, seed = 1): Candle[] {
   let s = seed; const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
@@ -129,6 +130,21 @@ import { resolveAgainst } from "../src/lib/alerts/resolve";
   }
   console.log(f3 ? `\n${f3} CATEGORY FAILED` : "CATEGORY PASS");
   if (f3) process.exit(1);
+}
+
+// ---- Stage 17: venue registry ----
+{
+
+  let f4 = 0;
+  const c4 = (n: string, ok: boolean, info?: unknown) => { console.log(`${ok ? "PASS" : "FAIL"} ${n}`, info ?? ""); if (!ok) f4++; };
+  c4("active venue first, all venues present", venueOrder("kraken")[0].name === "kraken" && venueOrder("kraken").length === VENUE_IDS.length);
+  c4("unknown venue falls back to default", venueOrder(null)[0].name === "binance");
+  c4("split OKX", JSON.stringify(splitInstrument("okx", "SOL-USDT")) === JSON.stringify({ base: "SOL", quote: "USDT" }));
+  c4("split Binance", JSON.stringify(splitInstrument("binance", "BTCFDUSD")) === JSON.stringify({ base: "BTC", quote: "FDUSD" }));
+  c4("split Kraken ids", splitInstrument("kraken", "XBT/USD").base === "BTC" && splitInstrument("kraken", "XXRPZUSD").base === "XRP" && splitInstrument("kraken", "SOLUSD").base === "SOL" && splitInstrument("binance", "XRPUSDT").base === "XRP" && splitInstrument("bybit", "XTZUSDT").base === "XTZ");
+  c4("trade links are https", VENUE_IDS.every((v) => tradeLink(v, "ETH").startsWith("https://")) && VENUE_META.coinbase.instrument("ETH", "USD") === "ETH-USD");
+  console.log(f4 ? `\n${f4} VENUE FAILED` : "VENUE PASS");
+  if (f4) process.exit(1);
 }
 
 // ---- Formatting rule: no em/en dashes anywhere in the project ----

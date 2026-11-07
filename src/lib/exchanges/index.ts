@@ -1,11 +1,13 @@
 import { kraken } from "./kraken";
 import { coinbase } from "./coinbase";
 import { binance } from "./binance";
+import { okx } from "./okx";
+import { bybit } from "./bybit";
 import type { ExchangeAdapter, ExchangeFill, ExchangeId } from "./types";
 import { STABLES } from "./types";
 
-export const ADAPTERS: Record<ExchangeId, ExchangeAdapter> = { kraken, coinbase, binance };
-export const EXCHANGE_LABELS: Record<ExchangeId, string> = { kraken: "Kraken", coinbase: "Coinbase", binance: "Binance" };
+export const ADAPTERS: Record<ExchangeId, ExchangeAdapter> = { binance, okx, bybit, kraken, coinbase };
+export const EXCHANGE_LABELS: Record<ExchangeId, string> = { binance: "Binance", okx: "OKX", bybit: "Bybit", kraken: "Kraken", coinbase: "Coinbase" };
 
 export interface RealizedLot { asset: string; realizedUsd: number; feesUsd: number; buys: number; sells: number; remaining: number; avgCost: number | null; firstTrade: string | null; lastTrade: string | null }
 

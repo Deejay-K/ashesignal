@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Opportunity, RiskLevel } from "@/lib/market/opportunities";
 import { liveTaCategories, liveSpeculative, liveSpot, within } from "@/lib/market/live-opportunities";
+import { venueFromRequest } from "@/lib/venue-pref";
 
 export const maxDuration = 60;
 
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
     // Live fallback: any category the worker has not filled yet is computed on request from current market data.
     const has = (c: string) => items.some((i) => i.category === c);
     const jobs: Promise<void>[] = [];
-    if ((want("confirmed") || want("watching")) && (wantLive || (!has("confirmed") && !has("watching")))) jobs.push(within(liveTaCategories(40), 40_000, []).then((x) => { const add = x.filter((i) => want(i.category)); if (add.length) { items.push(...add); live.push("confirmed", "watching"); } }));
+    if ((want("confirmed") || want("watching")) && (wantLive || (!has("confirmed") && !has("watching")))) jobs.push(within(liveTaCategories(40, venueFromRequest(req)), 40_000, []).then((x) => { const add = x.filter((i) => want(i.category)); if (add.length) { items.push(...add); live.push("confirmed", "watching"); } }));
     if (want("speculative") && (wantLive || !has("speculative"))) jobs.push(within(liveSpeculative(4), 40_000, []).then((x) => { if (x.length) { items.push(...x); live.push("speculative"); } }));
     if (want("spot") && (wantLive || !has("spot"))) jobs.push(within(liveSpot(6), 40_000, []).then((x) => { if (x.length) { items.push(...x); live.push("spot"); } }));
     await Promise.all(jobs);
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
       const tp2 = s?.takeProfits?.[1]?.price ?? s?.takeProfits?.[0]?.price ?? null;
       const entry = s?.entry?.mid ?? r.price;
       items.push({
-        id: `${r.asset_key}|${r.timeframe}`, assetKey: r.asset_key, category: r.category, symbol: r.symbol, name: r.name ?? r.symbol, chain: "binance",
+        id: `${r.asset_key}|${r.timeframe}`, assetKey: r.asset_key, category: r.category, symbol: r.symbol, name: r.name ?? r.symbol, chain: r.venue ?? "binance",
         price: r.price, marketCap: r.market_cap, volume24h: r.volume_24h, liquidity: r.volume_24h, side: s?.side ?? null,
         bias: r.outlook?.includes("bull") ? "bullish" : r.outlook?.includes("bear") ? "bearish" : "neutral",
         risk: riskFromMetrics(r), timeframe: r.timeframe, rr: s?.rr ?? r.setup_rr ?? null, confidence: s?.confidence ?? r.setup_confidence ?? null,

@@ -150,6 +150,16 @@ Run `supabase/schema.sql` again (adds `coin_metrics`). The worker fills the scre
 
 Confirmed is a rules result, not a promise: a coin leaves the category on the next worker run once its setup stops qualifying, and the move is logged in the category history. Nothing in this section places orders; "Copy Trade Setup" only copies text to the clipboard.
 
+## 15. Stage 17 - multi-exchange
+
+Run `supabase/schema.sql` again (adds `coin_metrics.venue` and allows OKX/Bybit in `exchange_accounts`). Nothing else to configure.
+
+- **Active exchange** (Account page, or the More menu): Binance, OKX, Bybit, Kraken or Coinbase. Charts, analysis, setups, Discover lists, the price board and every "Open on ..." link follow it. Coins the active exchange does not list fall back to the next one and the chart says so. Guests keep it in the browser; signed-in users have it synced.
+- **Exchange connections** (Account page or Portfolio): read-only API keys for any of the five. OKX needs the passphrase chosen when the key was created; Bybit keys must be "Read-Only". Keys that can trade or withdraw are refused where the exchange reports permissions (Binance, OKX, Bybit, Coinbase); Kraken does not report them, so double-check the ticks.
+- The worker screens the top 100 coins by market cap regardless of exchange; each row records which exchange supplied the candles.
+
+To add another exchange later: one `Venue` (public candles + tickers) in `src/lib/providers/exchanges.ts`, one `VENUE_META` entry in `src/lib/venues.ts`, and optionally one read-only `ExchangeAdapter` in `src/lib/exchanges/`. Nothing else changes.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).

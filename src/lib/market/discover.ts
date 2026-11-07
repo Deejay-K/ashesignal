@@ -2,7 +2,7 @@
 // / losers / recovery candidates, pulls CoinGecko trending and DEX trending/new
 // pools, and runs the 4h analysis on the strongest candidates for bull/bear picks.
 
-import * as binance from "@/lib/providers/binance";
+import { venueOrder, VENUE_META, type VenueId, type BulkTicker } from "@/lib/venues";
 import * as cg from "@/lib/providers/coingecko";
 import * as gt from "@/lib/providers/geckoterminal";
 import { safe } from "@/lib/fetch";
@@ -28,6 +28,7 @@ export interface DiscoverItem {
 }
 
 export interface DiscoverResult {
+  venue: VenueId;
   trending: DiscoverItem[];
   dexTrending: DiscoverItem[];
   newPools: DiscoverItem[];
@@ -48,16 +49,21 @@ const riskFromLiquidity = (liq: number | null, mcap: number | null): { risk: Dis
   return { risk: "low", riskNote: "Established market." };
 };
 
-export async function discover(): Promise<DiscoverResult> {
+export async function discover(activeVenue?: VenueId | null): Promise<DiscoverResult> {
   const errors: string[] = [];
+  // Gainers/losers/unusual volume and the bullish/bearish picks run on the active exchange; venues without a
+  // bulk ticker endpoint (Coinbase) fall back to the next one that has it.
+  const order = venueOrder(activeVenue);
+  const venue = order.find((v) => v.allTickers) ?? order[0];
+  const venueId = venue.name as VenueId;
   const [tickersR, topR, trendR, gtTrendR, gtNewR] = await Promise.all([
-    safe(binance.getAllUsdtTickers()),
+    safe(venue.allTickers ? venue.allTickers() : Promise.resolve([] as BulkTicker[])),
     safe(cg.getMarkets(1, 250, false)),
     safe(cg.getTrending()),
     safe(gt.getTrendingPools()),
     safe(gt.getNewPools()),
   ]);
-  if (!tickersR.ok) errors.push("Binance tickers: " + tickersR.error);
+  if (!tickersR.ok) errors.push(`${VENUE_META[venueId].label} tickers: ` + tickersR.error);
   if (!topR.ok) errors.push("CoinGecko markets: " + topR.error);
   if (!trendR.ok) errors.push("CoinGecko trending: " + trendR.error);
   if (!gtTrendR.ok) errors.push("GeckoTerminal trending: " + gtTrendR.error);
@@ -65,23 +71,22 @@ export async function discover(): Promise<DiscoverResult> {
 
   const top = topR.ok ? topR.data : [];
   const bySym = new Map(top.map((c) => [c.symbol, c]));
-  const tickers = (tickersR.ok ? tickersR.data : []).filter((t) => t.quoteVolume > 2_000_000); // ignore dust pairs
+  const tickers = (tickersR.ok ? tickersR.data : []).filter((t) => t.volumeQuote24h > 2_000_000 && !/UP$|DOWN$|BULL$|BEAR$|^[0-9]+[LS]$/.test(t.base)); // ignore dust and leveraged tokens
 
-  const toItem = (t: binance.Ticker24h, metric: string): DiscoverItem => {
-    const sym = t.symbol.replace("USDT", "");
-    const c = bySym.get(sym);
+  const toItem = (t: BulkTicker, metric: string): DiscoverItem => {
+    const c = bySym.get(t.base);
     const r = riskFromLiquidity(null, c?.marketCapUsd ?? null);
-    return { symbol: sym, name: c?.name, id: c?.id, priceUsd: t.lastPrice, change24hPct: t.priceChangePercent, volume24hUsd: t.quoteVolume, marketCapUsd: c?.marketCapUsd ?? null, metric, source: "binance", ...r };
+    return { symbol: t.base, name: c?.name, id: c?.id, priceUsd: t.last, change24hPct: t.change24hPct, volume24hUsd: t.volumeQuote24h, marketCapUsd: c?.marketCapUsd ?? null, metric, source: venueId, ...r };
   };
 
-  const gainers = [...tickers].sort((a, b) => b.priceChangePercent - a.priceChangePercent).slice(0, 12).map((t) => toItem(t, `+${t.priceChangePercent.toFixed(1)}% in 24h`));
-  const losers = [...tickers].sort((a, b) => a.priceChangePercent - b.priceChangePercent).slice(0, 12).map((t) => toItem(t, `${t.priceChangePercent.toFixed(1)}% in 24h`));
+  const gainers = [...tickers].sort((a, b) => b.change24hPct - a.change24hPct).slice(0, 12).map((t) => toItem(t, `+${t.change24hPct.toFixed(1)}% in 24h`));
+  const losers = [...tickers].sort((a, b) => a.change24hPct - b.change24hPct).slice(0, 12).map((t) => toItem(t, `${t.change24hPct.toFixed(1)}% in 24h`));
 
   // unusual volume: 24h quote volume vs market cap (turnover) for coins we know the cap of
   const unusualVolume = tickers
     .map((t) => {
-      const c = bySym.get(t.symbol.replace("USDT", ""));
-      const turnover = c?.marketCapUsd ? t.quoteVolume / c.marketCapUsd : null;
+      const c = bySym.get(t.base);
+      const turnover = c?.marketCapUsd ? t.volumeQuote24h / c.marketCapUsd : null;
       return { t, turnover };
     })
     .filter((x) => x.turnover != null && x.turnover > 0.15)
@@ -115,11 +120,12 @@ export async function discover(): Promise<DiscoverResult> {
   const dexTrending = (gtTrendR.ok ? gtTrendR.data : []).slice(0, 20).map((p) => poolItem(p, "Trending DEX pool"));
   const newPools = (gtNewR.ok ? gtNewR.data : []).slice(0, 20).map((p) => poolItem(p, p.createdAt ? `Created ${timeAgo(p.createdAt)}` : "New pool"));
 
-  // bullish/bearish picks: run 4h analysis on top-40 by market cap that are on Binance
-  const candidates = top.slice(0, 40).filter((c) => tickers.some((t) => t.symbol === `${c.symbol}USDT`));
+  // bullish/bearish picks: run 4h analysis on the top-40 by market cap that trade on the active exchange
+  const listed = new Map(tickers.map((t) => [t.base, t.instrument]));
+  const candidates = top.slice(0, 40).filter((c) => listed.has(c.symbol));
   const analyzed = await Promise.all(
     candidates.slice(0, 30).map(async (c) => {
-      const r = await safe(binance.getKlines(`${c.symbol}USDT`, "4h", 300));
+      const r = await safe(venue.klines(listed.get(c.symbol)!, "4h", 300));
       if (!r.ok) return null;
       const a = analyzeTimeframe("4h", r.data);
       if (!a) return null;
@@ -127,11 +133,11 @@ export async function discover(): Promise<DiscoverResult> {
     }),
   );
   const scored = analyzed.filter((x): x is NonNullable<typeof x> => !!x);
-  const pick = (x: NonNullable<(typeof scored)[number]>): DiscoverItem => ({ symbol: x.c.symbol, name: x.c.name, id: x.c.id, priceUsd: x.a.price, change24hPct: x.c.change24hPct, volume24hUsd: x.c.volume24hUsd, marketCapUsd: x.c.marketCapUsd, metric: `4h score ${x.a.score > 0 ? "+" : ""}${x.a.score} · ${x.a.outlook}${x.a.setup ? ` · ${x.a.setup.kind} ${x.a.setup.side}` : ""}`, score: x.a.score, source: "binance", ...riskFromLiquidity(null, x.c.marketCapUsd) });
+  const pick = (x: NonNullable<(typeof scored)[number]>): DiscoverItem => ({ symbol: x.c.symbol, name: x.c.name, id: x.c.id, priceUsd: x.a.price, change24hPct: x.c.change24hPct, volume24hUsd: x.c.volume24hUsd, marketCapUsd: x.c.marketCapUsd, metric: `4h score ${x.a.score > 0 ? "+" : ""}${x.a.score} · ${x.a.outlook}${x.a.setup ? ` · ${x.a.setup.kind} ${x.a.setup.side}` : ""}`, score: x.a.score, source: venueId, ...riskFromLiquidity(null, x.c.marketCapUsd) });
   const bullish = scored.filter((x) => x.a.score >= 15).sort((a, b) => b.a.score - a.a.score).slice(0, 8).map(pick);
   const bearish = scored.filter((x) => x.a.score <= -15).sort((a, b) => a.a.score - b.a.score).slice(0, 8).map(pick);
 
-  return { trending, dexTrending, newPools, unusualVolume, gainers, losers, recovering, bullish, bearish, errors, generatedAt: Date.now() };
+  return { venue: venueId, trending, dexTrending, newPools, unusualVolume, gainers, losers, recovering, bullish, bearish, errors, generatedAt: Date.now() };
 }
 
 function fmtK(v: number) {

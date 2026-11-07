@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { currentVenue, setVenue } from "@/lib/venue-pref";
+import { isVenueId } from "@/lib/venues";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { getWatchlist, setWatchlistSignedIn, syncFromAccount } from "@/lib/watchlist";
 import { applyTheme, currentTheme } from "@/lib/themes";
@@ -24,7 +26,7 @@ export default function AuthMenu() {
       setReady(true);
       if (data.user) {
         syncFromAccount();
-        fetch("/api/me/profile").then((r) => (r.ok ? r.json() : null)).then((j) => { const th = j?.profile?.preferences?.theme; if (th && th !== currentTheme()) applyTheme(th); }).catch(() => {});
+        fetch("/api/me/profile").then((r) => (r.ok ? r.json() : null)).then((j) => { const th = j?.profile?.preferences?.theme; if (th && th !== currentTheme()) applyTheme(th); const v = j?.profile?.preferences?.venue; if (isVenueId(v) && v !== currentVenue()) setVenue(v); }).catch(() => {});
       } else setWatchlistSignedIn(false);
     });
     const { data: sub } = sb.auth.onAuthStateChange(async (event, session) => {
