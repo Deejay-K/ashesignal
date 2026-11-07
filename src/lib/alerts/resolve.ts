@@ -65,7 +65,7 @@ const r = (v: number) => Math.round(v * 10000) / 100;
 /** Resolve all open rows of a table. Returns counts. */
 export async function resolveTable(sb: SupabaseClient, table: "saved_setups" | "signal_log") {
   const isSaved = table === "saved_setups";
-  const { data, error } = await sb.from(table).select("*").is(isSaved ? "resolved_at" : "outcome_at", null).limit(300);
+  const { data, error } = await sb.from(table).select("*").is(isSaved ? "resolved_at" : "outcome_at", null).order(isSaved ? "last_checked_at" : "emitted_at", { ascending: true, nullsFirst: true }).limit(40);
   if (error) throw new Error(error.message);
   let checked = 0;
   let resolved = 0;

@@ -15,6 +15,10 @@ const TFS: Timeframe[] = ["1h", "4h", "1d"];
  * Runs the engine on the top-30 Binance-listed coins and logs every emitted setup to
  * signal_log (once per asset/timeframe/side until that one resolves). This is what the
  * public /performance page measures — the engine grading itself on real outcomes.
+ *
+ * Batched so each request stays well inside serverless time limits:
+ *   ?batch=0..3  → coins 0-7, 8-15, 16-23, 24-29 (default: picks the batch from the current minute)
+ *   ?all=1       → every coin in one request (only on a plan with long function timeouts)
  */
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -23,23 +27,37 @@ export async function GET(req: Request) {
   const top = await safe(getMarkets(1, 60, false));
   if (!top.ok) return NextResponse.json({ error: top.error }, { status: 502 });
   const syms = await getTradingSymbols();
-  const coins = top.data.filter((c) => syms.has(`${c.symbol}USDT`)).slice(0, 30);
+  const url = new URL(req.url);
+  const allCoins = top.data.filter((c) => syms.has(`${c.symbol}USDT`)).slice(0, 30);
+  const BATCH = 8;
+  const batches = Math.ceil(allCoins.length / BATCH);
+  const batchParam = url.searchParams.get("batch");
+  const batch = url.searchParams.get("all") ? -1 : batchParam != null ? Number(batchParam) % batches : Math.floor(new Date().getMinutes() / 5) % batches;
+  const coins = batch < 0 ? allCoins : allCoins.slice(batch * BATCH, batch * BATCH + BATCH);
   const { data: open } = await sb.from("signal_log").select("asset_key, timeframe, side").is("outcome_at", null);
   const openSet = new Set((open ?? []).map((o) => `${o.asset_key}|${o.timeframe}|${o.side}`));
   let logged = 0;
-  for (const c of coins) {
-    for (const tf of TFS) {
-      const k = await safe(getKlines(`${c.symbol}USDT`, tf, 400));
-      if (!k.ok) continue;
-      const a = analyzeTimeframe(tf, k.data);
-      if (!a?.setup) continue;
-      const key = `cg:${c.id}|${tf}|${a.setup.side}`;
-      if (openSet.has(key)) continue;
-      const s = a.setup;
-      await sb.from("signal_log").insert({ asset_key: `cg:${c.id}`, symbol: c.symbol, timeframe: tf, side: s.side, kind: s.kind, entry: s.entry.mid, tp1: s.takeProfits[0]?.price, tp2: s.takeProfits[1]?.price, tp3: s.takeProfits[2]?.price, sl1: s.stopLosses[0]?.price, score: a.score, confidence: s.confidence });
-      openSet.add(key);
-      logged++;
-    }
+  const rows: Record<string, unknown>[] = [];
+  await Promise.all(
+    coins.map(async (c) => {
+      const ks = await Promise.all(TFS.map((tf) => safe(getKlines(`${c.symbol}USDT`, tf, 300))));
+      ks.forEach((k, i) => {
+        if (!k.ok) return;
+        const tf = TFS[i];
+        const a = analyzeTimeframe(tf, k.data);
+        if (!a?.setup) return;
+        const key = `cg:${c.id}|${tf}|${a.setup.side}`;
+        if (openSet.has(key)) return;
+        openSet.add(key);
+        const s = a.setup;
+        rows.push({ asset_key: `cg:${c.id}`, symbol: c.symbol, timeframe: tf, side: s.side, kind: s.kind, entry: s.entry.mid, tp1: s.takeProfits[0]?.price, tp2: s.takeProfits[1]?.price, tp3: s.takeProfits[2]?.price, sl1: s.stopLosses[0]?.price, score: a.score, confidence: s.confidence });
+      });
+    }),
+  );
+  if (rows.length) {
+    const { error } = await sb.from("signal_log").insert(rows);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    logged = rows.length;
   }
-  return NextResponse.json({ ok: true, coins: coins.length, logged, at: new Date().toISOString() });
+  return NextResponse.json({ ok: true, batch: batch < 0 ? "all" : `${batch + 1}/${batches}`, coins: coins.map((c) => c.symbol), logged, at: new Date().toISOString() });
 }
