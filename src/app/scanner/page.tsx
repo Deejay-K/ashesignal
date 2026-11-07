@@ -9,6 +9,7 @@ import AnalysisPanel from "@/components/AnalysisPanel";
 import { GECKOTERMINAL_NETWORK } from "@/lib/providers/chains";
 import WatchButton from "@/components/WatchButton";
 import AiBriefing from "@/components/AiBriefing";
+import WhalePanel from "@/components/WhalePanel";
 
 export default function ScannerPage() {
   return (
@@ -154,6 +155,7 @@ function Report({ r }: { r: ScanReport }) {
       ) : (
         <Empty>{r.analysisNote || "No chartable pool."}</Empty>
       )}
+      <WhalePanel w={r.whales} explorerTx={r.chain?.explorer ? r.chain.explorer.replace(/token\/$/, "tx/") : undefined} />
       {r.analysis ? <AiBriefing address={r.address} /> : null}
     </div>
   );

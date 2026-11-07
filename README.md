@@ -41,6 +41,8 @@ Push to a GitHub repo, import in Vercel, add env vars (optional), deploy. All pa
 
 AI analyst briefings (Stage 5) sit under every analysis: a Claude model writes the plain-language read strictly from the engine's numbers, keeps a history per asset, and the dashboard carries an hourly market briefing.
 
+Token pages carry a live cross-exchange price board (Binance, OKX, Bybit, Kraken, Coinbase) with aggregate and spread; the scanner shows whale transfers with exchange-flow direction.
+
 Every number shows its **source and quality** (verified / estimated / unavailable).
 
 ## What is *not* in Stage 1 (and the plan)

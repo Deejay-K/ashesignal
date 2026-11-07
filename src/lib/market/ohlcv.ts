@@ -7,6 +7,9 @@ import { TF_MS, type Candle, type OhlcvResult, type Timeframe } from "@/lib/type
 import * as binance from "@/lib/providers/binance";
 import * as gt from "@/lib/providers/geckoterminal";
 import * as cg from "@/lib/providers/coingecko";
+import { VENUES } from "@/lib/providers/exchanges";
+import { resample } from "@/lib/ta/resample";
+export { resample };
 
 export interface AssetRef {
   symbol?: string; // ticker e.g. "SOL"
@@ -25,6 +28,19 @@ export async function getOhlcv(ref: AssetRef, tf: Timeframe, limit = 500): Promi
       }
     } catch (e) {
       console.warn("binance ohlcv failed", (e as Error).message);
+    }
+  }
+  // 1b) other CEX venues (OKX → Bybit → Kraken → Coinbase)
+  if (ref.symbol) {
+    for (const v of VENUES) {
+      try {
+        const id = await v.resolve(ref.symbol);
+        if (!id) continue;
+        const candles = await v.klines(id, tf, limit);
+        if (candles.length) return { candles, source: v.name, symbol: id, quality: "verified", note: candles.length < 60 ? `${v.name} only returned ${candles.length} candles on ${tf}.` : undefined };
+      } catch (e) {
+        console.warn(`${v.name} ohlcv failed`, (e as Error).message);
+      }
     }
   }
   // 2) GeckoTerminal
@@ -52,26 +68,6 @@ export async function getOhlcv(ref: AssetRef, tf: Timeframe, limit = 500): Promi
     }
   }
   return { candles: [], source: "none", symbol: ref.symbol ?? ref.coingeckoId ?? ref.pool?.address ?? "?", quality: "unavailable", note: "No OHLCV source could serve this asset on this timeframe." };
-}
-
-export function resample(c: Candle[], bucketMs: number): Candle[] {
-  const out: Candle[] = [];
-  const bucketS = bucketMs / 1000;
-  let cur: Candle | null = null;
-  for (const x of c) {
-    const b = Math.floor(x.time / bucketS) * bucketS;
-    if (!cur || cur.time !== b) {
-      if (cur) out.push(cur);
-      cur = { time: b, open: x.open, high: x.high, low: x.low, close: x.close, volume: x.volume };
-    } else {
-      cur.high = Math.max(cur.high, x.high);
-      cur.low = Math.min(cur.low, x.low);
-      cur.close = x.close;
-      cur.volume += x.volume;
-    }
-  }
-  if (cur) out.push(cur);
-  return out;
 }
 
 function synthesize(points: { t: number; p: number; v: number }[], bucketMs: number): Candle[] {

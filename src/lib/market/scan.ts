@@ -6,6 +6,7 @@ import * as goplus from "@/lib/providers/goplus";
 import { safe } from "@/lib/fetch";
 import type { DexPair, Timeframe } from "@/lib/types";
 import { analyzeAsset, type MultiTfAnalysis } from "./analyze";
+import { whaleWatch, type WhaleReport } from "./whales";
 
 export interface ScanReport {
   address: string;
@@ -32,6 +33,7 @@ export interface ScanReport {
   tradingActivity: { flags: string[] };
   analysis: MultiTfAnalysis | null;
   analysisNote: string;
+  whales: WhaleReport | null;
   verdict: { riskLevel: "low" | "medium" | "high" | "extreme"; summary: string };
   generatedAt: number;
 }
@@ -51,6 +53,7 @@ export async function scanAddress(raw: string, tfs?: Timeframe[]): Promise<ScanR
     tradingActivity: { flags: [] },
     analysis: null,
     analysisNote: "",
+    whales: null,
     verdict: { riskLevel: "extreme", summary: "" },
     generatedAt: Date.now(),
   };
@@ -123,7 +126,8 @@ export async function scanAddress(raw: string, tfs?: Timeframe[]): Promise<ScanR
     base.securityNote = chainId ? `No automated security provider for ${chain?.name ?? chainId} yet.` : "Chain unknown — security not checked.";
   }
 
-  // technical analysis via the main pool
+  // technical analysis via the main pool (+ whale watch in parallel)
+  const whaleP = main && chainId ? safe(whaleWatch(chainId, address, base.market.priceUsd)) : null;
   if (main && chainId && GECKOTERMINAL_NETWORK[chainId]) {
     const a = await safe(analyzeAsset({ symbol: base.token?.symbol, pool: { network: GECKOTERMINAL_NETWORK[chainId], address: main.pairAddress } }, tfs));
     if (a.ok) {
@@ -133,6 +137,12 @@ export async function scanAddress(raw: string, tfs?: Timeframe[]): Promise<ScanR
     } else base.analysisNote = "Analysis failed: " + a.error;
   } else if (main) {
     base.analysisNote = `Candle data not available for ${chain?.name ?? chainId} pools.`;
+  }
+
+  if (whaleP) {
+    const w = await whaleP;
+    base.whales = w.ok ? w.data : { available: false, note: w.error, thresholdUsd: 0, transfers: [], summary: { count: 0, inflowUsd: 0, outflowUsd: 0, netToExchangesUsd: 0, largestUsd: 0 } };
+    if (base.whales.available && base.whales.summary.netToExchangesUsd > 100_000 && base.whales.summary.inflowUsd > base.whales.summary.outflowUsd * 1.5) base.tradingActivity.flags.push(`Whale flow: ${fmtK(base.whales.summary.netToExchangesUsd)} net moved to exchange wallets recently.`);
   }
 
   // verdict
@@ -151,3 +161,5 @@ export async function scanAddress(raw: string, tfs?: Timeframe[]): Promise<ScanR
   base.verdict = { riskLevel: risk, summary: parts.join(" ") };
   return base;
 }
+
+const fmtK = (v: number) => (v >= 1e6 ? `$${(v / 1e6).toFixed(1)}M` : `$${(v / 1e3).toFixed(0)}K`);

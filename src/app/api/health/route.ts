@@ -4,6 +4,7 @@ import { getGlobal } from "@/lib/providers/coingecko";
 import { getFearGreed } from "@/lib/providers/feargreed";
 import { searchPairs } from "@/lib/providers/dexscreener";
 import { getTrendingPools } from "@/lib/providers/geckoterminal";
+import { VENUES } from "@/lib/providers/exchanges";
 import { SUPABASE_ENABLED } from "@/lib/supabase/env";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export async function GET() {
     t("dexscreener.search", () => searchPairs("PEPE")),
     t("geckoterminal.trending", () => getTrendingPools()),
     t("alternative.me.fng", () => getFearGreed(1)),
+    ...VENUES.map((v) => t(`${v.name}.ticker BTC`, async () => { const id = await v.resolve("BTC"); if (!id) throw new Error("no BTC pair"); return v.ticker(id); })),
   ]);
   return NextResponse.json({
     ok: checks.every((c) => c.ok),
