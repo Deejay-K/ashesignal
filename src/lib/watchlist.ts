@@ -1,6 +1,6 @@
 // Hybrid watchlist store.
-//  - Guest: localStorage only.
-//  - Signed in: the account (Supabase via /api/me/watchlist) is the source of truth;
+// - Guest: localStorage only.
+// - Signed in: the account (Supabase via /api/me/watchlist) is the source of truth;
 //    localStorage mirrors it so the UI can render instantly. The guest list is merged
 //    into the account once on sign-in (see AuthMenu).
 

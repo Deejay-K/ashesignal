@@ -63,6 +63,20 @@ const seq = [...Array(30).fill(0).map((_, i) => 100 - i * 1.5), ...Array(15).fil
 for (const p of seq) { db.push({ time: t += 3600, open: p, high: p * 1.01, low: p * 0.99, close: p, volume: 1000 }); }
 const pats = detectPatterns(db);
 check("double bottom detected", pats.some(p => p.name === "Double Bottom"), pats.map(p => `${p.name}/${p.status}`));
+check("double bottom has drawable geometry", (pats.find(p => p.name === "Double Bottom")?.lines.length ?? 0) >= 2 && (pats.find(p => p.name === "Double Bottom")?.points.length ?? 0) === 2);
+check("double bottom status is confirmed or completed", ["confirmed", "completed"].includes(pats.find(p => p.name === "Double Bottom")?.status ?? ""));
+// targets always present (watch kind when neutral)
+{
+  const flatA = analyzeTimeframe("1h", flat)!;
+  check("flat market still has a full target set", !!flatA.setup && flatA.setup.takeProfits.length >= 3 && flatA.setup.stopLosses.length === 2, flatA.setup ? { kind: flatA.setup.kind, tps: flatA.setup.takeProfits.length, issues: flatA.setup.quality.issues.length } : null);
+  check("neutral score is labelled watch, not deleted", flatA.setup?.kind === "watch" || Math.abs(flatA.score) >= 15, { score: flatA.score, kind: flatA.setup?.kind });
+  check("every target has a basis + reliability flag", !!flatA.setup && flatA.setup.takeProfits.every(t => t.basis && typeof t.reliable === "boolean"));
+  // candlestick + structure detectors run without throwing on all synthetic sets
+  for (const [n, set] of [["up", up], ["down", down], ["flat", flat]] as const) {
+    const ps = detectPatterns(set);
+    check(`patterns run on ${n} (${ps.length})`, Array.isArray(ps) && ps.every(p => ["forming", "confirmed", "completed", "failed", "invalidated"].includes(p.status)));
+  }
+}
 
 // risk
 const r = sizePosition({ tradingBalance: 5000, riskPct: 1, maxExposurePct: 25, side: "LONG", entry: 100, stop: 95, takeProfits: [105, 110, 120] });
@@ -97,4 +111,23 @@ import { resolveAgainst } from "../src/lib/alerts/resolve";
   c2("mfe/mae recorded", r.maxFavorablePct === 8 && r.maxAdversePct === 3, r);
   console.log(f2 ? `\n${f2} RESOLVER FAILED` : "RESOLVER PASS");
   if (f2) process.exit(1);
+}
+
+// ---- Formatting rule: no em/en dashes anywhere in the project ----
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+{
+  const bad: string[] = [];
+  const walk = (dir: string) => {
+    for (const f of readdirSync(dir)) {
+      const p = join(dir, f);
+      if (f === "node_modules" || f === ".next" || f === ".git") continue;
+      if (statSync(p).isDirectory()) walk(p);
+      else if (/\.(ts|tsx|css|md|sql|yml|js|json)$/.test(f) && /[\u2014\u2013]/.test(readFileSync(p, "utf8"))) bad.push(p);
+    }
+  };
+  for (const d of ["src", "docs", "scripts", "supabase", "public"]) walk(d);
+  if (/[\u2014\u2013]/.test(readFileSync("README.md", "utf8"))) bad.push("README.md");
+  console.log(bad.length ? `FAIL em/en dashes found in: ${bad.join(", ")}` : "PASS no em/en dashes in project");
+  if (bad.length) process.exit(1);
 }

@@ -32,31 +32,26 @@ Without a key CoinGecko allows ~30 requests/min and will sometimes answer `429`.
 Skip this if you only want guest mode. When you do it:
 
 **a. Create the project**
-
 1. https://supabase.com → **New project** → name `ashesignal`, pick a region close to you (ca-central / us-east), set a DB password (save it somewhere), Free plan.
 2. Wait ~1 min for it to provision.
 
 **b. Create the tables**
-
 1. Left sidebar → **SQL Editor** → **New query**.
 2. Open `supabase/schema.sql` from this repo, paste the whole file, **Run**. You should see "Success".
 
 **c. Enable sign-in methods**
-
 1. **Authentication → Providers → Email**: keep it on (magic links work out of the box).
 2. Optional Google: **Providers → Google** → enable → you need a Google OAuth client ID/secret from https://console.cloud.google.com (APIs & Services → Credentials → OAuth client → Web). Add `https://<your-project-ref>.supabase.co/auth/v1/callback` as an authorized redirect URI in Google, paste the ID/secret into Supabase, save.
 3. **Authentication → URL Configuration**:
-   - Site URL: `http://localhost:3000` for now (change to your Vercel URL later)
-   - Redirect URLs: add `http://localhost:3000/auth/callback` and later `https://ashesignal.vercel.app/auth/callback`
+ - Site URL: `http://localhost:3000` for now (change to your Vercel URL later)
+ - Redirect URLs: add `http://localhost:3000/auth/callback` and later `https://ashesignal.vercel.app/auth/callback`
 
 **d. Keys into `.env.local`**
 Project **Settings → API**:
-
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...   (the "anon public" key)
 ```
-
 Restart `npm run dev`. A **Sign in** button appears in the nav. Sign in with a magic link; your guest watchlist is merged into the account automatically.
 
 ## 4. GitHub (new private repo)
@@ -82,7 +77,6 @@ The worker is three protected endpoints on your deployed app. Something has to c
 **a. Re-run the schema** - Supabase → SQL Editor → paste `supabase/schema.sql` again → Run (it only adds the new columns/tables).
 
 **b. Secrets in Vercel** (Project → Settings → Environment Variables), then redeploy:
-
 ```
 SUPABASE_SERVICE_ROLE_KEY = your sb_secret_… key
 CRON_SECRET               = any long random string (e.g. 32 random characters)
@@ -90,9 +84,8 @@ NEXT_PUBLIC_SITE_URL      = https://ashesignal.vercel.app   (your real URL)
 ```
 
 **c. Scheduling - pick one:**
-
-- _Free, every 5 minutes (recommended):_ GitHub → your repo → **Settings → Secrets and variables → Actions** → add `APP_URL` (`https://ashesignal.vercel.app`) and `CRON_SECRET` (same value as Vercel). The workflow `.github/workflows/worker.yml` is already in the repo; GitHub starts running it automatically. Check **Actions** tab for green runs.
-- _Vercel Cron:_ `vercel.json` already schedules the three endpoints once a day (Hobby plan limit). Vercel Pro allows `*/5 * * * *`.
+- *Free, every 5 minutes (recommended):* GitHub → your repo → **Settings → Secrets and variables → Actions** → add `APP_URL` (`https://ashesignal.vercel.app`) and `CRON_SECRET` (same value as Vercel). The workflow `.github/workflows/worker.yml` is already in the repo; GitHub starts running it automatically. Check **Actions** tab for green runs.
+- *Vercel Cron:* `vercel.json` already schedules the three endpoints once a day (Hobby plan limit). Vercel Pro allows `*/5 * * * *`.
 
 **d. Verify:** open `https://<your-url>/api/cron/resolve?secret=<CRON_SECRET>` in a browser → you should get `{"ok":true,…}`. Then `/performance` starts filling after the first `/api/cron/signals` run.
 
@@ -117,7 +110,6 @@ Cost basis is entered manually per asset (tap "set" in the Holdings table) and d
 With **no key at all**, briefings are written by the built-in engine writer - same format, every number from the engine, zero cost. Just run `supabase/schema.sql` again (adds `ai_briefings`) and press **Generate briefing** on any token page.
 
 Optional upgrade to a real language model for richer prose - two free options (no card needed):
-
 - **Groq**: https://console.groq.com/keys → create key. Vercel env: `AI_BASE_URL=https://api.groq.com/openai/v1`, `AI_API_KEY=<key>`, `AI_MODEL=llama-3.3-70b-versatile`.
 - **Google Gemini**: https://aistudio.google.com/apikey → create key. Vercel env: `AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`, `AI_API_KEY=<key>`, `AI_MODEL=gemini-2.0-flash`.
 - (Paid) **Claude**: `ANTHROPIC_API_KEY` from console.anthropic.com; default model `claude-haiku-5-5`.
@@ -132,16 +124,16 @@ Run `supabase/schema.sql` once more (adds notes, pool snapshots, listing waterma
 
 - `npm run build` must pass before pushing (Vercel runs the same build).
 - `npx tsx scripts/selftest.ts` runs the analysis-engine regression test.
-- If Binance returns errors (some regions/ISPs block `api.binance.com`), charts for CEX coins fall back to CoinGecko (flagged _estimated_). Tell me and I'll add a `BINANCE_BASE_URL` override.
+- If Binance returns errors (some regions/ISPs block `api.binance.com`), charts for CEX coins fall back to CoinGecko (flagged *estimated*). Tell me and I'll add a `BINANCE_BASE_URL` override.
 
 ## Guest vs account
 
-|                                                                                 | Guest             | Signed in          |
-| ------------------------------------------------------------------------------- | ----------------- | ------------------ |
-| Market data, charts, analysis, scanner, discover, risk calc                     | ✓                 | ✓                  |
-| Watchlist                                                                       | this browser only | synced (Supabase)  |
-| Save setups, auto-resolved vs live price, personal hit-rate (`/setups`)         | ✗                 | ✓                  |
-| Alerts (price, %, RSI, MACD, pattern, breakout, volume, F&G) + push/email/inbox | ✗                 | ✓                  |
-| Wallet / portfolio tracking with history and cost basis                         | ✗                 | ✓                  |
-| AI briefings                                                                    | read cached       | generate + history |
-| Risk profile (balance, risk %, exposure, leverage)                              | this browser only | synced             |
+| | Guest | Signed in |
+|---|---|---|
+| Market data, charts, analysis, scanner, discover, risk calc | ✓ | ✓ |
+| Watchlist | this browser only | synced (Supabase) |
+| Save setups, auto-resolved vs live price, personal hit-rate (`/setups`) | ✗ | ✓ |
+| Alerts (price, %, RSI, MACD, pattern, breakout, volume, F&G) + push/email/inbox | ✗ | ✓ |
+| Wallet / portfolio tracking with history and cost basis | ✗ | ✓ |
+| AI briefings | read cached | generate + history |
+| Risk profile (balance, risk %, exposure, leverage) | this browser only | synced |

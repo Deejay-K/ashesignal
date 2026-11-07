@@ -32,9 +32,9 @@ export interface Candle {
 
 /**
  * Every number the app shows is tagged with how trustworthy it is.
- *  - verified: straight from an exchange or on-chain indexer
- *  - estimated: derived/aggregated (e.g. DEX price averaged across pools)
- *  - unavailable: we could not get it
+ * - verified: straight from an exchange or on-chain indexer
+ * - estimated: derived/aggregated (e.g. DEX price averaged across pools)
+ * - unavailable: we could not get it
  */
 export type DataQuality = "verified" | "estimated" | "unavailable";
 

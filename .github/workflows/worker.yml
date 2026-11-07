@@ -3,22 +3,22 @@
 name: AsheSignal worker
 on:
   schedule:
-    - cron: "*/5 * * * *"
+ - cron: "*/5 * * * *"
   workflow_dispatch:
 jobs:
   tick:
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve setups & signals
+ - name: Resolve setups & signals
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/resolve?secret=${{ secrets.CRON_SECRET }}" || true
-      - name: Evaluate alerts
+ - name: Evaluate alerts
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/alerts?secret=${{ secrets.CRON_SECRET }}" || true
-      - name: Log engine signals (one batch of coins per tick, rotates automatically)
+ - name: Log engine signals (one batch of coins per tick, rotates automatically)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/signals?secret=${{ secrets.CRON_SECRET }}" || true
-      - name: Portfolio snapshots (skips users snapshotted <20h ago)
+ - name: Portfolio snapshots (skips users snapshotted <20h ago)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/snapshot?secret=${{ secrets.CRON_SECRET }}" || true
-      - name: AI market briefing (hourly)
+ - name: AI market briefing (hourly)
         if: ${{ github.event_name == 'workflow_dispatch' || endsWith(github.run_id, '3') }}
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/briefing?secret=${{ secrets.CRON_SECRET }}" || true
-      - name: DEX liquidity snapshot
+ - name: DEX liquidity snapshot
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/liquidity?secret=${{ secrets.CRON_SECRET }}" || true

@@ -7,10 +7,14 @@ import {
   LineSeries,
   LineStyle,
   createChart,
+  createSeriesMarkers,
   type IChartApi,
   type ISeriesApi,
+  type SeriesMarker,
+  type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
+import type { Pattern } from "@/lib/ta/patterns";
 import type { Candle } from "@/lib/types";
 import { bollinger, ema, sma } from "@/lib/ta/indicators";
 import type { TimeframeAnalysis } from "@/lib/ta/analysis";
@@ -25,15 +29,31 @@ export interface ChartOverlays {
   patterns?: boolean;
 }
 
+const MINT = "#36bd94";
+const RED = "#f0506e";
+const GRAY = "#6b7a89";
+
+/** Default set of pattern ids drawn on the chart: live (non-candlestick) patterns, strongest first, max 4. */
+export function defaultVisiblePatterns(analysis?: TimeframeAnalysis | null): string[] {
+  if (!analysis) return [];
+  return analysis.patterns.all
+    .filter((p) => p.family !== "candlestick" && (p.status === "confirmed" || p.status === "completed" || p.status === "forming"))
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 4)
+    .map((p) => p.id);
+}
+
 export default function PriceChart({
   candles,
   analysis,
   overlays = { ema20: true, ema50: true, levels: true, setup: true, patterns: true },
+  visiblePatterns,
   height = 420,
 }: {
   candles: Candle[];
   analysis?: TimeframeAnalysis | null;
   overlays?: ChartOverlays;
+  visiblePatterns?: string[];
   height?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -53,7 +73,7 @@ export default function PriceChart({
   }, [candles]);
 
   // Full rebuild only when the dataset, analysis or overlays actually change.
-  const rebuildKey = `${candles[0]?.time}|${analysis?.timeframe}|${analysis?.score}|${JSON.stringify(overlays)}|${height}`;
+  const rebuildKey = `${candles[0]?.time}|${analysis?.timeframe}|${analysis?.score}|${JSON.stringify(overlays)}|${(visiblePatterns ?? []).join(",")}|${height}`;
   useEffect(() => {
     if (!ref.current || !candles.length) return;
     const el = ref.current;
@@ -110,8 +130,48 @@ export default function PriceChart({
         s.stopLosses.forEach((sl) => candleSeries.createPriceLine({ price: sl.price, color: "#f0506e", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: sl.label }));
       }
       if (overlays.patterns) {
-        for (const p of [...analysis.patterns.completed, ...analysis.patterns.forming]) {
-          if (p.keyLevel) candleSeries.createPriceLine({ price: p.keyLevel, color: p.bias === "bullish" ? "rgba(54,189,148,0.9)" : "rgba(240,80,110,0.9)", lineWidth: 1, lineStyle: LineStyle.LargeDashed, axisLabelVisible: false, title: p.name.split(" ").map((w) => w[0]).join("") });
+        const ids = new Set(visiblePatterns ?? defaultVisiblePatterns(analysis));
+        const markers: SeriesMarker<Time>[] = [];
+        const candleTimes = new Set(candles.map((c) => c.time));
+        const nearestTime = (t: number) => {
+          if (candleTimes.has(t)) return t as UTCTimestamp;
+          let best = candles[0].time;
+          for (const c of candles) if (Math.abs(c.time - t) < Math.abs(best - t)) best = c.time;
+          return best as UTCTimestamp;
+        };
+        for (const p of analysis.patterns.all) {
+          if (!ids.has(p.id)) continue;
+          const dead = p.status === "failed" || p.status === "invalidated";
+          const color = dead ? GRAY : p.bias === "bullish" ? MINT : RED;
+          const style = p.status === "forming" ? LineStyle.Dashed : dead ? LineStyle.Dotted : LineStyle.Solid;
+          const width: 1 | 2 = p.status === "confirmed" || p.status === "completed" ? 2 : 1;
+          for (const l of p.lines) {
+            if (l.from.time === l.to.time) {
+              // vertical / point-in-time line: render as a price line instead
+              if (l.kind === "target" && p.target != null) candleSeries.createPriceLine({ price: p.target, color, lineWidth: 1, lineStyle: LineStyle.SparseDotted, axisLabelVisible: true, title: `${short(p.name)} target` });
+              continue;
+            }
+            const a = l.from.time < l.to.time ? l.from : l.to;
+            const b = l.from.time < l.to.time ? l.to : l.from;
+            const s = chart.addSeries(LineSeries, { color, lineWidth: l.kind === "target" ? 1 : width, lineStyle: l.kind === "target" ? LineStyle.SparseDotted : l.kind === "trigger" ? LineStyle.Dashed : style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+            s.setData([{ time: a.time as UTCTimestamp, value: a.price }, { time: b.time as UTCTimestamp, value: b.price }]);
+          }
+          if (p.arc && p.arc.length > 2) {
+            const s = chart.addSeries(LineSeries, { color, lineWidth: width, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+            s.setData(p.arc.map((x) => ({ time: x.time as UTCTimestamp, value: x.price })));
+          }
+          if (p.keyLevel != null && p.family !== "candlestick") candleSeries.createPriceLine({ price: p.keyLevel, color, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `${short(p.name)} ${p.status === "forming" ? "trigger" : "break"}` });
+          if (p.invalidation != null && p.status === "forming") candleSeries.createPriceLine({ price: p.invalidation, color: GRAY, lineWidth: 1, lineStyle: LineStyle.SparseDotted, axisLabelVisible: false, title: `${short(p.name)} invalid` });
+          // labelled points (shoulders, XABCD, tops) + the pattern label + direction arrow
+          for (const q of p.points) markers.push({ time: nearestTime(q.time), position: q.side === "above" ? "aboveBar" : "belowBar", color, shape: "circle", text: q.label, size: 0.6 } as SeriesMarker<Time>);
+          const labelTime = nearestTime(p.startTime);
+          markers.push({ time: labelTime, position: p.bias === "bullish" ? "belowBar" : "aboveBar", color, shape: "square", text: `${p.name} - ${p.status} ${Math.round(p.confidence * 100)}%`, size: 0.8 } as SeriesMarker<Time>);
+          const arrowTime = nearestTime(p.endTime);
+          markers.push({ time: arrowTime, position: p.bias === "bullish" ? "belowBar" : "aboveBar", color, shape: p.bias === "bullish" ? "arrowUp" : "arrowDown", text: p.bias === "bullish" ? "▲" : "▼", size: 1.2 } as SeriesMarker<Time>);
+        }
+        if (markers.length) {
+          markers.sort((a, b) => (a.time as number) - (b.time as number));
+          createSeriesMarkers(candleSeries, markers);
         }
       }
       for (const tl of analysis.trendlines) {
@@ -134,6 +194,8 @@ export default function PriceChart({
 
   return <div ref={ref} style={{ height }} className="w-full" />;
 }
+
+const short = (name: string) => name.split(/\s+/).map((w) => (/^(and|&|of)$/i.test(w) ? "" : w[0])).join("").toUpperCase();
 
 function precisionFor(p: number) {
   if (p >= 1000) return 2;

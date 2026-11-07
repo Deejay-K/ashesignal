@@ -10,9 +10,7 @@ export async function supabaseServer() {
       getAll: () => store.getAll(),
       setAll: (all) => {
         try {
-          all.forEach(({ name, value, options }) =>
-            store.set(name, value, options),
-          );
+          all.forEach(({ name, value, options }) => store.set(name, value, options));
         } catch {
           /* called from a Server Component - middleware refreshes the session instead */
         }

@@ -3,8 +3,8 @@ import { supabaseServer } from "@/lib/supabase/server";
 
 /**
  * Handles both Supabase auth flows:
- *  - PKCE:        /auth/callback?code=…
- *  - token hash:  /auth/callback?token_hash=…&type=magiclink  (email template "Confirm your signin")
+ * - PKCE:        /auth/callback?code=…
+ * - token hash:  /auth/callback?token_hash=…&type=magiclink  (email template "Confirm your signin")
  */
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;

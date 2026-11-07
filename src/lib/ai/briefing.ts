@@ -7,6 +7,14 @@ import type { FearGreedPoint } from "@/lib/types";
 import { askJson, aiProvider, AI_MODEL } from "./claude";
 import { localBriefing, localMarketBriefing } from "./local";
 
+/** Project rule: no em/en dashes anywhere, including model output. */
+export function stripDashes<T>(v: T): T {
+  if (typeof v === "string") return v.replace(/\s*[\u2014\u2013]\s*/g, "-") as unknown as T;
+  if (Array.isArray(v)) return v.map(stripDashes) as unknown as T;
+  if (v && typeof v === "object") { const o: Record<string, unknown> = {}; for (const [k, x] of Object.entries(v as object)) o[k] = stripDashes(x); return o as T; }
+  return v;
+}
+
 export interface Briefing {
   headline: string; // one line
   bottomLine: string; // 2-3 sentences, the verdict
@@ -32,6 +40,7 @@ Hard rules:
 - Distinguish confirmed (completed patterns, level breaks) from unconfirmed (forming, speculative). Never present a forming pattern as a done outcome.
 - Where timeframes conflict, say so plainly and tell the trader what that means for position sizing and holding time.
 - Be direct and concise. No disclaimers, no "I'm an AI", no hedging filler. Probabilistic language is fine ("likely", "tends to").
+- Formatting: never use em dashes or en dashes. Use a plain hyphen (-) or a comma instead.
 - If the engine produced no setup, do not manufacture one; explain what would need to happen.
 - Reply with ONLY a JSON object with exactly these keys: headline, bottomLine, marketNow, supportingEvidence (array of strings), whatNext, bullishScenario, bearishScenario, keyLevels (array of {level, why}), entryExit, riskFactors (array), invalidation (array), suitability (one of scalp|day trade|swing|position|avoid), confidence (0-100 number), disagreements (string).`;
 
@@ -60,60 +69,23 @@ function compact(a: MultiTfAnalysis) {
       opportunityScore: x.opportunityScore,
       trend: x.trend,
       momentum: x.momentum,
-      volume: {
-        ratio: +x.volume.ratio.toFixed(2),
-        trend: x.volume.trend,
-        note: x.volume.note,
-      },
-      volatility: {
-        atrPct: +(x.volatility.atrPct * 100).toFixed(2),
-        regime: x.volatility.regime,
-      },
+      volume: { ratio: +x.volume.ratio.toFixed(2), trend: x.volume.trend, note: x.volume.note },
+      volatility: { atrPct: +(x.volatility.atrPct * 100).toFixed(2), regime: x.volatility.regime },
       vwap: x.vwap,
       volumePoc: x.volumePoc,
-      levels: x.levels.map((l) => ({
-        price: l.price,
-        kind: l.kind,
-        touches: l.touches,
-      })),
+      levels: x.levels.map((l) => ({ price: l.price, kind: l.kind, touches: l.touches })),
       fib: x.fib,
       breakout: x.breakout,
-      reasons: x.reasons.map(
-        (r) => `${r.weight > 0 ? "+" : ""}${r.weight.toFixed(0)} ${r.text}`,
-      ),
-      patternsCompleted: x.patterns.completed.map(
-        (p) =>
-          `${p.name} (${p.bias}, conf ${Math.round(p.confidence * 100)}%) ${p.description}`,
-      ),
-      patternsForming: x.patterns.forming.map(
-        (p) => `${p.name} (${p.bias}, unconfirmed) ${p.description}`,
-      ),
+      reasons: x.reasons.map((r) => `${r.weight > 0 ? "+" : ""}${r.weight.toFixed(0)} ${r.text}`),
+      patternsConfirmed: x.patterns.confirmed.map((p) => `${p.name} (${p.bias}, conf ${Math.round(p.confidence * 100)}%) ${p.description}`),
+      patternsCompleted: x.patterns.completed.map((p) => `${p.name} (${p.bias}) ${p.description}`),
+      patternsForming: x.patterns.forming.map((p) => `${p.name} (${p.bias}, unconfirmed) ${p.description}`),
+      patternsFailed: [...x.patterns.failed, ...x.patterns.invalidated].map((p) => `${p.name} (${p.status})`),
       weakeningMomentum: x.weakeningMomentum,
       reversalSigns: x.reversalSigns,
       scenarios: x.scenarios,
       setup: x.setup
-        ? {
-            side: x.setup.side,
-            kind: x.setup.kind,
-            entry: x.setup.entry,
-            takeProfits: x.setup.takeProfits.map((t) => ({
-              label: t.label,
-              price: t.price,
-              rr: t.rr,
-              basis: t.basis,
-            })),
-            stopLosses: x.setup.stopLosses.map((s) => ({
-              label: s.label,
-              price: s.price,
-              basis: s.basis,
-            })),
-            riskRewardTp2: x.setup.riskRewardTp2,
-            confidence: x.setup.confidence,
-            style: x.setup.style,
-            holdingPeriod: x.setup.holdingPeriod,
-            invalidation: x.setup.invalidation,
-            reasons: x.setup.reasons,
-          }
+        ? { side: x.setup.side, kind: x.setup.kind, tradeable: x.setup.quality.tradeable, issues: x.setup.quality.issues, entry: x.setup.entry, takeProfits: x.setup.takeProfits.map((t) => ({ label: t.label, price: t.price, rr: t.rr, basis: t.basis })), stopLosses: x.setup.stopLosses.map((s) => ({ label: s.label, price: s.price, basis: s.basis })), riskRewardTp2: x.setup.riskRewardTp2, confidence: x.setup.confidence, style: x.setup.style, holdingPeriod: x.setup.holdingPeriod, invalidation: x.setup.invalidation, reasons: x.setup.reasons }
         : { none: x.setupReason },
     };
   }
@@ -121,20 +93,12 @@ function compact(a: MultiTfAnalysis) {
 }
 
 export async function generateBriefing(ctx: BriefingContext) {
-  if (aiProvider() === "local")
-    return {
-      data: localBriefing(ctx),
-      model: AI_MODEL(),
-      inputTokens: 0,
-      outputTokens: 0,
-    };
+  if (aiProvider() === "local") return { data: localBriefing(ctx), model: AI_MODEL(), inputTokens: 0, outputTokens: 0 };
   try {
-    return await generateBriefingRemote(ctx);
+    const r = await generateBriefingRemote(ctx);
+    return { ...r, data: stripDashes(r.data) };
   } catch (e) {
-    console.warn(
-      "remote briefing failed, using local writer:",
-      (e as Error).message,
-    );
+    console.warn("remote briefing failed, using local writer:", (e as Error).message);
     const b = localBriefing(ctx);
     b.disagreements = `(Remote model failed: ${(e as Error).message}. This briefing was written by the local engine writer.)`;
     return { data: b, model: "engine-writer", inputTokens: 0, outputTokens: 0 };
@@ -168,36 +132,19 @@ export interface MarketBriefing {
   cautions: string[];
 }
 
-const MARKET_SYSTEM = `You are AsheSignal's market desk writing the daily crypto briefing from structured data (global stats, Fear & Greed, top movers, unusual volume, and the engine's bullish/bearish 4h picks with scores). Use only numbers present in the data. Be specific and concise; no disclaimers. Reply with ONLY a JSON object with keys: headline, summary, regime (risk-on|risk-off|mixed|ranging), whatToWatch (array), bullishPicks (array of {symbol, why}), bearishPicks (array of {symbol, why}), cautions (array).`;
+const MARKET_SYSTEM = `You are AsheSignal's market desk writing the daily crypto briefing from structured data (global stats, Fear & Greed, top movers, unusual volume, and the engine's bullish/bearish 4h picks with scores). Use only numbers present in the data. Be specific and concise; no disclaimers. Never use em dashes or en dashes (use a hyphen). Reply with ONLY a JSON object with keys: headline, summary, regime (risk-on|risk-off|mixed|ranging), whatToWatch (array), bullishPicks (array of {symbol, why}), bearishPicks (array of {symbol, why}), cautions (array).`;
 
 export async function generateMarketBriefing(data: Record<string, unknown>) {
-  if (aiProvider() === "local")
-    return {
-      data: localMarketBriefing(data),
-      model: AI_MODEL(),
-      inputTokens: 0,
-      outputTokens: 0,
-    };
+  if (aiProvider() === "local") return { data: localMarketBriefing(data), model: AI_MODEL(), inputTokens: 0, outputTokens: 0 };
   try {
-    return await generateMarketBriefingRemote(data);
+    const r = await generateMarketBriefingRemote(data);
+    return { ...r, data: stripDashes(r.data) };
   } catch (e) {
-    console.warn(
-      "remote market briefing failed, using local writer:",
-      (e as Error).message,
-    );
-    return {
-      data: localMarketBriefing(data),
-      model: "engine-writer",
-      inputTokens: 0,
-      outputTokens: 0,
-    };
+    console.warn("remote market briefing failed, using local writer:", (e as Error).message);
+    return { data: localMarketBriefing(data), model: "engine-writer", inputTokens: 0, outputTokens: 0 };
   }
 }
 
 async function generateMarketBriefingRemote(data: Record<string, unknown>) {
-  return askJson<MarketBriefing>(
-    MARKET_SYSTEM,
-    `Generated at ${new Date().toISOString()}\n\nDATA:\n${JSON.stringify(data)}\n\nWrite the briefing JSON now.`,
-    1400,
-  );
+  return askJson<MarketBriefing>(MARKET_SYSTEM, `Generated at ${new Date().toISOString()}\n\nDATA:\n${JSON.stringify(data)}\n\nWrite the briefing JSON now.`, 1400);
 }
