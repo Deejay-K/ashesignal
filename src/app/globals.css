@@ -67,6 +67,13 @@ input:focus, select:focus { outline: 2px solid var(--mint); outline-offset: 0; b
 .btn-ghost { border: 1px solid var(--border); color: var(--fg-2); padding: 6px 10px; border-radius: 8px; font-size: 13px; }
 .btn-ghost[data-active="true"] { background: var(--mint-dim); color: var(--mint); border-color: var(--mint); }
 .table-scroll { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
+/* Grid and flex children must be allowed to shrink below their content (tables, long addresses, pills),
+   otherwise a wide table inside a column pushes the whole page past the phone's edge. Scoped to <main>
+   so the header layout (which relies on natural widths) is untouched. */
+main .grid > *, main .flex > * { min-width: 0; }
+main .flex > .shrink-0, main .flex > [class*="w-"], main .flex > .pill, main .flex > .btn, main .flex > .btn-ghost { min-width: auto; }
+main { overflow-x: clip; }
+.num, .mono, pre, code { overflow-wrap: anywhere; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: max-content; }
 
 th { text-align: left; color: var(--fg-3); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 10px; border-bottom: 1px solid var(--border); }
