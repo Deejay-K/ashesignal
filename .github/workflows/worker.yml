@@ -26,3 +26,7 @@ jobs:
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/whales?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Screener metrics (10 coins per tick, rotates)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/screen?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Speculative opportunities (6 DEX tokens per tick, rotates)
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/spec?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Spot investment picks (5 coins per tick, rotates over top 150)
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/spot?secret=${{ secrets.CRON_SECRET }}" || true

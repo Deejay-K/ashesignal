@@ -168,3 +168,23 @@ tr:last-child td { border-bottom: 0; }
 /* ---------- accessibility ---------- */
 :focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; } }
+
+/* ---------- Stage 16: trading discovery ---------- */
+:root { --blue: #4f8df7; --blue-dim: rgba(79, 141, 247, 0.14); --violet: #a06cf5; --violet-dim: rgba(160, 108, 245, 0.14); }
+.opp-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.opp-tab { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.8rem; border: 1px solid var(--border); border-radius: 0.75rem; background: var(--bg-2); color: var(--fg-2); font-size: 0.8rem; font-weight: 500; line-height: 1; transition: border-color 0.15s, background 0.15s; --tone: var(--fg-3); --tone-dim: var(--bg-3); }
+.opp-tab:hover { border-color: var(--tone); }
+.opp-tab-active { background: var(--tone-dim); border-color: var(--tone); color: var(--fg); }
+.opp-dot { width: 0.55rem; height: 0.55rem; border-radius: 999px; background: var(--tone); box-shadow: 0 0 0 3px var(--tone-dim); flex: none; }
+.opp-count { margin-left: 0.15rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: var(--bg-3); color: var(--fg-2); font-size: 0.7rem; }
+.tab-green { --tone: var(--mint); --tone-dim: var(--mint-dim); }
+.tab-blue { --tone: var(--blue); --tone-dim: var(--blue-dim); }
+.tab-amber { --tone: var(--amber); --tone-dim: var(--amber-dim); }
+.tab-violet { --tone: var(--violet); --tone-dim: var(--violet-dim); }
+.opp-blurb { border-color: var(--tone); background: var(--tone-dim); color: var(--fg-2); }
+.opp-card { padding: 0; border-left: 3px solid var(--tone); --tone: var(--fg-3); --tone-dim: var(--bg-3); }
+.opp-card-green { --tone: var(--mint); --tone-dim: var(--mint-dim); }
+.opp-card-blue { --tone: var(--blue); --tone-dim: var(--blue-dim); }
+.opp-card-amber { --tone: var(--amber); --tone-dim: var(--amber-dim); background-image: repeating-linear-gradient(135deg, transparent 0 14px, var(--amber-dim) 14px 16px); background-size: 100% 3px; background-repeat: no-repeat; }
+.opp-card-violet { --tone: var(--violet); --tone-dim: var(--violet-dim); }
+@media (max-width: 640px) { .opp-tab { flex: 1 1 calc(50% - 0.25rem); justify-content: center; padding: 0.55rem 0.5rem; font-size: 0.75rem; } }

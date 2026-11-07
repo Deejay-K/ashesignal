@@ -1,12 +1,44 @@
 {
   "crons": [
-    { "path": "/api/cron/resolve", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/alerts", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/signals", "schedule": "0 8 * * *" },
-    { "path": "/api/cron/snapshot", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/briefing", "schedule": "0 10 * * *" },
-    { "path": "/api/cron/liquidity", "schedule": "0 11 * * *" },
-    { "path": "/api/cron/whales", "schedule": "0 12 * * *" },
-    { "path": "/api/cron/screen", "schedule": "0 13 * * *" }
+    {
+      "path": "/api/cron/resolve",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/alerts",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/signals",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/snapshot",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/briefing",
+      "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/liquidity",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/whales",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/screen",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/cron/spec",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/spot",
+      "schedule": "0 15 * * *"
+    }
   ]
 }

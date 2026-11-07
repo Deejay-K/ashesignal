@@ -342,3 +342,53 @@ create table if not exists public.coin_metrics (
 alter table public.coin_metrics enable row level security;
 drop policy if exists "metrics readable" on public.coin_metrics;
 create policy "metrics readable" on public.coin_metrics for select using (true);
+
+-- ---------- Stage 16: trading discovery categories ----------
+alter table public.coin_metrics add column if not exists category text;          -- confirmed | watching | none
+alter table public.coin_metrics add column if not exists category_since timestamptz;
+alter table public.coin_metrics add column if not exists watch_reasons text[];
+alter table public.coin_metrics add column if not exists detail jsonb;            -- compact setup + evidence snapshot
+alter table public.coin_metrics add column if not exists liquidity_note text;
+
+create table if not exists public.category_history (
+  id bigserial primary key,
+  asset_key text not null,
+  symbol text,
+  timeframe text,
+  category text not null,          -- confirmed | watching | speculative | spot | none
+  prev_category text,
+  reason text,
+  snapshot jsonb,
+  changed_at timestamptz default now()
+);
+create index if not exists category_history_asset on public.category_history(asset_key, changed_at desc);
+create index if not exists category_history_time on public.category_history(changed_at desc);
+alter table public.category_history enable row level security;
+drop policy if exists "category history readable" on public.category_history;
+create policy "category history readable" on public.category_history for select using (true);
+
+create table if not exists public.spec_opportunities (
+  asset_key text primary key,      -- addr:<chain>:<address>
+  chain text, address text, symbol text, name text,
+  price numeric, liquidity_usd numeric, volume_24h numeric, market_cap numeric, fdv numeric,
+  age_hours numeric, change_1h numeric, change_24h numeric, buy_sell_ratio numeric, txns_24h int,
+  risk_level text, security_score int, source_tag text,
+  detail jsonb,
+  first_seen timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.spec_opportunities enable row level security;
+drop policy if exists "spec readable" on public.spec_opportunities;
+create policy "spec readable" on public.spec_opportunities for select using (true);
+
+create table if not exists public.spot_picks (
+  asset_key text primary key,      -- cg:<id>
+  symbol text, name text, tier text,   -- established | emerging | speculative
+  rank int, price numeric, market_cap numeric, volume_24h numeric,
+  spot_score int,
+  detail jsonb,
+  updated_at timestamptz default now()
+);
+alter table public.spot_picks enable row level security;
+drop policy if exists "spot readable" on public.spot_picks;
+create policy "spot readable" on public.spot_picks for select using (true);

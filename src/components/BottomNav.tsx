@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const TABS = [
   { href: "/", label: "Home", icon: "⌂" },
+  { href: "/opportunities", label: "Trades", icon: "◆" },
   { href: "/discover", label: "Discover", icon: "◎" },
   { href: "/scanner", label: "Scan", icon: "⌕" },
   { href: "/portfolio", label: "Portfolio", icon: "◫" },
@@ -14,7 +15,7 @@ const TABS = [
 export default function BottomNav() {
   const path = usePathname();
   return (
-    <nav className="bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-bg/95 pt-1.5 backdrop-blur md:hidden" aria-label="Primary">
+    <nav className="bottom-nav fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-border bg-bg/95 pt-1.5 backdrop-blur md:hidden" aria-label="Primary">
       {TABS.map((t) => {
         const active = t.href === "/" ? path === "/" : path.startsWith(t.href);
         return (

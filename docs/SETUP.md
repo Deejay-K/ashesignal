@@ -140,6 +140,15 @@ Run `supabase/schema.sql` again (adds `whale_events` and the whale alert type). 
 
 Run `supabase/schema.sql` again (adds `coin_metrics`). The worker fills the screener within about an hour (10 coins every 5 minutes, rotating through the top 100). Backtests run on demand from any chart (needs 200+ candles on that timeframe). "Share card" on a setup opens a PNG you can save or drag into Discord/X.
 
+## 14. Stage 16 - Trading Discovery (Confirmed / Watching / Speculative / Spot)
+
+1. Supabase -> SQL Editor -> run `supabase/schema.sql` again (adds category columns on `coin_metrics` and the `category_history`, `spec_opportunities`, `spot_picks` tables).
+2. Nothing else to configure. The GitHub Actions worker already calls the two new endpoints (`/api/cron/spec`, `/api/cron/spot`); pull the new `worker.yml` with your push. Fill times after the first run: Watching and Confirmed within about an hour (the screener batches), Speculative after 2 or 3 ticks, Spot within about 2.5 hours (5 coins per tick over the top 150).
+3. Verify: `https://<your-url>/api/cron/spec?secret=<CRON_SECRET>` and `/api/cron/spot?secret=...` return `{"ok":true,...}`. Then open `/opportunities`.
+4. Optional: if `AI_API_KEY` is set, the spot "why" paragraphs are rewritten by your model (numbers untouched); otherwise the engine writer's text is used.
+
+Confirmed is a rules result, not a promise: a coin leaves the category on the next worker run once its setup stops qualifying, and the move is logged in the category history. Nothing in this section places orders; "Copy Trade Setup" only copies text to the clipboard.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).

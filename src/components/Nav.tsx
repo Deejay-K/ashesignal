@@ -9,6 +9,7 @@ import ThemePicker from "./ThemePicker";
 
 export const NAV_LINKS = [
   { href: "/", label: "Dashboard", primary: 1 },
+  { href: "/opportunities", label: "Trading Discovery", primary: 1 },
   { href: "/discover", label: "Discover", primary: 1 },
   { href: "/scanner", label: "Scanner", primary: 1 },
   { href: "/screener", label: "Screener", primary: 2 },

@@ -1,6 +1,7 @@
 // Engine self-test on synthetic candles (no network). Run: npx tsx scripts/selftest.ts
 import { analyzeTimeframe } from "../src/lib/ta/analysis";
 import { detectPatterns } from "../src/lib/ta/patterns";
+import { categorize, detailSnapshot } from "../src/lib/market/categorize";
 import { sizePosition } from "../src/lib/risk/position";
 import { rsi, macd, bollinger, atr } from "../src/lib/ta/indicators";
 import type { Candle } from "../src/lib/types";
@@ -112,6 +113,22 @@ import { resolveAgainst } from "../src/lib/alerts/resolve";
   c2("mfe/mae recorded", r.maxFavorablePct === 8 && r.maxAdversePct === 3, r);
   console.log(f2 ? `\n${f2} RESOLVER FAILED` : "RESOLVER PASS");
   if (f2) process.exit(1);
+}
+
+// ---- Stage 16: category logic ----
+{
+  let f3 = 0;
+  const c3 = (n: string, ok: boolean, info?: unknown) => { console.log(`${ok ? "PASS" : "FAIL"} ${n}`, info ?? ""); if (!ok) f3++; };
+  for (const a of [aUp, aDown, aFlat]) {
+    const cat = categorize(a);
+    c3(`category consistent with setup kind (${a.setup?.kind ?? "none"} -> ${cat.category})`, a.setup?.kind === "confirmed" ? cat.category === "confirmed" : cat.category !== "confirmed");
+    if (cat.category === "confirmed") c3("confirmed has qualifies text", cat.qualifies.length >= 2);
+    if (cat.category === "watching") c3("watching items have what/why/needs", cat.watch.every((w) => w.what && w.why && w.needs));
+    const snap = detailSnapshot(a, cat);
+    c3("snapshot serialisable and compact", JSON.stringify(snap).length < 12000 && snap.price === a.price);
+  }
+  console.log(f3 ? `\n${f3} CATEGORY FAILED` : "CATEGORY PASS");
+  if (f3) process.exit(1);
 }
 
 // ---- Formatting rule: no em/en dashes anywhere in the project ----
