@@ -31,7 +31,7 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const started = Date.now();
-  const BUDGET_MS = Number(url.searchParams.get("budget") ?? 45_000);
+  const BUDGET_MS = Number(url.searchParams.get("budget") ?? 40_000);
   const fill = url.searchParams.get("fill") === "1";
   // Work on the stalest candidates first (never scanned, or not refreshed in 2 h); fill=1 just allows a bigger slice.
   const all = [...cands.values()];
@@ -46,14 +46,15 @@ export async function GET(req: Request) {
   const rows: Record<string, unknown>[] = [];
   const history: Record<string, unknown>[] = [];
   const errors: string[] = [];
+  const SCAN_TIMEOUT_MS = 15_000;
   let processed = 0;
   const scanWithTimeout = (addr: string) => Promise.race([
     safe(scanAddress(addr, ["1h", "4h"])),
-    new Promise<{ ok: false; error: string }>((res) => setTimeout(() => res({ ok: false, error: "scan timeout" }), 20_000)),
+    new Promise<{ ok: false; error: string }>((res) => setTimeout(() => res({ ok: false, error: "scan timeout" }), SCAN_TIMEOUT_MS)),
   ]);
   // two scans at a time: enough to use the budget, few enough to respect GeckoTerminal / GoPlus limits
   const queue = [...slice];
-  const worker = async () => { for (;;) { const c = queue.shift(); if (!c || Date.now() - started > BUDGET_MS) return; processed++; await one(c); } };
+  const worker = async () => { for (;;) { const c = queue.shift(); if (!c || Date.now() - started > BUDGET_MS - SCAN_TIMEOUT_MS) return; processed++; await one(c); } };
   const one = async (c: Cand) => {
     const r = await scanWithTimeout(c.address);
     if (!r.ok) { errors.push(`${c.address.slice(0, 8)}: ${r.error}`); return; }

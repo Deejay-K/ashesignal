@@ -38,8 +38,12 @@ const HOST_LIMITS: Record<string, { perMinute: number }> = {
 
 const hostWindows = new Map<string, number[]>();
 
+/** Never queue behind a full rate-limit window for more than this: a serverless function would time out anyway. */
+const MAX_RATE_WAIT_MS = 12_000;
+
 async function acquire(host: string) {
   const limit = HOST_LIMITS[host]?.perMinute ?? 60;
+  const started = Date.now();
   for (;;) {
     const now = Date.now();
     const win = (hostWindows.get(host) ?? []).filter((t) => now - t < 60_000);
@@ -49,6 +53,7 @@ async function acquire(host: string) {
       return;
     }
     const waitMs = 60_000 - (now - win[0]) + 50;
+    if (now - started + Math.min(waitMs, 5_000) > MAX_RATE_WAIT_MS) throw new ProviderError(host, 429, `${host}: rate-limit window full, try again in ${Math.ceil(waitMs / 1000)}s`);
     await new Promise((r) => setTimeout(r, Math.min(waitMs, 5_000)));
   }
 }

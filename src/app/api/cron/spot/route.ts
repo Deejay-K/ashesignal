@@ -23,7 +23,7 @@ export async function GET(req: Request) {
   const coins = top.data.filter((c) => !EXCLUDE.test(c.symbol) && !EXCLUDE.test(c.id) && !EXCLUDE.test(c.name));
   const url = new URL(req.url);
   const started = Date.now();
-  const BUDGET_MS = Number(url.searchParams.get("budget") ?? 45_000);
+  const BUDGET_MS = Number(url.searchParams.get("budget") ?? 30_000); // leave headroom under the 60 s function limit
   const fill = url.searchParams.get("fill") === "1";
   // fill=1: process coins not refreshed in the last 6 h, rank order, as many as fit in the budget; reload until remaining = 0.
   // default (worker tick): same rule, so the rotation always works on the stalest coins first.
@@ -35,11 +35,8 @@ export async function GET(req: Request) {
   const slice = pending.slice(0, fill ? 60 : Number(url.searchParams.get("n") ?? 12));
   const batch = 0, batches = 1;
 
-  const btc = top.data.find((c) => c.id === "bitcoin");
-  const eth = top.data.find((c) => c.id === "ethereum");
-  const [btcD, ethD] = await Promise.all([btc ? safe(getCoin("bitcoin")) : null, eth ? safe(getCoin("ethereum")) : null]);
-  const btc1y = btcD?.ok ? btcD.data.change1yPct : null;
-  const eth1y = ethD?.ok ? ethD.data.change1yPct : null;
+  const btc1y = top.data.find((c) => c.id === "bitcoin")?.change1yPct ?? null;
+  const eth1y = top.data.find((c) => c.id === "ethereum")?.change1yPct ?? null;
 
   const { data: prevRows } = await sb.from("spot_picks").select("asset_key, tier").in("asset_key", slice.map((c) => `cg:${c.id}`));
   const prev = new Map((prevRows ?? []).map((r) => [r.asset_key, r.tier]));
@@ -49,7 +46,7 @@ export async function GET(req: Request) {
   const errors: string[] = [];
   let processed = 0;
   for (const c of slice) {
-    if (Date.now() - started > BUDGET_MS) break;
+    if (Date.now() - started > BUDGET_MS - 6_000) break; // a coin costs 2 CoinGecko calls, about 3 to 5 s
     processed++;
     const [coin, chart] = await Promise.all([safe(getCoin(c.id)), safe(getMarketChart(c.id, 365))]);
     if (!coin.ok || !chart.ok) { errors.push(`${c.symbol}: ${!coin.ok ? coin.error : !chart.ok ? chart.error : ""}`); continue; }
@@ -61,7 +58,7 @@ export async function GET(req: Request) {
       if (prev.has(key)) { dropped.push(key); history.push({ asset_key: key, symbol: c.symbol, category: "none", prev_category: "spot", reason: `Spot score fell to ${d.score}; removed from Spot Investments.`, snapshot: { price: c.priceUsd, score: d.score } }); }
       continue;
     }
-    d = await polishWhy(d, coin.data.name);
+    if (Date.now() - started < BUDGET_MS - 12_000) d = await Promise.race([polishWhy(d, coin.data.name), new Promise<typeof d>((res) => setTimeout(() => res(d!), 5_000))]);
     rows.push({ asset_key: key, symbol: c.symbol, name: c.name, tier: d.tier, rank: c.rank, price: c.priceUsd, market_cap: c.marketCapUsd, volume_24h: c.volume24hUsd, spot_score: d.score, detail: d, updated_at: new Date().toISOString() });
     const before = prev.get(key);
     if (before !== d.tier) history.push({ asset_key: key, symbol: c.symbol, category: "spot", prev_category: before ? "spot" : "none", reason: before ? `Tier changed from ${before} to ${d.tier}.` : `Entered Spot Investments as ${d.tier} with score ${d.score}.`, snapshot: { price: c.priceUsd, score: d.score, tier: d.tier } });

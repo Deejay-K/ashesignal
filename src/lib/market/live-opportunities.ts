@@ -78,7 +78,7 @@ export function liveSpeculative(n = 4): Promise<Opportunity[]> {
     const now = new Date().toISOString();
     const out: Opportunity[] = [];
     await Promise.all(pools.map(async (p) => {
-      const r = await Promise.race([safe(scanAddress(p.baseTokenAddress!, ["1h", "4h"])), new Promise<{ ok: false; error: string }>((res) => setTimeout(() => res({ ok: false, error: "timeout" }), 18_000))]);
+      const r = await Promise.race([safe(scanAddress(p.baseTokenAddress!, ["1h", "4h"])), new Promise<{ ok: false; error: string }>((res) => setTimeout(() => res({ ok: false, error: "timeout" }), 15_000))]);
       if (!r.ok || !r.data.token || r.data.market.priceUsd == null || (r.data.market.liquidityUsd ?? 0) < 10_000) return;
       if (r.data.security && r.data.security.riskScore >= 90) return;
       const rep = r.data;
@@ -110,7 +110,9 @@ export function liveSpot(n = 6): Promise<Opportunity[]> {
     const out: Opportunity[] = [];
     const btc1y = top.data.find((c) => c.id === "bitcoin")?.change1yPct ?? null;
     const eth1y = top.data.find((c) => c.id === "ethereum")?.change1yPct ?? null;
+    const started = Date.now();
     for (const c of coins) {
+      if (Date.now() - started > 25_000) break;
       const [coin, chart] = await Promise.all([safe(getCoin(c.id)), safe(getMarketChart(c.id, 365))]);
       if (!coin.ok || !chart.ok) continue;
       const d = buildSpot({ coin: coin.data, dailyCloses: chart.data.prices.map((p) => p[1]), btc1y, eth1y });
