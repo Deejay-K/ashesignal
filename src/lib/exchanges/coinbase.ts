@@ -1,18 +1,41 @@
 // Coinbase Advanced Trade API with CDP API keys (key name + EC private key), ES256 JWT per request.
-import { SignJWT, importPKCS8 } from "jose";
+import { SignJWT, importPKCS8, importJWK } from "jose";
 import { randomBytes } from "node:crypto";
 import type { ExchangeAdapter, ExchangeBalance, ExchangeCredentials, ExchangeFill } from "./types";
 import { normAsset } from "./types";
 
 const HOST = "api.coinbase.com";
 
+/**
+ * Accepts either Coinbase key type:
+ *  - ECDSA: secret is a PEM block (BEGIN EC PRIVATE KEY / BEGIN PRIVATE KEY) -> ES256
+ *  - Ed25519: secret is a base64 string of 64 bytes (seed + public key)     -> EdDSA
+ */
+async function signingKey(secret: string): Promise<{ key: CryptoKey | Uint8Array | import("jose").KeyObject; alg: "ES256" | "EdDSA" }> {
+  const raw = secret.trim().replace(/\\n/g, "\n");
+  if (raw.includes("BEGIN")) {
+    const pem = raw.includes("BEGIN EC PRIVATE KEY") ? await ecToPkcs8(raw) : raw;
+    return { key: await importPKCS8(pem, "ES256"), alg: "ES256" };
+  }
+  const bytes = Buffer.from(raw, "base64");
+  if (bytes.length !== 64 && bytes.length !== 32) throw new Error("Secret must be an EC PEM block (ECDSA key) or a base64 Ed25519 secret.");
+  const seed = bytes.subarray(0, 32);
+  const { createPrivateKey, createPublicKey } = await import("node:crypto");
+  // build a PKCS#8 Ed25519 key from the seed to derive the public half reliably
+  const pkcs8 = Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]);
+  const priv = createPrivateKey({ key: pkcs8, format: "der", type: "pkcs8" });
+  const pub = createPublicKey(priv).export({ format: "der", type: "spki" }).subarray(-32);
+  const b64u = (b: Buffer) => b.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const key = await importJWK({ kty: "OKP", crv: "Ed25519", d: b64u(Buffer.from(seed)), x: b64u(Buffer.from(pub)) }, "EdDSA");
+  return { key, alg: "EdDSA" };
+}
+
 async function jwt(c: ExchangeCredentials, method: string, path: string) {
-  const pem = c.secret.replace(/\\n/g, "\n");
-  const key = await importPKCS8(pem.includes("BEGIN EC PRIVATE KEY") ? await ecToPkcs8(pem) : pem, "ES256");
+  const { key, alg } = await signingKey(c.secret);
   const now = Math.floor(Date.now() / 1000);
   return new SignJWT({ iss: "cdp", sub: c.key, nbf: now, exp: now + 120, uri: `${method} ${HOST}${path}` })
-    .setProtectedHeader({ alg: "ES256", kid: c.key, nonce: randomBytes(16).toString("hex"), typ: "JWT" })
-    .sign(key);
+    .setProtectedHeader({ alg, kid: c.key, nonce: randomBytes(16).toString("hex"), typ: "JWT" })
+    .sign(key as Parameters<SignJWT["sign"]>[0]);
 }
 
 // Coinbase downloads keys as "EC PRIVATE KEY" (SEC1). jose needs PKCS#8; convert via node crypto.

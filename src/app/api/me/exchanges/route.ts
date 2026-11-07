@@ -54,8 +54,22 @@ export async function POST(req: NextRequest) {
   if (!EXCHANGE_KEYS_ENABLED()) return NextResponse.json({ error: "EXCHANGE_KEY_SECRET is not set on the server." }, { status: 501 });
   const b = await req.json().catch(() => null);
   const exchange = b?.exchange as ExchangeId;
-  if (!ADAPTERS[exchange] || !b.key || !b.secret) return NextResponse.json({ error: "exchange, key and secret are required" }, { status: 400 });
-  const creds = { key: String(b.key).trim(), secret: String(b.secret).trim(), passphrase: b.passphrase ? String(b.passphrase) : undefined };
+  if (!ADAPTERS[exchange]) return NextResponse.json({ error: "exchange is required" }, { status: 400 });
+  let key = String(b.key ?? "").trim();
+  let secret = String(b.secret ?? "").trim();
+  // Coinbase: allow pasting the whole downloaded JSON ({"name": "...", "privateKey": "..."} or {"id","privateKey"}) into either field
+  for (const candidate of [key, secret]) {
+    if (candidate.startsWith("{")) {
+      try {
+        const j = JSON.parse(candidate) as Record<string, string>;
+        key = j.name ?? j.id ?? j.apiKeyName ?? key;
+        secret = j.privateKey ?? j.secret ?? secret;
+      } catch { /* not JSON */ }
+    }
+  }
+  if (exchange === "coinbase" && key && !key.includes("/") && b.orgId) key = `organizations/${String(b.orgId).trim()}/apiKeys/${key}`;
+  if (!key || !secret) return NextResponse.json({ error: "key and secret are required" }, { status: 400 });
+  const creds = { key, secret, passphrase: b.passphrase ? String(b.passphrase) : undefined };
   let v;
   try {
     v = await ADAPTERS[exchange].verify(creds);

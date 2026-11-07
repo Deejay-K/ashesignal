@@ -12,7 +12,7 @@ interface Res { enabled: boolean; note?: string; accounts: Acc[]; realized: { pe
 
 const HELP: Record<ExchangeId, string> = {
   kraken: "Kraken: Settings > API > Add key. Tick ONLY 'Query Funds' and 'Query Closed Orders & Trades'. Paste the API Key and Private Key.",
-  coinbase: "Coinbase: Developer Platform (portal.cdp.coinbase.com) > API keys > Create > permission 'View' only. Key = the key name (organizations/.../apiKeys/...), Secret = the EC private key block.",
+  coinbase: "Coinbase: portal.cdp.coinbase.com > API keys > Create API key > permission 'View' only. Easiest: open the JSON file Coinbase downloaded, copy ALL of its text and paste it into the box below. It works with either ECDSA or Ed25519 keys.",
   binance: "Binance: API Management > Create > 'Enable Reading' only, no trading or withdrawals. Not available to Canadian residents.",
 };
 
@@ -55,8 +55,20 @@ export default function ExchangePanel({ onChange }: { onChange?: () => void }) {
               <form className="space-y-2 text-xs text-fg-3" onSubmit={add}>
                 <label>Exchange<select value={form.exchange} onChange={(e) => setForm({ ...form, exchange: e.target.value as ExchangeId })}>{(Object.keys(EXCHANGE_LABELS) as ExchangeId[]).map((x) => <option key={x} value={x}>{EXCHANGE_LABELS[x]}</option>)}</select></label>
                 <p className="text-[11px] leading-snug">{HELP[form.exchange]}</p>
-                <label>API key{form.exchange === "coinbase" ? " name" : ""}<input className="num" required value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} autoComplete="off" /></label>
-                <label>{form.exchange === "coinbase" ? "Private key (PEM)" : "Secret"}{form.exchange === "coinbase" ? <textarea required rows={3} className="w-full rounded-lg border border-border bg-bg-3 p-2 font-mono text-xs text-fg" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} /> : <input className="num" type="password" required value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} autoComplete="off" />}</label>
+                {form.exchange === "coinbase" ? (
+                  <>
+                    <label>Paste the downloaded key file (JSON) here<textarea required rows={4} className="w-full rounded-lg border border-border bg-bg-3 p-2 font-mono text-xs text-fg" placeholder={'{ "name": "organizations/.../apiKeys/...", "privateKey": "..." }'} value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} /></label>
+                    <details className="text-[11px]"><summary className="cursor-pointer">No file? Enter the two values manually</summary>
+                      <label className="mt-1 block">API key ID (or full organizations/.../apiKeys/... name)<input className="num" value={form.secret ? form.key : form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} /></label>
+                      <label className="mt-1 block">Secret (PEM block or Ed25519 base64)<textarea rows={3} className="w-full rounded-lg border border-border bg-bg-3 p-2 font-mono text-xs text-fg" value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} /></label>
+                    </details>
+                  </>
+                ) : (
+                  <>
+                    <label>API key<input className="num" required value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} autoComplete="off" /></label>
+                    <label>Secret<input className="num" type="password" required value={form.secret} onChange={(e) => setForm({ ...form, secret: e.target.value })} autoComplete="off" /></label>
+                  </>
+                )}
                 <label>Label (optional)<input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} /></label>
                 <button className="btn w-full text-sm" disabled={busy}>{busy ? "Checking key" : "Connect"}</button>
                 {msg ? <p className={msg.tone === "ok" ? "text-mint" : "text-red"}>{msg.text}</p> : null}
