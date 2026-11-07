@@ -1,0 +1,101 @@
+# AsheSignal — Architecture & Staged Plan
+
+AsheSignal is Ashe Foundry's crypto trading-intelligence platform. This document is the pre-development evaluation the spec asked for (stack, data providers, architecture, database, costs, real-time strategy) and the stage plan. Stage 1 is built and in this repo.
+
+## 1. Stack
+
+| Layer | Choice | Why |
+|---|---|---|
+| App | **Next.js 16 (App Router) + TypeScript + Tailwind v4** | Same stack as ToraVault / Ashe Hub → one deploy pipeline (GitHub → Vercel). Server routes keep API keys off the client. |
+| Charts | **lightweight-charts v5** (TradingView OSS) | Fast canvas candlesticks, price lines, overlays; 45 KB. |
+| Analysis | Pure TypeScript (`src/lib/ta`) | Runs on server *and* client, no Python service needed; unit-testable (`scripts/selftest.ts`). |
+| Auth + DB | **Supabase** (Postgres + RLS + Auth) — Stage 2 | Free tier, already in use for ToraVault; magic-link + OAuth; row-level security makes per-user data trivial. |
+| Background jobs | **Vercel Cron → `/api/cron/*`** (Stage 3) | Signal tracking, alert evaluation. Vercel Hobby allows 1 cron/day; Pro gives per-minute. A $5 Railway/Fly worker is the fallback for true minute-level alerts. |
+| Push notifications | Web Push (VAPID) + email via Resend (Stage 3) | Both free at our scale. |
+| Hosting | Vercel | Serverless; `force-dynamic` routes; in-memory cache per lambda instance (acceptable; Upstash Redis is the upgrade if cache hit-rate matters). |
+
+## 2. Data providers (all free tier, no key needed for Stage 1)
+
+| Provider | Used for | Limits | Key? | Cost to upgrade |
+|---|---|---|---|---|
+| **Binance** public REST | Highest-quality OHLCV (all 10 timeframes), 24h tickers for gainers/losers/unusual volume | 1200 weight/min, no auth for market data | No | Free. (Note: geo-blocked in some regions — US users hit `api.binance.us`; add as alt base URL if needed.) |
+| **CoinGecko** `/api/v3` | Global stats, top coins, trending, search, coin detail+tickers, fallback price history | ~30 req/min without key; **Demo key (free)** gives 30/min stable + 10k/month; Analyst $129/mo | Optional `COINGECKO_API_KEY` | Demo key strongly recommended for production. |
+| **DexScreener** | DEX pairs by address/search, token profiles & boosts (emerging tokens) | 300 req/min (60/min for profiles/boosts) | No | Free only. |
+| **GeckoTerminal** | OHLCV for DEX pools (the only free source), trending & new pools across chains | 30 req/min | No | Via CoinGecko paid plans. |
+| **GoPlus Security** | Honeypot, taxes, permissions, holder concentration, LP lock (EVM + Solana) | Public, unpublished cap, be polite | No | Paid tiers exist for volume. |
+| **Alternative.me** | Fear & Greed index, full history | Unlimited reasonable use; updates daily | No | Free. |
+
+**Not integrated (and why):** Coinbase/Kraken/OKX/Bybit public candles are available but add little beyond Binance for the same symbols; they are worth adding as *fallback OHLCV sources for geo-blocked users* (Stage 4, each ~80 lines in `src/lib/providers/`). CoinMarketCap overlaps CoinGecko and needs a key. Wallet balances need an indexer (Alchemy/Moralis/Helius — free tiers exist, keys required) → Stage 3.
+
+### Modular aggregation
+Every provider lives in `src/lib/providers/<name>.ts` and only exposes typed functions. `src/lib/fetch.ts` wraps all HTTP with: TTL cache, in-flight de-duplication, per-host sliding-window rate limiter (tuned under each provider's cap), retry with backoff on 429/5xx, 12 s timeout, structured `ProviderError`. `safe()` degrades any failure to `{ok:false,error}` so a dead provider never blanks the page — the UI shows "unavailable" badges instead.
+
+`src/lib/market/ohlcv.ts` is the resolver: Binance → GeckoTerminal pool → CoinGecko synthesized candles (flagged **estimated**). Every chart carries its source and quality badge; the token page tells you when wicks are approximate.
+
+## 3. Application architecture
+
+```
+src/
+  app/                    Next.js routes (pages + /api handlers)
+    page.tsx              Dashboard (overview, F&G, bull/bear picks, gainers/losers, unusual volume, top-50)
+    token/[id]            Full token analysis (CoinGecko id)
+    discover              9 discovery lists with chain/cap/liquidity/volume/move/risk filters
+    scanner               Contract address → report (chain, pairs, security, activity flags, TA)
+    risk                  Position-size calculator (prefilled from any setup)
+    sentiment             F&G gauge, 2-year F&G vs BTC chart, zone guide
+    watchlist             Guest watchlist (localStorage) — Supabase sync in Stage 2
+    api/                  overview, coins, discover, fng, ohlcv, analyze, scan, search, risk
+  lib/
+    fetch.ts              HTTP layer (cache / rate-limit / retry)
+    providers/            binance, coingecko, dexscreener, geckoterminal, goplus, feargreed, chains
+    ta/                   indicators (SMA/EMA/RSI/MACD/BB/ATR/VWAP/Fib/VolumeProfile),
+                          levels (pivots, S/R clustering, trendlines),
+                          patterns (17 patterns with completed/forming/potential status),
+                          analysis (scored outlook + reasons + scenarios + LONG/SHORT setup)
+    market/               ohlcv resolver, multi-timeframe consensus, discovery scan, address scanner
+    risk/position.ts      Risk-first sizing with exposure/balance/leverage caps
+  components/             Nav+search, PriceChart (lightweight-charts), AnalysisPanel, tables, gauges
+supabase/schema.sql       Stage-2 database (accounts, watchlists, saved setups, signal history, alerts, wallets)
+scripts/selftest.ts       Engine regression test (synthetic candles) — `npx tsx scripts/selftest.ts`
+```
+
+### How a setup is produced (and why it is never "arbitrary")
+1. Candles → indicators → swing pivots → clustered S/R levels (touch count + recency = strength).
+2. ~20 weighted "reasons" (trend alignment, 200 SMA, RSI zone, MACD cross/histogram, volume ratio & trend, BB squeeze, VWAP side, level breaks, patterns) sum to a **score −100…+100**. Inside ±15 → *no setup*, with the reason shown.
+3. Entry = retest of a broken level, or pullback into nearest support/resistance, or market with a tight stop. SL1 = structural (beyond nearest level + 0.3 ATR) if within 2.5 ATR, else 1.5 ATR. SL2 = next level. TP1–3 = next levels ≥ 1 ATR away, else ATR multiples / swing extreme. If TP1 < 0.8 R → *no setup*.
+4. `confirmed` only when |score| ≥ 35 **and** a completed pattern or level break exists; otherwise `speculative`.
+5. Confidence, style (scalp/day/swing/position from timeframe), holding period (bars-to-TP2 from ATR), invalidation, early-exit and profit-taking rules are attached.
+6. Multi-timeframe consensus (15m/1h vs 4h/1d) flags *conflicting* when short and long term disagree.
+
+## 4. Database (Stage 2+) — see `supabase/schema.sql`
+- `profiles` (1:1 auth.users) — risk profile defaults, preferences
+- `watchlists`, `watchlist_items` — coins by coingecko id or `(chain,address)`
+- `saved_setups` — snapshot of a setup (entry/TP/SL/score/tf) at save time
+- `signal_log` — every setup the engine emits for tracked assets, later resolved as tp1/tp2/tp3/sl/expired → **historical signal performance**
+- `alerts` — type (price / rsi / macd_cross / pattern / breakout / tp / sl / volume / liquidity / listing / sentiment), params JSON, channel, last_fired
+- `wallets` — read-only addresses per chain; `holdings_snapshots` for portfolio history
+All tables have RLS: `auth.uid() = user_id`.
+
+## 5. Real-time strategy
+- Candles: polled per timeframe (1m every 15 s … 4h+ every 2 min) from the client; server cache TTL matches (10–60 s). Binance WebSocket streams are the upgrade for sub-second ticks (client-side `wss://stream.binance.com`), planned for Stage 4 — REST is enough for analysis that is recomputed per candle close.
+- Discovery: 2-minute client refresh; server caches each source 30–120 s.
+- Fear & Greed: 30-minute cache (updates daily).
+- Signal tracking / alerts: cron worker evaluates tracked assets each minute (Stage 3).
+
+## 6. Known limitations (honest list)
+- **No per-token social sentiment** (LunarCrush/Santiment are paid). Token pages show CoinGecko community votes.
+- **Whale activity** needs on-chain indexing (Whale Alert API is paid; free route = watch large transfers via Alchemy/Helius webhooks) → Stage 3.
+- **Pattern detection is heuristic.** Flags/pennants/wedges are classified from pivot slopes; expect occasional false positives. Everything unconfirmed is labelled *forming*/*potential* and never counted as a confirmed trigger.
+- **CoinGecko without a key rate-limits at ~30/min** — the dashboard makes 3 calls, token page 2, discover 3. Heavy use → add the free demo key.
+- **Binance is geo-blocked in some countries** (US). Add `BINANCE_BASE_URL=https://api.binance.us` support if needed (symbols differ slightly).
+- **Serverless cache is per-instance** on Vercel; cold starts refetch. Fine at personal scale.
+- **Chart data is estimated** (flagged) for coins with no Binance pair and no DEX pool (rare mid-caps).
+
+## 7. Stages
+| Stage | Scope | Status |
+|---|---|---|
+| **1 — Functional core** | Data layer, 10-TF charts with overlays, full TA + pattern engine, LONG/SHORT setups, multi-TF consensus, discovery, address scanner + security, risk calculator, F&G, guest watchlist, responsive UI | ✅ built |
+| **2 — Accounts** | Supabase auth (magic link/Google), profile risk defaults, synced watchlists, saved setups, saved chart configs | schema ready |
+| **3 — Tracking & alerts** | Cron worker, `signal_log` resolution → hit-rate stats per timeframe/asset, alert rules + Web Push/email, large-transfer (whale) watch via Alchemy/Helius | planned |
+| **4 — Portfolio** | Read-only wallet tracking (EVM via Alchemy, Solana via Helius), holdings, P&L, allocation, Binance WebSocket live ticks, Coinbase/Kraken/OKX/Bybit OHLCV fallbacks | planned |
+| **5 — AI layer** | Optional LLM narrative over the engine's structured output (explain-why in prose, scenario writing), with the numeric engine remaining the source of truth | planned |

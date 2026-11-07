@@ -1,69 +1,81 @@
-import Image from "next/image";
+import Link from "next/link";
+import { getGlobal, getMarkets } from "@/lib/providers/coingecko";
+import { getFearGreed } from "@/lib/providers/feargreed";
+import { discover } from "@/lib/market/discover";
+import { safe } from "@/lib/fetch";
+import { fmtPct, fmtUsd, pctClass } from "@/lib/format";
+import CoinTable from "@/components/CoinTable";
+import { Disclaimer, Empty, RiskBadge, Section, StatCard } from "@/components/ui";
+import FngGauge from "@/components/FngGauge";
+import WatchlistPreview from "@/components/WatchlistPreview";
+import type { DiscoverItem } from "@/lib/market/discover";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default async function Dashboard() {
+  const [g, coins, fng, disc] = await Promise.all([safe(getGlobal()), safe(getMarkets(1, 50, true)), safe(getFearGreed(30)), safe(discover())]);
+  const ov = g.ok ? g.data : null;
+  const f = fng.ok ? fng.data : [];
+  const d = disc.ok ? disc.data : null;
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
+        <StatCard label="Total market cap" value={fmtUsd(ov?.totalMarketCapUsd.value, { compact: true })} sub={<span className={pctClass(ov?.marketCapChange24hPct.value)}>{fmtPct(ov?.marketCapChange24hPct.value)} 24h</span>} />
+        <StatCard label="24h volume" value={fmtUsd(ov?.totalVolume24hUsd.value, { compact: true })} sub="all exchanges · CoinGecko" />
+        <StatCard label="BTC dominance" value={ov?.btcDominance.value != null ? `${ov.btcDominance.value.toFixed(1)}%` : "—"} />
+        <StatCard label="ETH dominance" value={ov?.ethDominance.value != null ? `${ov.ethDominance.value.toFixed(1)}%` : "—"} />
+        <div className="col-span-2 card p-4">
+          {f.length ? <FngGauge history={f} compact /> : <Empty>Fear &amp; Greed unavailable</Empty>}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </div>
+      {!g.ok ? <p className="text-xs text-red">Market overview unavailable: {g.error}</p> : null}
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Section title="Top bullish (4h, Binance top-40)" right={<Link className="link text-xs" href="/discover">more →</Link>}>
+          <PickList items={d?.bullish ?? []} />
+        </Section>
+        <Section title="Top bearish (4h, Binance top-40)" right={<Link className="link text-xs" href="/discover">more →</Link>}>
+          <PickList items={d?.bearish ?? []} />
+        </Section>
+        <Section title="Trending" right={<Link className="link text-xs" href="/discover">more →</Link>}>
+          <PickList items={(d?.trending ?? []).slice(0, 8)} />
+        </Section>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Section title="Biggest gainers 24h"><PickList items={(d?.gainers ?? []).slice(0, 6)} /></Section>
+        <Section title="Biggest losers 24h"><PickList items={(d?.losers ?? []).slice(0, 6)} /></Section>
+        <Section title="Unusual volume"><PickList items={(d?.unusualVolume ?? []).slice(0, 6)} /></Section>
+      </div>
+      {d?.errors.length ? <p className="text-xs text-amber">Some discovery sources failed: {d.errors.join(" · ")}</p> : null}
+
+      <WatchlistPreview />
+
+      <Section title="Top 50 by market cap" right={<span className="pill pill-mint">verified · coingecko</span>}>
+        {coins.ok ? <CoinTable coins={coins.data} /> : <Empty>Coin list unavailable: {coins.error}</Empty>}
+      </Section>
+      <Disclaimer />
     </div>
+  );
+}
+
+function PickList({ items }: { items: DiscoverItem[] }) {
+  if (!items.length) return <Empty>Nothing qualifies right now.</Empty>;
+  return (
+    <ul className="divide-y divide-border">
+      {items.map((it) => {
+        const href = it.id ? `/token/${it.id}` : it.address ? `/scanner?address=${it.address}` : `/token/${it.symbol.toLowerCase()}`;
+        return (
+          <li key={(it.id ?? it.address ?? it.symbol) + it.metric} className="flex items-center gap-2 py-2 text-sm">
+            <Link href={href} className="font-medium hover:text-mint">{it.symbol}</Link>
+            <span className="truncate text-xs text-fg-3">{it.metric}</span>
+            <span className={`num ml-auto ${pctClass(it.change24hPct)}`}>{fmtPct(it.change24hPct, 1)}</span>
+            {it.risk !== "low" ? <RiskBadge level={it.risk} /> : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
