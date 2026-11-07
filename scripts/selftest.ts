@@ -131,3 +131,26 @@ import { join } from "node:path";
   console.log(bad.length ? `FAIL em/en dashes found in: ${bad.join(", ")}` : "PASS no em/en dashes in project");
   if (bad.length) process.exit(1);
 }
+
+// ---- Stage 9: FIFO realized P&L + key encryption ----
+import { realizedPnl } from "../src/lib/exchanges";
+import { encrypt, decrypt } from "../src/lib/exchanges/crypto";
+{
+  let f9 = 0;
+  const c9 = (n: string, ok: boolean, info?: unknown) => { console.log(`${ok ? "PASS" : "FAIL"} ${n}`, info ?? ""); if (!ok) f9++; };
+  const fills = [
+    { id: "1", time: "2026-01-01T00:00:00Z", pair: "BTC/USD", base: "BTC", quote: "USD", side: "buy" as const, price: 100, amount: 1, fee: 1, feeAsset: "USD" },
+    { id: "2", time: "2026-01-02T00:00:00Z", pair: "BTC/USD", base: "BTC", quote: "USD", side: "buy" as const, price: 200, amount: 1, fee: 1, feeAsset: "USD" },
+    { id: "3", time: "2026-01-03T00:00:00Z", pair: "BTC/USD", base: "BTC", quote: "USD", side: "sell" as const, price: 300, amount: 1.5, fee: 1, feeAsset: "USD" },
+  ];
+  const r = realizedPnl(fills);
+  // FIFO: sell 1 @300 from lot 100 (+200), 0.5 @300 from lot 200 (+50) = 250, minus fees 3 => 247; remaining 0.5 @ 200
+  c9("FIFO realized", Math.abs(r.totalRealizedUsd - 247) < 1e-9, r.totalRealizedUsd);
+  c9("remaining lot + avg cost", r.perAsset[0].remaining === 0.5 && r.perAsset[0].avgCost === 200, r.perAsset[0]);
+  c9("non-USD quotes skipped", realizedPnl([{ ...fills[0], quote: "ETH" }]).unpricedQuotes.includes("ETH"));
+  process.env.EXCHANGE_KEY_SECRET = "test-secret-for-selftest-0123456789";
+  const blob = encrypt("hello-key");
+  c9("encrypt/decrypt roundtrip", decrypt(blob) === "hello-key" && !blob.includes("hello"));
+  console.log(f9 ? `\n${f9} EXCHANGE FAILED` : "EXCHANGE PASS");
+  if (f9) process.exit(1);
+}

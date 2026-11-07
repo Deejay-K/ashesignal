@@ -120,6 +120,18 @@ If a remote model errors or you hit its free quota, the app silently falls back 
 
 Run `supabase/schema.sql` once more (adds notes, pool snapshots, listing watermark, new alert types). The worker starts snapshotting DEX liquidity on its own; the "Significant liquidity changes" list on Discover fills after ~24 h of snapshots. The first new-listing alert run only seeds the watermark (no notification), later runs notify.
 
+## 11. Stage 9 - exchange accounts (realized P&L)
+
+1. Vercel env (and `.env.local`): `EXCHANGE_KEY_SECRET` = any long random string (32+ characters). Exchange keys are encrypted with it; if you change it later, reconnect your exchanges.
+2. Supabase -> SQL Editor -> run `supabase/schema.sql` again (adds `exchange_accounts`).
+3. Create a READ-ONLY key on the exchange:
+   - Kraken: Settings > API > Add key. Tick only "Query Funds" and "Query Closed Orders & Trades".
+   - Coinbase: portal.cdp.coinbase.com > API keys > Create API key > permission "View" only. Download the key: the key name goes in "API key name", the private key block (BEGIN EC PRIVATE KEY ...) goes in the PEM box.
+   - Binance (not for Canadian residents): API Management > Create > "Enable Reading" only.
+4. Portfolio page -> Exchange accounts -> Connect. The app checks the key's permissions first (Coinbase and Binance report them; Kraken does not, so double-check the ticks) and refuses keys that can trade or withdraw.
+
+What you get: exchange balances inside your portfolio, FIFO realized P&L per asset (fees included), fees paid, and automatic cost basis for unrealized P&L on those holdings. Crypto-to-crypto trades (e.g. ETH/BTC) are skipped for now because they need historical pricing.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).
@@ -135,5 +147,6 @@ Run `supabase/schema.sql` once more (adds notes, pool snapshots, listing waterma
 | Save setups, auto-resolved vs live price, personal hit-rate (`/setups`) | ✗ | ✓ |
 | Alerts (price, %, RSI, MACD, pattern, breakout, volume, F&G) + push/email/inbox | ✗ | ✓ |
 | Wallet / portfolio tracking with history and cost basis | ✗ | ✓ |
+| Exchange accounts (read-only), realized P&L | ✗ | ✓ |
 | AI briefings | read cached | generate + history |
 | Risk profile (balance, risk %, exposure, leverage) | this browser only | synced |

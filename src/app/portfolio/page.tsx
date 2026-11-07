@@ -6,6 +6,7 @@ import type { Portfolio } from "@/lib/portfolio";
 import { fmtNum, fmtPct, fmtUsd, pctClass, timeAgo } from "@/lib/format";
 import { Disclaimer, Empty, Section, StatCard } from "@/components/ui";
 import HistoryChart from "@/components/HistoryChart";
+import ExchangePanel from "@/components/ExchangePanel";
 
 interface Wallet { id: string; chain: string; address: string; label: string | null }
 const COLORS = ["#36bd94", "#5aa7ff", "#f2b544", "#f0506e", "#a78bfa", "#9fb0c0", "#7fd4b0", "#ff8c5a"];
@@ -43,7 +44,7 @@ export default function PortfolioPage() {
   };
   useEffect(() => {
     loadWallets().then((w) => {
-      if (w?.length) loadPortfolio(true);
+      if (w) loadPortfolio(true);
     });
   }, []);
 
@@ -61,7 +62,7 @@ export default function PortfolioPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold">Portfolio</h1>
-        <p className="text-sm text-fg-2">Read-only wallet tracking. Public addresses only - AsheSignal never asks for keys or seed phrases.</p>
+        <p className="text-sm text-fg-2">Read-only wallet tracking (public addresses) plus read-only exchange accounts for balances, trade history and realized P&amp;L. AsheSignal never asks for seed phrases or keys that can trade or withdraw.</p>
       </div>
       {state === "disabled" ? <Empty>Accounts are not configured (docs/SETUP.md step 3).</Empty> : null}
       {state === "guest" ? <Empty><Link href="/login" className="link">Sign in</Link> to track wallets.</Empty> : null}
@@ -109,6 +110,8 @@ export default function PortfolioPage() {
 
           {p?.errors.length ? <p className="text-xs text-amber">{p.errors.join(" · ")}</p> : null}
 
+          <ExchangePanel onChange={() => loadPortfolio(true)} />
+
           {history.length > 1 ? (
             <Section title="Portfolio value history" right={<span className="text-xs text-fg-3">one snapshot per day (worker) + whenever you open this page</span>}>
               <HistoryChart points={history} />
@@ -139,7 +142,7 @@ export default function PortfolioPage() {
                             )}
                           </td>
                           <td className={`num text-right ${pctClass(h.unrealizedUsd)}`}>{h.unrealizedUsd != null ? `${fmtUsd(h.unrealizedUsd)} (${fmtPct(h.unrealizedPct, 1)})` : "-"}</td>
-                          <td>{h.address ? <Link href={`/scanner?address=${h.address}`} className="link text-xs">scan</Link> : null}</td>
+                          <td>{h.address && !h.address.startsWith("cex:") ? <Link href={`/scanner?address=${h.address}`} className="link text-xs">scan</Link> : null}</td>
                         </tr>
                       );
                     })}
@@ -147,7 +150,7 @@ export default function PortfolioPage() {
                 </table>
               </div>
             ) : <Empty>{wallets.length ? "No holdings found." : "Add a wallet first."}</Empty>}
-            <p className="mt-2 text-xs text-fg-3">Unrealized P&amp;L uses a cost basis you enter per asset (tap “set”). Automatic cost basis from on-chain history is unreliable without exchange data, so it stays manual on purpose. Realized P&amp;L needs CEX trade history - planned via read-only exchange API keys.</p>
+            <p className="mt-2 text-xs text-fg-3">Unrealized P&amp;L uses the FIFO average cost from your exchange trade history where available, otherwise a cost basis you enter per asset (tap "set"). Manual entries override the automatic value.</p>
           </Section>
 
           <Section title="Recent transactions">

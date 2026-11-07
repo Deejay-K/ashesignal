@@ -43,13 +43,21 @@ export interface WalletRef {
   label: string | null;
 }
 
+/** Exchange balances supplied by the caller (already decrypted + fetched). */
+export interface ExchangeHoldingInput { exchange: string; label: string | null; asset: string; amount: number; avgCost?: number | null }
+
 const CG_BASE = process.env.COINGECKO_PRO_API_KEY ? "https://pro-api.coingecko.com/api/v3" : "https://api.coingecko.com/api/v3";
 const CG_HEADERS: Record<string, string> = process.env.COINGECKO_PRO_API_KEY ? { "x-cg-pro-api-key": process.env.COINGECKO_PRO_API_KEY } : process.env.COINGECKO_API_KEY ? { "x-cg-demo-api-key": process.env.COINGECKO_API_KEY } : {};
 
-export async function buildPortfolio(wallets: WalletRef[], costBasis: Record<string, number> = {}): Promise<Portfolio> {
+export async function buildPortfolio(wallets: WalletRef[], costBasis: Record<string, number> = {}, exchangeHoldings: ExchangeHoldingInput[] = []): Promise<Portfolio> {
   const errors: string[] = [];
   const holdings: Holding[] = [];
   const transactions: (EvmTransfer | SolTransfer)[] = [];
+  for (const x of exchangeHoldings) {
+    if (!(x.amount > 0)) continue;
+    const stable = ["USD", "USDT", "USDC", "FDUSD", "DAI", "TUSD", "CAD", "EUR", "GBP"].includes(x.asset);
+    holdings.push({ wallet: x.exchange, walletLabel: x.label ?? x.exchange, chain: x.exchange, address: `cex:${x.asset}`, symbol: x.asset, name: x.asset, amount: x.amount, priceUsd: stable ? 1 : null, valueUsd: stable ? x.amount : null, priceSource: stable ? "coingecko" : "unavailable", change24hPct: stable ? 0 : null, costBasis: x.avgCost ?? null });
+  }
 
   await Promise.all(
     wallets.map(async (w) => {
@@ -74,7 +82,7 @@ export async function buildPortfolio(wallets: WalletRef[], costBasis: Record<str
   await priceHoldings(holdings, errors);
 
   for (const h of holdings) {
-    const cb = costBasis[`${h.chain}:${h.address ?? "native"}`];
+    const cb = costBasis[`${h.chain}:${h.address ?? "native"}`] ?? h.costBasis ?? undefined;
     if (cb != null && h.priceUsd != null) {
       h.costBasis = cb;
       h.unrealizedUsd = (h.priceUsd - cb) * h.amount;
@@ -103,6 +111,22 @@ export async function buildPortfolio(wallets: WalletRef[], costBasis: Record<str
 }
 
 async function priceHoldings(holdings: Holding[], errors: string[]) {
+  // 0) exchange holdings (symbol only): map symbol -> coingecko id via top-500 markets
+  const cex = holdings.filter((h) => h.address?.startsWith("cex:") && h.priceUsd == null);
+  if (cex.length) {
+    try {
+      const top = await fetchJson<{ id: string; symbol: string; current_price: number; price_change_percentage_24h: number | null }[]>(`${CG_BASE}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=1`, { provider: "coingecko", headers: CG_HEADERS, ttl: 120_000 });
+      const top2 = await fetchJson<typeof top>(`${CG_BASE}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&page=2`, { provider: "coingecko", headers: CG_HEADERS, ttl: 120_000 }).catch(() => [] as typeof top);
+      const bySym = new Map<string, (typeof top)[number]>();
+      for (const c of [...top, ...top2]) if (!bySym.has(c.symbol.toUpperCase())) bySym.set(c.symbol.toUpperCase(), c);
+      for (const h of cex) {
+        const c = bySym.get(h.symbol.toUpperCase());
+        if (c) Object.assign(h, { priceUsd: c.current_price, valueUsd: c.current_price * h.amount, priceSource: "coingecko", change24hPct: c.price_change_percentage_24h ?? null });
+      }
+    } catch (e) {
+      errors.push("CoinGecko prices for exchange balances: " + (e as Error).message);
+    }
+  }
   // 1) native coins by CoinGecko id
   const nativeIds = new Set<string>();
   for (const h of holdings) if (h.address == null && h.chain !== "solana") nativeIds.add(ALCHEMY_NETWORKS[h.chain].native.coingeckoId);

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
-import { buildPortfolio } from "@/lib/portfolio";
+import { buildPortfolio, type ExchangeHoldingInput } from "@/lib/portfolio";
+import { ADAPTERS, realizedPnl } from "@/lib/exchanges";
+import { decrypt, EXCHANGE_KEYS_ENABLED } from "@/lib/exchanges/crypto";
+import type { ExchangeId } from "@/lib/exchanges/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -17,16 +20,27 @@ async function ctx() {
 export async function GET(req: NextRequest) {
   const { sb, user, res } = await ctx();
   if (res) return res;
-  const [{ data: wallets }, { data: cost }, { data: history }] = await Promise.all([
+  const [{ data: wallets }, { data: cost }, { data: history }, { data: exch }] = await Promise.all([
     sb!.from("wallets").select("*").eq("user_id", user!.id),
     sb!.from("cost_basis").select("*").eq("user_id", user!.id),
     sb!.from("holdings_snapshots").select("taken_at, total_usd").eq("user_id", user!.id).order("taken_at", { ascending: true }).limit(2000),
+    EXCHANGE_KEYS_ENABLED() ? sb!.from("exchange_accounts").select("*").eq("user_id", user!.id) : Promise.resolve({ data: [] as { id: string; exchange: string; label: string | null; enc_key: string; enc_secret: string; enc_passphrase: string | null }[] }),
   ]);
+  const exHoldings: ExchangeHoldingInput[] = [];
+  for (const r of exch ?? []) {
+    try {
+      const ad = ADAPTERS[r.exchange as ExchangeId];
+      const creds = { key: decrypt(r.enc_key), secret: decrypt(r.enc_secret), passphrase: r.enc_passphrase ? decrypt(r.enc_passphrase) : undefined };
+      const [bals, fills] = await Promise.all([ad.balances(creds), ad.fills(creds, { limit: 1000 }).catch(() => [])]);
+      const pnl = realizedPnl(fills);
+      for (const b of bals) exHoldings.push({ exchange: r.exchange, label: r.label, asset: b.asset, amount: b.total, avgCost: pnl.perAsset.find((x) => x.asset === b.asset)?.avgCost ?? null });
+    } catch { /* surfaced on the exchange panel */ }
+  }
   const cb: Record<string, number> = {};
   for (const c of cost ?? []) cb[`${c.chain}:${c.address}`] = Number(c.cost_per_unit);
-  const p = await buildPortfolio((wallets ?? []).map((w) => ({ chain: w.chain, address: w.address, label: w.label })), cb);
-  if (req.nextUrl.searchParams.get("snapshot") && (wallets ?? []).length && p.pricedPct >= 50) {
-    await sb!.from("holdings_snapshots").insert({ wallet_id: wallets![0].id, user_id: user!.id, total_usd: p.totalUsd, holdings: p.holdings.map((h) => ({ chain: h.chain, address: h.address, symbol: h.symbol, amount: h.amount, price_usd: h.priceUsd, value_usd: h.valueUsd })) });
+  const p = await buildPortfolio((wallets ?? []).map((w) => ({ chain: w.chain, address: w.address, label: w.label })), cb, exHoldings);
+  if (req.nextUrl.searchParams.get("snapshot") && ((wallets ?? []).length || exHoldings.length) && p.pricedPct >= 50) {
+    await sb!.from("holdings_snapshots").insert({ wallet_id: wallets?.[0]?.id ?? null, user_id: user!.id, total_usd: p.totalUsd, holdings: p.holdings.map((h) => ({ chain: h.chain, address: h.address, symbol: h.symbol, amount: h.amount, price_usd: h.priceUsd, value_usd: h.valueUsd })) });
   }
   // collapse history to one point per day for the chart
   const daily = new Map<string, number>();

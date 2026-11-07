@@ -37,6 +37,7 @@ Push to a GitHub repo, import in Vercel, add env vars (optional), deploy. All pa
 | `/login`, `/account` | Magic-link / Google sign-in, account overview, notification settings |
 | `/alerts` | 15 alert types (incl. DEX liquidity change and new listings) (price, % move, RSI, MACD cross, pattern, breakout/breakdown, TP/SL, volume spike, Fear & Greed zone) with push, email and inbox |
 | `/portfolio` | Read-only wallet tracking across 6 EVM chains + Solana: holdings, prices, allocation, network split, transactions, value history, manual cost basis → unrealized P&L |
+| Exchange accounts (on `/portfolio`) | Read-only Kraken / Coinbase / Binance keys, encrypted at rest: balances, trade history, FIFO realized P&L and fees |
 | `/performance` | The engine grading itself: every emitted signal on the top-30 coins logged and resolved against real price - win rate, TP/SL counts, MFE/MAE by timeframe, kind and side |
 
 AI analyst briefings (Stage 5) sit under every analysis: a Claude model writes the plain-language read strictly from the engine's numbers, keeps a history per asset, and the dashboard carries an hourly market briefing.
@@ -47,7 +48,7 @@ Every number shows its **source and quality** (verified / estimated / unavailabl
 
 ## What is *not* in Stage 1 (and the plan)
 
-Read-only exchange keys for realized P&L and CEX-side portfolio (next). Per-token social sentiment and whale feeds need paid or keyed APIs - see the limitations section in the architecture doc.
+Crypto-to-crypto trade pricing for realized P&L (currently USD-quoted trades only). Per-token social sentiment and whale feeds need paid or keyed APIs - see the limitations section in the architecture doc.
 
 Formatting rule for this project: no em dashes or en dashes anywhere (UI, docs, AI output). `scripts/selftest.ts` fails the build check if one appears, and model output is filtered.
 
