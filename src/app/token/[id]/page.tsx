@@ -5,6 +5,7 @@ import { resolveSymbol } from "@/lib/providers/binance";
 import { safe } from "@/lib/fetch";
 import { fmtPct, fmtUsd, pctClass } from "@/lib/format";
 import AnalysisPanel from "@/components/AnalysisPanel";
+import AiBriefing from "@/components/AiBriefing";
 import WatchButton from "@/components/WatchButton";
 import { Disclaimer, QualityBadge, Section, StatCard } from "@/components/ui";
 import Link from "next/link";
@@ -65,6 +66,8 @@ export default async function TokenPage({ params }: { params: Promise<{ id: stri
       </div>
 
       <AnalysisPanel asset={{ symbol: c.symbol, id: c.id }} title={hasCex ? `${binanceSym.data} · Binance` : `${c.symbol} · CoinGecko (no Binance pair)`} />
+
+      <AiBriefing id={c.id} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Section title="Markets" right={<QualityBadge quality="verified" source="coingecko" />}>

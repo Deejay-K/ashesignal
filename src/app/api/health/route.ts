@@ -37,6 +37,8 @@ export async function GET() {
       cronSecret: process.env.CRON_SECRET ? "set" : "missing (cron open in dev, locked in prod)",
       push: process.env.VAPID_PUBLIC_KEY ? "configured" : "not configured",
       email: process.env.RESEND_API_KEY ? "configured" : "not configured",
+      ai: process.env.ANTHROPIC_API_KEY ? `anthropic (${process.env.AI_MODEL ?? "claude-haiku-5-5"})` : process.env.AI_API_KEY && process.env.AI_BASE_URL ? `openai-compatible (${process.env.AI_BASE_URL}, ${process.env.AI_MODEL ?? "default"})` : "local engine writer (free, no key)",
+      wallets: `alchemy ${process.env.ALCHEMY_API_KEY ? "set" : "missing"}, helius ${process.env.HELIUS_API_KEY ? "set" : "missing"}`,
       siteUrl: process.env.NEXT_PUBLIC_SITE_URL ?? null,
       region: process.env.VERCEL_REGION ?? null,
     },

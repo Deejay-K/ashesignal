@@ -8,6 +8,7 @@ import { Disclaimer, Empty, QualityBadge, RiskBadge, Section, StatCard } from "@
 import AnalysisPanel from "@/components/AnalysisPanel";
 import { GECKOTERMINAL_NETWORK } from "@/lib/providers/chains";
 import WatchButton from "@/components/WatchButton";
+import AiBriefing from "@/components/AiBriefing";
 
 export default function ScannerPage() {
   return (
@@ -153,6 +154,7 @@ function Report({ r }: { r: ScanReport }) {
       ) : (
         <Empty>{r.analysisNote || "No chartable pool."}</Empty>
       )}
+      {r.analysis ? <AiBriefing address={r.address} /> : null}
     </div>
   );
 }

@@ -17,3 +17,6 @@ jobs:
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/signals?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Portfolio snapshots (skips users snapshotted <20h ago)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/snapshot?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: AI market briefing (hourly)
+        if: ${{ github.event_name == 'workflow_dispatch' || endsWith(github.run_id, '3') }}
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/briefing?secret=${{ secrets.CRON_SECRET }}" || true

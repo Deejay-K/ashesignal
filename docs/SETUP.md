@@ -105,6 +105,17 @@ NEXT_PUBLIC_SITE_URL      = https://ashesignal.vercel.app   (your real URL)
 
 Cost basis is entered manually per asset (tap "set" in the Holdings table) and drives Unrealized P&L. Never enter a private key or seed phrase anywhere — the app only accepts public addresses and rejects anything that looks like a seed phrase.
 
+## 9. Stage 5 — AI analyst briefings (free by default)
+
+With **no key at all**, briefings are written by the built-in engine writer — same format, every number from the engine, zero cost. Just run `supabase/schema.sql` again (adds `ai_briefings`) and press **Generate briefing** on any token page.
+
+Optional upgrade to a real language model for richer prose — two free options (no card needed):
+- **Groq**: https://console.groq.com/keys → create key. Vercel env: `AI_BASE_URL=https://api.groq.com/openai/v1`, `AI_API_KEY=<key>`, `AI_MODEL=llama-3.3-70b-versatile`.
+- **Google Gemini**: https://aistudio.google.com/apikey → create key. Vercel env: `AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`, `AI_API_KEY=<key>`, `AI_MODEL=gemini-2.0-flash`.
+- (Paid) **Claude**: `ANTHROPIC_API_KEY` from console.anthropic.com; default model `claude-haiku-5-5`.
+
+If a remote model errors or you hit its free quota, the app silently falls back to the engine writer. `/api/health` shows which provider is active. Briefings are cached 15 min per asset (1 h for the market one) and only signed-in users can generate.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).
@@ -120,4 +131,5 @@ Cost basis is entered manually per asset (tap "set" in the Holdings table) and d
 | Save setups, auto-resolved vs live price, personal hit-rate (`/setups`) | ✗ | ✓ |
 | Alerts (price, %, RSI, MACD, pattern, breakout, volume, F&G) + push/email/inbox | ✗ | ✓ |
 | Wallet / portfolio tracking with history and cost basis | ✗ | ✓ |
+| AI briefings | read cached | generate + history |
 | Risk profile (balance, risk %, exposure, leverage) | this browser only | synced |

@@ -211,3 +211,22 @@ create table if not exists public.cost_basis (
 alter table public.cost_basis enable row level security;
 drop policy if exists "own cost basis" on public.cost_basis;
 create policy "own cost basis" on public.cost_basis for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---------- Stage 5 additions (safe to re-run) ----------
+-- AI briefings per asset: history of analyses, shared across users (no personal data inside).
+create table if not exists public.ai_briefings (
+  id uuid primary key default gen_random_uuid(),
+  asset_key text not null,           -- 'cg:bitcoin' | 'pool:solana:<pool>' | 'market'
+  symbol text not null,
+  price numeric,
+  model text,
+  briefing jsonb not null,
+  engine jsonb,                      -- consensus snapshot the briefing was written from
+  input_tokens int, output_tokens int,
+  requested_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz default now()
+);
+create index if not exists ai_briefings_asset_time on public.ai_briefings(asset_key, created_at desc);
+alter table public.ai_briefings enable row level security;
+drop policy if exists "briefings readable" on public.ai_briefings;
+create policy "briefings readable" on public.ai_briefings for select using (true);   -- written by service role
