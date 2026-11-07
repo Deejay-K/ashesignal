@@ -151,13 +151,16 @@ export interface CoinDetail {
   change30dPct: number | null;
   change1yPct: number | null;
   sentimentUpPct: number | null;
+  twitterFollowers: number | null;
+  redditSubscribers: number | null;
+  watchlistUsers: number | null;
   homepage?: string;
   tickers: { exchange: string; base: string; target: string; lastUsd: number | null; volumeUsd: number | null; trustScore: string | null }[];
 }
 
 export async function getCoin(id: string): Promise<CoinDetail> {
   const r = await fetchJson<any>( // eslint-disable-line @typescript-eslint/no-explicit-any
-    `${BASE}/coins/${encodeURIComponent(id)}?localization=false&tickers=true&market_data=true&community_data=false&developer_data=false&sparkline=false`,
+    `${BASE}/coins/${encodeURIComponent(id)}?localization=false&tickers=true&market_data=true&community_data=true&developer_data=false&sparkline=false`,
     opts(120_000),
   );
   const md = r.market_data ?? {};
@@ -185,6 +188,9 @@ export async function getCoin(id: string): Promise<CoinDetail> {
     change30dPct: md.price_change_percentage_30d ?? null,
     change1yPct: md.price_change_percentage_1y ?? null,
     sentimentUpPct: r.sentiment_votes_up_percentage ?? null,
+    twitterFollowers: r.community_data?.twitter_followers ?? null,
+    redditSubscribers: r.community_data?.reddit_subscribers ?? null,
+    watchlistUsers: r.watchlist_portfolio_users ?? null,
     homepage: r.links?.homepage?.[0] || undefined,
     tickers: (r.tickers ?? []).slice(0, 40).map((t: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
       exchange: t.market?.name ?? "?",

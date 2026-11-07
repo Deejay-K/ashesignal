@@ -24,6 +24,7 @@ const RISKS = ["low", "medium", "high", "extreme"] as const;
 export default function DiscoverPage() {
   const [d, setD] = useState<DiscoverResult | null>(null);
   const [liq, setLiq] = useState<{ changes: LiquidityChange[]; note?: string } | null>(null);
+  const [wh, setWh] = useState<{ tokens: { chain: string; address: string; symbol: string | null; count: number; totalUsd: number; inflowUsd: number; outflowUsd: number; largestUsd: number }[]; note?: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [chain, setChain] = useState("all");
   const [risk, setRisk] = useState<Set<string>>(new Set(RISKS));
@@ -36,6 +37,7 @@ export default function DiscoverPage() {
   useEffect(() => {
     load();
     fetch("/api/liquidity").then((r) => r.json()).then(setLiq).catch(() => {});
+    fetch("/api/whales").then((r) => r.json()).then(setWh).catch(() => {});
     const t = setInterval(load, 120_000);
     return () => clearInterval(t);
   }, []);
@@ -86,6 +88,33 @@ export default function DiscoverPage() {
       </div>
       {err ? <p className="text-sm text-red">{err}</p> : null}
       {d?.errors.length ? <p className="text-xs text-amber">Partial data - {d.errors.join(" · ")}</p> : null}
+
+      <Section title="Unusual whale activity (48h)" right={<span className="text-[11px] text-fg-3">large transfers on tracked tokens: watchlists, alerts, trending, majors</span>}>
+        {!wh ? <div className="h-24 animate-pulse rounded-lg bg-bg-3" /> : wh.tokens.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Token</th><th>Chain</th><th className="text-right">Transfers</th><th className="text-right">Total</th><th className="text-right">To exchanges</th><th className="text-right">From exchanges</th><th className="text-right">Largest</th><th>Read</th></tr></thead>
+              <tbody>
+                {wh.tokens.filter((t) => chain === "all" || t.chain === chain).slice(0, 25).map((t) => {
+                  const net = t.inflowUsd - t.outflowUsd;
+                  return (
+                    <tr key={t.chain + t.address}>
+                      <td><Link href={`/scanner?address=${t.address}`} className="font-medium hover:text-mint">{t.symbol ?? t.address.slice(0, 8)}</Link></td>
+                      <td><span className="pill pill-gray">{t.chain}</span></td>
+                      <td className="num text-right">{t.count}</td>
+                      <td className="num text-right">{fmtUsd(t.totalUsd, { compact: true })}</td>
+                      <td className="num text-right down">{fmtUsd(t.inflowUsd, { compact: true })}</td>
+                      <td className="num text-right up">{fmtUsd(t.outflowUsd, { compact: true })}</td>
+                      <td className="num text-right text-fg-2">{fmtUsd(t.largestUsd, { compact: true })}</td>
+                      <td>{net > 50_000 && t.inflowUsd > t.outflowUsd * 1.5 ? <span className="pill pill-red">sell pressure</span> : net < -50_000 && t.outflowUsd > t.inflowUsd * 1.5 ? <span className="pill pill-mint">accumulation</span> : <span className="pill pill-gray">mixed</span>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty>{wh.note ?? "No large transfers logged yet - the worker scans tracked tokens every few minutes; needs Alchemy/Helius keys."}</Empty>}
+      </Section>
 
       <Section title="Significant liquidity changes (24h)" right={<span className="text-[11px] text-fg-3">DEX pools tracked by the worker · ±25% or more</span>}>
         {!liq ? <div className="h-24 animate-pulse rounded-lg bg-bg-3" /> : liq.changes.length ? (

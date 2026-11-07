@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { buildPortfolio, type ExchangeHoldingInput } from "@/lib/portfolio";
 import { ADAPTERS, realizedPnl } from "@/lib/exchanges";
+import { priceFillsInUsd } from "@/lib/exchanges/pricing";
 import { decrypt, EXCHANGE_KEYS_ENABLED } from "@/lib/exchanges/crypto";
 import type { ExchangeId } from "@/lib/exchanges/types";
 
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
       const ad = ADAPTERS[r.exchange as ExchangeId];
       const creds = { key: decrypt(r.enc_key), secret: decrypt(r.enc_secret), passphrase: r.enc_passphrase ? decrypt(r.enc_passphrase) : undefined };
       const [bals, fills] = await Promise.all([ad.balances(creds), ad.fills(creds, { limit: 1000 }).catch(() => [])]);
-      const pnl = realizedPnl(fills);
+      const pnl = realizedPnl((await priceFillsInUsd(fills)).fills);
       for (const b of bals) exHoldings.push({ exchange: r.exchange, label: r.label, asset: b.asset, amount: b.total, avgCost: pnl.perAsset.find((x) => x.asset === b.asset)?.avgCost ?? null });
     } catch { /* surfaced on the exchange panel */ }
   }

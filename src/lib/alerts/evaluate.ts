@@ -52,7 +52,19 @@ export async function evaluateAlerts(sb: SupabaseClient) {
     let msg: { title: string; body: string } | null = null;
     const newState: Record<string, unknown> = { ...a.state };
 
-    if (a.type === "macro_event") {
+    if (a.type === "whale_transfer") {
+      const ref = a.asset_ref as { chain?: string; address?: string } | null;
+      if (ref?.address) {
+        const min = Number(a.params.usd ?? 100_000);
+        const since = (a.state.lastWhaleAt as string | undefined) ?? new Date(Date.now() - 6 * 3_600_000).toISOString();
+        const { data } = await sb.from("whale_events").select("*").eq("token_address", ref.address.toLowerCase()).gte("value_usd", min).gt("occurred_at", since).order("occurred_at", { ascending: false }).limit(5);
+        if (data?.length) {
+          const tot = data.reduce((s, e) => s + Number(e.value_usd), 0);
+          msg = { title: `${a.symbol}: ${data.length} whale transfer${data.length > 1 ? "s" : ""} (${fmtUsd(tot, { compact: true })})`, body: data.map((e) => `${fmtUsd(Number(e.value_usd), { compact: true })} ${e.kind.replace("_", " ")}${e.to_label ? " to " + e.to_label : e.from_label ? " from " + e.from_label : ""}`).join("; ") };
+          newState.lastWhaleAt = data[0].occurred_at;
+        }
+      }
+    } else if (a.type === "macro_event") {
       const g = await globalConditions();
       const soon = g.events.filter((e) => e.impact === "High" && Date.parse(e.time) - Date.now() > 0 && Date.parse(e.time) - Date.now() <= 2 * 3_600_000);
       const sig = soon.map((e) => e.time).join(",");
@@ -160,7 +172,7 @@ export async function evaluateAlerts(sb: SupabaseClient) {
       fired++;
       patch.last_fired_at = new Date().toISOString();
       const url = a.asset_key.startsWith("cg:") ? `/token/${a.asset_key.slice(3)}` : "/alerts";
-      await deliver(sb, { userId: a.user_id, alertId: a.id, symbol: a.symbol, title: msg.title, body: msg.body, url });
+      await deliver(sb, { userId: a.user_id, alertId: a.id, symbol: a.symbol, title: msg.title, body: msg.body, url, channels: (a as unknown as { channels?: string[] }).channels });
     }
     await sb.from("alerts").update(patch).eq("id", a.id);
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
 import { ADAPTERS, realizedPnl } from "@/lib/exchanges";
+import { priceFillsInUsd } from "@/lib/exchanges/pricing";
 import { decrypt, encrypt, EXCHANGE_KEYS_ENABLED } from "@/lib/exchanges/crypto";
 import type { ExchangeId } from "@/lib/exchanges/types";
 
@@ -44,7 +45,15 @@ export async function GET(req: NextRequest) {
     }
     accounts.push({ id: r.id, exchange: r.exchange, label: r.label, permissions: r.permissions, lastOkAt: r.last_ok_at, error, balances, fills: quick ? undefined : fills });
   }
-  return NextResponse.json({ enabled: true, accounts, realized: quick ? null : realizedPnl(allFills as never) });
+  let realized = null;
+  let unpricedQuotes: string[] = [];
+  if (!quick) {
+    const priced = await priceFillsInUsd(allFills as never);
+    realized = realizedPnl(priced.fills);
+    unpricedQuotes = [...new Set([...realized.unpricedQuotes, ...priced.unpriced])];
+    realized.unpricedQuotes = unpricedQuotes;
+  }
+  return NextResponse.json({ enabled: true, accounts, realized });
 }
 
 /** POST { exchange, key, secret, passphrase?, label? } - verifies read-only, encrypts, stores. */

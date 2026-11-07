@@ -5,6 +5,7 @@ import Link from "next/link";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { fmtUsd } from "@/lib/format";
 import { Disclaimer, Empty, Section } from "@/components/ui";
+import { downloadCsv } from "@/lib/csv";
 
 interface Row {
   id: string; asset_key: string; symbol: string; timeframe: string; side: "LONG" | "SHORT"; kind: string;
@@ -53,7 +54,7 @@ export default function SetupsPage() {
               ))}
             </div>
           ) : null}
-          <Section title="All setups">
+          <Section title="All setups" right={rows.length ? <button className="btn-ghost" onClick={() => downloadCsv("ashesignal-setups.csv", rows.map((r) => ({ date: r.created_at, symbol: r.symbol, timeframe: r.timeframe, side: r.side, kind: r.kind, entry_low: r.entry_low, entry_high: r.entry_high, tp1: r.tp1, tp2: r.tp2, tp3: r.tp3, sl1: r.sl1, sl2: r.sl2, rr: r.rr, leverage: r.leverage, confidence: r.confidence, status: r.status })))}>Export CSV</button> : null}>
             {rows.length ? (
               <div className="overflow-x-auto">
                 <table>

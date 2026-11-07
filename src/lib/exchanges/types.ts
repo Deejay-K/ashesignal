@@ -39,4 +39,4 @@ export function normAsset(a: string): string {
   const s = a.toUpperCase().replace(/\.(S|M|F|HOLD|B)$/, ""); // kraken staked/bonded suffixes
   return m[s] ?? s;
 }
-export const STABLES = new Set(["USD", "USDT", "USDC", "FDUSD", "DAI", "TUSD", "EUR", "CAD", "GBP", "JPY", "BUSD"]);
+export const STABLES = new Set(["USD", "USD*", "USDT", "USDC", "FDUSD", "DAI", "TUSD", "EUR", "CAD", "GBP", "JPY", "BUSD"]);

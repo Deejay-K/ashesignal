@@ -17,5 +17,6 @@ export const ALERT_TYPES = [
   { type: "liquidity_change", label: "DEX liquidity changes ±% (24h)", params: ["pct"] },
   { type: "new_listing", label: "New token listings (global)", params: [] },
   { type: "macro_event", label: "High-impact macro event within 2 h (global)", params: [] },
+  { type: "whale_transfer", label: "Whale transfer on a DEX token (>= $ amount)", params: ["usd"] },
 ] as const;
 export type AlertType = (typeof ALERT_TYPES)[number]["type"];

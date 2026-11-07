@@ -8,6 +8,9 @@ import { Disclaimer, Empty, Section, StatCard } from "@/components/ui";
 import HistoryChart from "@/components/HistoryChart";
 import ExchangePanel from "@/components/ExchangePanel";
 import Term from "@/components/Term";
+import CurrencyPicker from "@/components/CurrencyPicker";
+import { useCurrency } from "@/lib/currency";
+import { downloadCsv } from "@/lib/csv";
 
 interface Wallet { id: string; chain: string; address: string; label: string | null }
 const COLORS = ["#36bd94", "#5aa7ff", "#f2b544", "#f0506e", "#a78bfa", "#9fb0c0", "#7fd4b0", "#ff8c5a"];
@@ -22,6 +25,7 @@ export default function PortfolioPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [cbEdit, setCbEdit] = useState<{ key: string; value: string } | null>(null);
+  const { fmt: fmtMoney, currency } = useCurrency();
 
   const loadWallets = async () => {
     const r = await fetch("/api/me/wallets");
@@ -63,6 +67,7 @@ export default function PortfolioPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold">Portfolio</h1>
+        <div className="mt-1"><CurrencyPicker /></div>
         <p className="text-sm text-fg-2">Read-only wallet tracking (public addresses) plus read-only exchange accounts for balances, trade history and realized P&amp;L. AsheSignal never asks for seed phrases or keys that can trade or withdraw.</p>
       </div>
       {state === "disabled" ? <Empty>Accounts are not configured (docs/SETUP.md step 3).</Empty> : null}
@@ -71,9 +76,9 @@ export default function PortfolioPage() {
         <>
           {p ? (
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <StatCard label="Total value" value={fmtUsd(p.totalUsd, { compact: p.totalUsd > 1e6 })} sub={`${p.holdings.length} holdings · ${wallets.length} wallet${wallets.length === 1 ? "" : "s"}`} />
+              <StatCard label="Total value" value={fmtMoney(p.totalUsd, { compact: p.totalUsd > 1e6 })} sub={`${p.holdings.length} holdings · ${wallets.length} wallet${wallets.length === 1 ? "" : "s"}`} />
               <StatCard label="24h change" value={<span className={pctClass(change24(p))}>{fmtPct(change24(p))}</span>} sub="value-weighted, priced holdings" />
-              <StatCard label={<Term id="unrealized">Unrealized P&L</Term>} value={<span className={pctClass(unreal(p))}>{unreal(p) != null ? fmtUsd(unreal(p)) : "-"}</span>} sub="on holdings with a cost basis" />
+              <StatCard label={<Term id="unrealized">Unrealized P&L</Term>} value={<span className={pctClass(unreal(p))}>{unreal(p) != null ? fmtMoney(unreal(p)) : "-"}</span>} sub="on holdings with a cost basis" />
               <StatCard label="Priced" value={`${p.pricedPct.toFixed(0)}%`} sub={p.pricedPct < 100 ? "some tokens have no market price" : "all holdings priced"} />
             </div>
           ) : null}
@@ -119,11 +124,11 @@ export default function PortfolioPage() {
             </Section>
           ) : null}
 
-          <Section title="Holdings">
+          <Section title="Holdings" right={p?.holdings.length ? <button className="btn-ghost" onClick={() => downloadCsv("ashesignal-holdings.csv", p.holdings.map((h) => ({ symbol: h.symbol, name: h.name, chain: h.chain, wallet: h.walletLabel ?? h.wallet, address: h.address ?? "", amount: h.amount, price_usd: h.priceUsd, value_usd: h.valueUsd, change_24h_pct: h.change24hPct, cost_basis_usd: h.costBasis, unrealized_usd: h.unrealizedUsd, price_source: h.priceSource })))}>Export CSV</button> : null}>
             {p?.holdings.length ? (
               <div className="overflow-x-auto">
                 <table>
-                  <thead><tr><th>Asset</th><th>Chain</th><th className="text-right">Amount</th><th className="text-right">Price</th><th className="text-right">24h</th><th className="text-right">Value</th><th className="text-right">Cost basis</th><th className="text-right">Unrealized</th><th /></tr></thead>
+                  <thead><tr><th>Asset</th><th>Chain</th><th className="text-right">Amount</th><th className="text-right">Price</th><th className="text-right">24h</th><th className="text-right">Value</th><th className="text-right">Cost basis ({currency})</th><th className="text-right">Unrealized</th><th /></tr></thead>
                   <tbody>
                     {p.holdings.map((h) => {
                       const key = `${h.chain}:${h.address ?? "native"}`;
@@ -132,17 +137,17 @@ export default function PortfolioPage() {
                           <td><span className="flex items-center gap-2">{h.logo ? <img src={h.logo} alt="" className="h-5 w-5 rounded-full" /> : null}<b>{h.symbol}</b><span className="text-fg-3">{h.name.slice(0, 18)}</span></span></td>
                           <td><span className="pill pill-gray">{h.chain}</span></td>
                           <td className="num text-right">{fmtNum(h.amount, 4)}</td>
-                          <td className="num text-right">{fmtUsd(h.priceUsd)} {h.priceSource !== "unavailable" ? <span className="text-[10px] text-fg-3">{h.priceSource}</span> : null}</td>
+                          <td className="num text-right">{fmtMoney(h.priceUsd)} {h.priceSource !== "unavailable" ? <span className="text-[10px] text-fg-3">{h.priceSource}</span> : null}</td>
                           <td className={`num text-right ${pctClass(h.change24hPct)}`}>{fmtPct(h.change24hPct, 1)}</td>
-                          <td className="num text-right">{fmtUsd(h.valueUsd)}</td>
+                          <td className="num text-right">{fmtMoney(h.valueUsd)}</td>
                           <td className="num text-right">
                             {cbEdit?.key === key ? (
                               <input autoFocus className="w-24 !py-1 text-right" value={cbEdit.value} onChange={(e) => setCbEdit({ key, value: e.target.value })} onBlur={async () => { await fetch("/api/me/portfolio", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ chain: h.chain, address: h.address, costPerUnit: Number(cbEdit.value) }) }); setCbEdit(null); loadPortfolio(); }} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
                             ) : (
-                              <button className="text-fg-2 hover:text-mint" onClick={() => setCbEdit({ key, value: String(h.costBasis ?? "") })}>{h.costBasis != null ? fmtUsd(h.costBasis) : "set"}</button>
+                              <button className="text-fg-2 hover:text-mint" onClick={() => setCbEdit({ key, value: String(h.costBasis ?? "") })}>{h.costBasis != null ? fmtMoney(h.costBasis) : "set"}</button>
                             )}
                           </td>
-                          <td className={`num text-right ${pctClass(h.unrealizedUsd)}`}>{h.unrealizedUsd != null ? `${fmtUsd(h.unrealizedUsd)} (${fmtPct(h.unrealizedPct, 1)})` : "-"}</td>
+                          <td className={`num text-right ${pctClass(h.unrealizedUsd)}`}>{h.unrealizedUsd != null ? `${fmtMoney(h.unrealizedUsd)} (${fmtPct(h.unrealizedPct, 1)})` : "-"}</td>
                           <td>{h.address && !h.address.startsWith("cex:") ? <Link href={`/scanner?address=${h.address}`} className="link text-xs">scan</Link> : null}</td>
                         </tr>
                       );
@@ -154,7 +159,7 @@ export default function PortfolioPage() {
             <p className="mt-2 text-xs text-fg-3">Unrealized P&amp;L uses the FIFO average cost from your exchange trade history where available, otherwise a cost basis you enter per asset (tap "set"). Manual entries override the automatic value.</p>
           </Section>
 
-          <Section title="Recent transactions">
+          <Section title="Recent transactions" right={p?.transactions.length ? <button className="btn-ghost" onClick={() => downloadCsv("ashesignal-transactions.csv", p.transactions.map((t) => ({ time: t.timestamp, chain: t.chain, direction: t.direction, asset: "asset" in t ? t.asset : "", value: t.value, type: "type" in t ? t.type : "", hash: t.hash })))}>Export CSV</button> : null}>
             {p?.transactions.length ? (
               <div className="max-h-96 overflow-auto">
                 <table>

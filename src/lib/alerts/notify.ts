@@ -9,6 +9,8 @@ export interface Notification {
   title: string;
   body: string;
   url?: string;
+  /** per-alert channel choice: "push" | "email" (inbox is always written) */
+  channels?: string[];
 }
 
 export const PUSH_ENABLED = Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
@@ -22,7 +24,9 @@ export async function deliver(sb: SupabaseClient, n: Notification): Promise<{ pu
   let push = 0;
   let email = false;
 
-  if (PUSH_ENABLED && profile?.notify_push !== false) {
+  const wantPush = n.channels ? n.channels.includes("push") : true;
+  const wantEmail = n.channels ? n.channels.includes("email") : !!profile?.notify_email;
+  if (PUSH_ENABLED && wantPush && profile?.notify_push !== false) {
     const webpush = (await import("web-push")).default;
     webpush.setVapidDetails(process.env.VAPID_SUBJECT ?? "mailto:alerts@ashesignal.app", process.env.VAPID_PUBLIC_KEY!, process.env.VAPID_PRIVATE_KEY!);
     const { data: subs } = await sb.from("push_subscriptions").select("id, endpoint, keys").eq("user_id", n.userId);
@@ -37,7 +41,7 @@ export async function deliver(sb: SupabaseClient, n: Notification): Promise<{ pu
     }
   }
 
-  if (EMAIL_ENABLED && profile?.notify_email && profile.email) {
+  if (EMAIL_ENABLED && wantEmail && profile?.email) {
     try {
       const { Resend } = await import("resend");
       const resend = new Resend(process.env.RESEND_API_KEY);

@@ -6,6 +6,8 @@ import { sizePosition, type RiskInputs } from "@/lib/risk/position";
 import { fmtNum, fmtUsd } from "@/lib/format";
 import { Disclaimer, Section, StatCard } from "@/components/ui";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import CurrencyPicker from "@/components/CurrencyPicker";
+import { useCurrency } from "@/lib/currency";
 
 const KEY = "ashesignal.risk.profile.v1";
 
@@ -29,6 +31,9 @@ function Risk() {
     tp3: Number(sp.get("tp3") ?? 0),
   });
   const symbol = sp.get("symbol");
+  const { currency, rate } = useCurrency();
+  // Balances are entered in the display currency; prices from setups are USD. Convert balances to USD for the math and show results in the display currency.
+  const toUsd = (v: number) => (rate ? v / rate : v);
 
   const [account, setAccount] = useState<"none" | "loading" | "synced">("none");
   useEffect(() => {
@@ -65,9 +70,11 @@ function Risk() {
   }, [p]);
 
   const out = useMemo(() => {
-    const i: RiskInputs = { ...p, maxLossUsd: p.maxLossUsd || undefined, side: t.side, entry: t.entry, stop: t.stop, takeProfits: [t.tp1, t.tp2, t.tp3].filter((x) => x > 0) };
+    const i: RiskInputs = { ...p, tradingBalance: toUsd(p.tradingBalance), portfolioValue: p.portfolioValue ? toUsd(p.portfolioValue) : undefined, maxLossUsd: p.maxLossUsd ? toUsd(p.maxLossUsd) : undefined, side: t.side, entry: t.entry, stop: t.stop, takeProfits: [t.tp1, t.tp2, t.tp3].filter((x) => x > 0) };
     return sizePosition(i);
-  }, [p, t]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p, t, rate]);
+  const money = (usd: number | null | undefined) => (usd == null ? "-" : fmtUsd(usd * rate).replace(/^\$/, currency === "USD" ? "$" : `${currency} `));
 
   const num = (k: keyof typeof p) => ({ type: "number", step: "any", value: p[k] || "", onChange: (e: React.ChangeEvent<HTMLInputElement>) => setP({ ...p, [k]: Number(e.target.value) }) }) as const;
   const tn = (k: keyof typeof t) => ({ type: "number", step: "any", value: (t[k] as number) || "", onChange: (e: React.ChangeEvent<HTMLInputElement>) => setT({ ...t, [k]: Number(e.target.value) }) }) as const;
@@ -76,15 +83,16 @@ function Risk() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold">Position sizing & risk calculator</h1>
+        <div className="mt-1"><CurrencyPicker /></div>
         <p className="text-sm text-fg-2">Size is derived from your risk budget ÷ stop distance. The calculator will never size above your limits. {symbol ? <span className="pill pill-mint ml-1">prefilled from {symbol} setup{sp.get("leverage") ? ` at ${sp.get("leverage")}x recommended leverage` : ""}</span> : null}</p>
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <Section title={account === "synced" ? "Your capital (synced to your account)" : "Your capital (saved in this browser)"}>
           <div className="grid grid-cols-2 gap-2 text-xs text-fg-3">
-            <label>Trading balance $<input {...num("tradingBalance")} /></label>
-            <label>Total portfolio $<input {...num("portfolioValue")} /></label>
+            <label>Trading balance ({currency})<input {...num("tradingBalance")} /></label>
+            <label>Total portfolio ({currency})<input {...num("portfolioValue")} /></label>
             <label>Risk per trade %<input {...num("riskPct")} /></label>
-            <label>Max loss per trade $ (optional)<input {...num("maxLossUsd")} /></label>
+            <label>Max loss per trade ({currency}, optional)<input {...num("maxLossUsd")} /></label>
             <label>Max exposure % of trading<input {...num("maxExposurePct")} /></label>
             <label>Leverage ×<input {...num("leverage")} /></label>
             <label>Round-trip fee %<input {...num("feePct")} /></label>
@@ -104,10 +112,10 @@ function Risk() {
         </Section>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <StatCard label="Position size" value={out.ok ? `${fmtNum(out.positionSizeUnits, 4)} units` : "-"} sub={out.ok ? `${fmtUsd(out.positionValueUsd)} notional` : undefined} />
-            <StatCard label="Max loss (SL hit)" value={<span className="down">{out.ok ? `−${fmtUsd(out.riskUsd)}` : "-"}</span>} sub={out.ok ? `stop ${out.stopDistancePct}% from entry` : undefined} />
-            <StatCard label="Margin used" value={out.ok ? fmtUsd(out.marginUsd) : "-"} sub={out.ok ? `${out.exposurePctOfTrading}% of trading${out.exposurePctOfPortfolio != null ? ` · ${out.exposurePctOfPortfolio}% of portfolio` : ""}` : undefined} />
-            <StatCard label="Remaining capital" value={out.ok ? fmtUsd(out.remainingCapital) : "-"} sub={out.capped ? `capped by ${out.capped}` : undefined} />
+            <StatCard label="Position size" value={out.ok ? `${fmtNum(out.positionSizeUnits, 4)} units` : "-"} sub={out.ok ? `${money(out.positionValueUsd)} notional` : undefined} />
+            <StatCard label="Max loss (SL hit)" value={<span className="down">{out.ok ? `-${money(out.riskUsd)}` : "-"}</span>} sub={out.ok ? `stop ${out.stopDistancePct}% from entry` : undefined} />
+            <StatCard label="Margin used" value={out.ok ? money(out.marginUsd) : "-"} sub={out.ok ? `${out.exposurePctOfTrading}% of trading${out.exposurePctOfPortfolio != null ? ` · ${out.exposurePctOfPortfolio}% of portfolio` : ""}` : undefined} />
+            <StatCard label="Remaining capital" value={out.ok ? money(out.remainingCapital) : "-"} sub={out.capped ? `capped by ${out.capped}` : undefined} />
           </div>
           <div className="card p-4">
             <div className="mb-2 text-[11px] uppercase tracking-wider text-fg-3">Profit at targets</div>
@@ -120,7 +128,7 @@ function Risk() {
                         <td className="text-fg-2">{x.label}</td>
                         <td className="num">{fmtUsd(x.price)}</td>
                         <td className="num text-fg-3">{x.pct > 0 ? "+" : ""}{x.pct}%</td>
-                        <td className="num up text-right">+{fmtUsd(x.profitUsd)}</td>
+                        <td className="num up text-right">+{money(x.profitUsd)}</td>
                         <td className="num text-right"><b>{x.rr}R</b></td>
                       </tr>
                     ))}

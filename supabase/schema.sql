@@ -299,3 +299,27 @@ alter table public.holdings_snapshots alter column wallet_id drop not null;
 alter table public.saved_setups add column if not exists leverage numeric;
 alter table public.alerts drop constraint if exists alerts_type_check;
 alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','liquidity_change','new_listing','sentiment_zone','macro_event'));
+
+-- ---------- Stage 14 additions (safe to re-run) ----------
+-- Market-wide large transfers logged by the worker (watched DEX tokens + top ERC20 + trending)
+create table if not exists public.whale_events (
+  id bigserial primary key,
+  chain text not null,
+  token_address text not null,
+  symbol text,
+  tx_hash text not null,
+  from_addr text, to_addr text,
+  from_label text, to_label text,
+  kind text check (kind in ('exchange_in','exchange_out','wallet_to_wallet')),
+  amount numeric, value_usd numeric,
+  occurred_at timestamptz,
+  seen_at timestamptz default now(),
+  unique (chain, tx_hash, token_address, from_addr, to_addr)
+);
+create index if not exists whale_events_time on public.whale_events(occurred_at desc);
+alter table public.whale_events enable row level security;
+drop policy if exists "whale events readable" on public.whale_events;
+create policy "whale events readable" on public.whale_events for select using (true);
+
+alter table public.alerts drop constraint if exists alerts_type_check;
+alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','liquidity_change','new_listing','sentiment_zone','macro_event','whale_transfer'));

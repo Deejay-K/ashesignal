@@ -1,13 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
 /** Public engine hit-rate stats from signal_log, grouped by timeframe, kind and side. */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const sb = supabaseAdmin();
   if (!sb) return NextResponse.json({ error: "not configured", groups: [] }, { status: 501 });
-  const { data, error } = await sb.from("signal_log").select("timeframe, kind, side, outcome, outcome_at, max_favorable_pct, max_adverse_pct, emitted_at, symbol, entry, tp1, sl1").order("emitted_at", { ascending: false }).limit(5000);
+  const asset = req.nextUrl.searchParams.get("asset");
+  let q = sb.from("signal_log").select("timeframe, kind, side, outcome, outcome_at, max_favorable_pct, max_adverse_pct, emitted_at, symbol, entry, tp1, sl1, asset_key").order("emitted_at", { ascending: false }).limit(5000);
+  if (asset) q = q.eq("asset_key", asset);
+  const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const rows = data ?? [];
   const groupBy = (keyFn: (r: (typeof rows)[number]) => string) => {

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getPairsByToken } from "@/lib/providers/dexscreener";
+import { safe } from "@/lib/fetch";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +28,12 @@ export async function POST(req: NextRequest) {
   if (res) return res;
   const b = await req.json().catch(() => null);
   if (!b?.type || !b.symbol) return NextResponse.json({ error: "type and symbol required" }, { status: 400 });
-  const row = { user_id: user!.id, asset_key: b.assetKey ?? `sym:${b.symbol}`, symbol: String(b.symbol).toUpperCase(), type: b.type, timeframe: b.timeframe ?? "1h", params: b.params ?? {}, asset_ref: b.assetRef ?? { symbol: b.symbol }, channels: b.channels ?? ["push"], cooldown_minutes: b.cooldownMinutes ?? 60 };
+  const assetRef = { ...(b.assetRef ?? { symbol: b.symbol }) } as Record<string, unknown>;
+  if (assetRef.address && !assetRef.chain) {
+    const pairs = await safe(getPairsByToken(String(assetRef.address)));
+    if (pairs.ok && pairs.data[0]) { assetRef.chain = pairs.data[0].chainId; if (!b.symbol || b.symbol === "WHALE") b.symbol = pairs.data[0].baseToken.symbol; }
+  }
+  const row = { user_id: user!.id, asset_key: b.assetKey ?? `sym:${b.symbol}`, symbol: String(b.symbol).toUpperCase(), type: b.type, timeframe: b.timeframe ?? "1h", params: b.params ?? {}, asset_ref: assetRef, channels: b.channels ?? ["push"], cooldown_minutes: b.cooldownMinutes ?? 60 };
   const { data, error } = await sb!.from("alerts").insert(row).select("id").single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true, id: data.id });

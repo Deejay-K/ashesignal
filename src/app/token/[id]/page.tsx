@@ -8,6 +8,7 @@ import AnalysisPanel from "@/components/AnalysisPanel";
 import AiBriefing from "@/components/AiBriefing";
 import PriceBoard from "@/components/PriceBoard";
 import TokenNotes from "@/components/TokenNotes";
+import TrackRecord from "@/components/TrackRecord";
 import WatchButton from "@/components/WatchButton";
 import { Disclaimer, QualityBadge, Section, StatCard } from "@/components/ui";
 import Link from "next/link";
@@ -64,7 +65,7 @@ export default async function TokenPage({ params }: { params: Promise<{ id: stri
         <StatCard label="7d / 30d" value={<span className={pctClass(c.change7dPct)}>{fmtPct(c.change7dPct, 1)}</span>} sub={<span className={pctClass(c.change30dPct)}>{fmtPct(c.change30dPct, 1)} 30d · {fmtPct(c.change1yPct, 0)} 1y</span>} />
         <StatCard label="From ATH" value={c.ath && c.priceUsd ? fmtPct(((c.priceUsd - c.ath) / c.ath) * 100, 1) : "-"} sub={`ATH ${fmtUsd(c.ath)}`} />
         <StatCard label="Supply" value={c.circulatingSupply ? `${(c.circulatingSupply / 1e6).toFixed(1)}M` : "-"} sub={c.maxSupply ? `${((c.circulatingSupply ?? 0) / c.maxSupply * 100).toFixed(0)}% of max` : "no max supply"} />
-        <StatCard label="Community sentiment" value={c.sentimentUpPct != null ? `${c.sentimentUpPct.toFixed(0)}% 👍` : "-"} sub="CoinGecko votes" />
+        <StatCard label="Community" value={c.sentimentUpPct != null ? `${c.sentimentUpPct.toFixed(0)}% 👍` : "-"} sub={<span className="num">{c.twitterFollowers ? `X ${(c.twitterFollowers / 1000).toFixed(0)}K` : ""}{c.redditSubscribers ? ` · r/ ${(c.redditSubscribers / 1000).toFixed(0)}K` : ""}{c.watchlistUsers ? ` · ${(c.watchlistUsers / 1000).toFixed(0)}K watching` : ""}{!c.twitterFollowers && !c.redditSubscribers ? "CoinGecko votes" : ""}</span>} />
       </div>
 
       <AnalysisPanel asset={{ symbol: c.symbol, id: c.id }} title={hasCex ? `${binanceSym.data} · Binance` : `${c.symbol} · CoinGecko (no Binance pair)`} />
@@ -73,6 +74,7 @@ export default async function TokenPage({ params }: { params: Promise<{ id: stri
 
       <PriceBoard symbol={c.symbol} />
 
+      <TrackRecord assetKey={`cg:${c.id}`} symbol={c.symbol} />
       <TokenNotes assetKey={`cg:${c.id}`} symbol={c.symbol} />
 
       <div className="grid gap-4 lg:grid-cols-2">

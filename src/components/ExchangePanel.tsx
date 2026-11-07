@@ -7,6 +7,8 @@ import type { ExchangeFill, ExchangeBalance, ExchangeId } from "@/lib/exchanges/
 import { fmtNum, fmtUsd, pctClass, timeAgo } from "@/lib/format";
 import { Empty, Section, StatCard } from "./ui";
 import Term from "./Term";
+import { useCurrency } from "@/lib/currency";
+import { downloadCsv } from "@/lib/csv";
 
 interface Acc { id: string; exchange: ExchangeId; label: string | null; permissions: string[] | null; lastOkAt: string | null; error: string | null; balances: ExchangeBalance[]; fills?: ExchangeFill[] }
 interface Res { enabled: boolean; note?: string; accounts: Acc[]; realized: { perAsset: RealizedLot[]; totalRealizedUsd: number; totalFeesUsd: number; tradeCount: number; unpricedQuotes: string[] } | null }
@@ -23,6 +25,7 @@ export default function ExchangePanel({ onChange }: { onChange?: () => void }) {
   const [form, setForm] = useState({ exchange: "kraken" as ExchangeId, key: "", secret: "", passphrase: "", label: "" });
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const { fmt: fmtMoney } = useCurrency();
 
   const load = async () => {
     setLoading(true);
@@ -91,12 +94,12 @@ export default function ExchangePanel({ onChange }: { onChange?: () => void }) {
         </Section>
         <div className="lg:col-span-2 space-y-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label={<Term id="fifo">Realized P&L</Term>} value={<span className={pctClass(rz?.totalRealizedUsd)}>{rz ? fmtUsd(rz.totalRealizedUsd) : "-"}</span>} sub="FIFO, fees included" />
-            <StatCard label="Fees paid" value={rz ? fmtUsd(rz.totalFeesUsd) : "-"} />
+            <StatCard label={<Term id="fifo">Realized P&L</Term>} value={<span className={pctClass(rz?.totalRealizedUsd)}>{rz ? fmtMoney(rz.totalRealizedUsd) : "-"}</span>} sub="FIFO, fees included" />
+            <StatCard label="Fees paid" value={rz ? fmtMoney(rz.totalFeesUsd) : "-"} />
             <StatCard label="Trades" value={rz ? rz.tradeCount : "-"} sub="across connected exchanges" />
             <StatCard label="Assets traded" value={rz ? rz.perAsset.length : "-"} />
           </div>
-          <Section title="Realized P&L by asset">
+          <Section title="Realized P&L by asset" right={r?.accounts.some((a) => a.fills?.length) ? <button className="btn-ghost" onClick={() => downloadCsv("ashesignal-trades.csv", r!.accounts.flatMap((a) => (a.fills ?? []).map((f) => ({ exchange: a.exchange, time: f.time, pair: f.pair, side: f.side, price: f.price, amount: f.amount, fee: f.fee, fee_asset: f.feeAsset, id: f.id }))))}>Export trades CSV</button> : null}>
             {loading ? <div className="h-24 animate-pulse rounded-lg bg-bg-3" /> : rz?.perAsset.length ? (
               <div className="table-scroll">
                 <table>
@@ -105,17 +108,17 @@ export default function ExchangePanel({ onChange }: { onChange?: () => void }) {
                     {rz.perAsset.map((a) => (
                       <tr key={a.asset}>
                         <td className="font-medium">{a.asset}</td>
-                        <td className={`num text-right ${pctClass(a.realizedUsd)}`}>{fmtUsd(a.realizedUsd)}</td>
-                        <td className="num text-right text-fg-2">{fmtUsd(a.feesUsd)}</td>
+                        <td className={`num text-right ${pctClass(a.realizedUsd)}`}>{fmtMoney(a.realizedUsd)}</td>
+                        <td className="num text-right text-fg-2">{fmtMoney(a.feesUsd)}</td>
                         <td className="num text-right text-fg-2">{a.buys} / {a.sells}</td>
                         <td className="num text-right">{fmtNum(a.remaining, 4)}</td>
-                        <td className="num text-right">{a.avgCost != null ? fmtUsd(a.avgCost) : "-"}</td>
+                        <td className="num text-right">{a.avgCost != null ? fmtMoney(a.avgCost) : "-"}</td>
                         <td className="text-xs text-fg-3">{a.firstTrade ? new Date(a.firstTrade).toLocaleDateString() : ""} to {a.lastTrade ? new Date(a.lastTrade).toLocaleDateString() : ""}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                {rz.unpricedQuotes.length ? <p className="mt-2 text-xs text-amber">Trades quoted in {rz.unpricedQuotes.join(", ")} were skipped (non-USD quote). Crypto-to-crypto pairs need historical pricing; planned.</p> : null}
+                {rz.unpricedQuotes.length ? <p className="mt-2 text-xs text-amber">Trades quoted in {rz.unpricedQuotes.join(", ")} could not be priced in USD (no historical rate for that asset) and were skipped.</p> : <p className="mt-2 text-xs text-fg-3">Crypto-to-crypto trades (e.g. ETH/BTC) are converted to USD at the daily rate of the trade date.</p>}
                 <p className="mt-2 text-xs text-fg-3">Sells beyond known buys (coins deposited from elsewhere) are counted at zero cost, which overstates realized profit for those amounts.</p>
               </div>
             ) : <Empty>{r?.accounts.length ? "No trades found on the connected accounts." : "Connect an exchange to see realized P&L."}</Empty>}

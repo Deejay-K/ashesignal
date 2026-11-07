@@ -201,7 +201,31 @@ export default function PriceChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rebuildKey]);
 
-  return <div ref={ref} style={{ height }} className="w-full" />;
+  const exportPng = () => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const src = chart.takeScreenshot();
+    const out = document.createElement("canvas");
+    out.width = src.width;
+    out.height = src.height + 28;
+    const ctx = out.getContext("2d")!;
+    ctx.fillStyle = palette().bg;
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(src, 0, 0);
+    ctx.fillStyle = palette().fg3;
+    ctx.font = "12px ui-monospace, monospace";
+    ctx.fillText(`AsheSignal${analysis ? ` · ${analysis.timeframe} · score ${analysis.score > 0 ? "+" : ""}${analysis.score}` : ""} · ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC · not financial advice`, 8, out.height - 10);
+    const a = document.createElement("a");
+    a.href = out.toDataURL("image/png");
+    a.download = `ashesignal-${analysis?.timeframe ?? "chart"}-${Date.now()}.png`;
+    a.click();
+  };
+  return (
+    <div className="relative">
+      <div ref={ref} style={{ height }} className="w-full" />
+      <button onClick={exportPng} className="btn-ghost absolute left-2 top-2 !py-1 text-[11px] opacity-70 hover:opacity-100" title="Download this chart as an image">PNG</button>
+    </div>
+  );
 }
 
 const short = (name: string) => name.split(/\s+/).map((w) => (/^(and|&|of)$/i.test(w) ? "" : w[0])).join("").toUpperCase();

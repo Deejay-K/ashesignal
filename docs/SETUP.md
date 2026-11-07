@@ -132,6 +132,10 @@ Run `supabase/schema.sql` once more (adds notes, pool snapshots, listing waterma
 
 What you get: exchange balances inside your portfolio, FIFO realized P&L per asset (fees included), fees paid, and automatic cost basis for unrealized P&L on those holdings. Crypto-to-crypto trades (e.g. ETH/BTC) are skipped for now because they need historical pricing.
 
+## 12. Stage 14 - whale tracking, display currency, exports
+
+Run `supabase/schema.sql` again (adds `whale_events` and the whale alert type). Nothing else to configure: the worker starts scanning tracked tokens (watchlists, whale alerts, trending pools, major ERC-20s) for large transfers automatically when Alchemy/Helius keys are present. Display currency lives on the Portfolio and Risk pages (rates from the ECB via frankfurter.app). Crypto-to-crypto trades are now priced in USD at the daily rate of the trade date.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).
