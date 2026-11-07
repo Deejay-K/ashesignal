@@ -6,17 +6,18 @@ import { useEffect, useRef, useState } from "react";
 import { fmtUsd } from "@/lib/format";
 import AuthMenu from "./AuthMenu";
 
-const LINKS = [
-  { href: "/", label: "Dashboard" },
-  { href: "/discover", label: "Discover" },
-  { href: "/scanner", label: "Scanner" },
-  { href: "/risk", label: "Risk" },
-  { href: "/sentiment", label: "Sentiment" },
-  { href: "/portfolio", label: "Portfolio" },
-  { href: "/watchlist", label: "Watchlist" },
-  { href: "/setups", label: "Setups" },
-  { href: "/alerts", label: "Alerts" },
-  { href: "/performance", label: "Performance" },
+export const NAV_LINKS = [
+  { href: "/", label: "Dashboard", primary: 1 },
+  { href: "/discover", label: "Discover", primary: 1 },
+  { href: "/scanner", label: "Scanner", primary: 1 },
+  { href: "/portfolio", label: "Portfolio", primary: 2 },
+  { href: "/alerts", label: "Alerts", primary: 2 },
+  { href: "/risk", label: "Risk", primary: 2 },
+  { href: "/watchlist", label: "Watchlist", primary: 3 },
+  { href: "/setups", label: "Setups", primary: 3 },
+  { href: "/performance", label: "Performance", primary: 3 },
+  { href: "/sentiment", label: "Sentiment", primary: 3 },
+  { href: "/account", label: "Account", primary: 3 },
 ];
 
 interface SearchRes {
@@ -32,7 +33,9 @@ export default function Nav() {
   const [res, setRes] = useState<SearchRes | null>(null);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [more, setMore] = useState(false);
   const t = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (t.current) clearTimeout(t.current);
@@ -46,27 +49,59 @@ export default function Nav() {
     }, 300);
   }, [q]);
 
+  useEffect(() => {
+    setMenu(false);
+    setMore(false);
+  }, [path]);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMore(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, []);
+
   const go = (href: string) => {
     setOpen(false);
     setQ("");
     router.push(href);
   };
+  const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
+  const linkCls = (href: string) => `nav-link ${isActive(href) ? "nav-link-active" : ""}`;
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-      <div className="mx-auto flex max-w-7xl items-center gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
-        <Link href="/" className="flex items-center gap-2 font-bold tracking-tight">
-          <span className="inline-block h-6 w-6 rounded-md bg-mint" style={{ boxShadow: "0 0 18px rgba(54,189,148,.45)" }} />
-          <span className="hidden sm:inline">AsheSignal</span>
+    <header className="nav-header">
+      <div className="nav-inner">
+        <Link href="/" className="nav-brand" aria-label="AsheSignal home">
+          <span className="nav-logo" />
+          <span className="nav-brand-text">AsheSignal</span>
         </Link>
-        <nav className="ml-4 hidden items-center gap-1 md:flex">
-          {LINKS.map((l) => (
-            <Link key={l.href} href={l.href} className={`rounded-md px-3 py-1.5 text-sm ${path === l.href ? "bg-mint-dim text-mint" : "text-fg-2 hover:text-fg"}`}>
+
+        {/* Desktop / tablet links: tier 1 always (md+), tier 2 from lg, tier 3 in the More menu */}
+        <nav className="nav-links" aria-label="Primary">
+          {NAV_LINKS.filter((l) => l.primary <= 2).map((l) => (
+            <Link key={l.href} href={l.href} className={`${linkCls(l.href)} ${l.primary === 2 ? "nav-tier2" : ""}`}>
               {l.label}
             </Link>
           ))}
+          <div className="relative" ref={moreRef}>
+            <button className={`nav-link ${more ? "nav-link-active" : ""}`} onClick={() => setMore((m) => !m)} aria-haspopup="menu" aria-expanded={more}>
+              More ▾
+            </button>
+            {more ? (
+              <div className="nav-menu" role="menu">
+                {NAV_LINKS.filter((l) => l.primary >= 2).map((l) => (
+                  <Link key={l.href} href={l.href} role="menuitem" className={`nav-menu-item ${l.primary === 2 ? "nav-tier2-menu" : ""} ${isActive(l.href) ? "nav-link-active" : ""}`}>
+                    {l.label}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </nav>
-        <div className="relative ml-auto w-full max-w-md">
+
+        <div className="nav-search">
           <input
             value={q}
             onChange={(e) => {
@@ -78,18 +113,18 @@ export default function Nav() {
             onKeyDown={(e) => {
               if (e.key === "Enter" && res?.isAddress) go(`/scanner?address=${encodeURIComponent(q.trim())}`);
             }}
-            placeholder="Search or paste address…"
-            className="text-sm"
+            placeholder="Search or paste address"
+            aria-label="Search"
           />
           {open && res && (res.coins.length || res.pairs.length || res.isAddress) ? (
-            <div className="card absolute left-0 right-0 top-full mt-1 max-h-96 overflow-auto p-1 shadow-xl">
+            <div className="card nav-results">
               {res.isAddress ? (
-                <button className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-bg-3" onMouseDown={() => go(`/scanner?address=${encodeURIComponent(q.trim())}`)}>
-                  🔎 Scan address <span className="num text-fg-3">{q.slice(0, 10)}…</span>
+                <button className="nav-result" onMouseDown={() => go(`/scanner?address=${encodeURIComponent(q.trim())}`)}>
+                  Scan address <span className="num text-fg-3">{q.slice(0, 10)}...</span>
                 </button>
               ) : null}
               {res.coins.map((c) => (
-                <button key={c.id} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-bg-3" onMouseDown={() => go(`/token/${c.id}`)}>
+                <button key={c.id} className="nav-result" onMouseDown={() => go(`/token/${c.id}`)}>
                   {c.thumb ? <img src={c.thumb} alt="" className="h-5 w-5 rounded-full" /> : <span className="h-5 w-5 rounded-full bg-bg-3" />}
                   <span className="font-medium">{c.name}</span>
                   <span className="text-fg-3">{c.symbol}</span>
@@ -98,7 +133,7 @@ export default function Nav() {
               ))}
               {res.pairs.length ? <div className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-wider text-fg-3">DEX pairs</div> : null}
               {res.pairs.map((p) => (
-                <button key={p.pairAddress} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-bg-3" onMouseDown={() => go(`/scanner?address=${p.base.address}`)}>
+                <button key={p.pairAddress} className="nav-result" onMouseDown={() => go(`/scanner?address=${p.base.address}`)}>
                   <span className="font-medium">{p.base.symbol}/{p.quote}</span>
                   <span className="pill pill-gray">{p.chainId}</span>
                   <span className="num ml-auto text-xs text-fg-2">{fmtUsd(p.priceUsd)} · liq {fmtUsd(p.liquidityUsd, { compact: true })}</span>
@@ -107,13 +142,19 @@ export default function Nav() {
             </div>
           ) : null}
         </div>
-        <AuthMenu />
-        <button className="btn-ghost md:hidden" onClick={() => setMenu((m) => !m)} aria-label="Menu">☰</button>
+
+        <div className="nav-right">
+          <AuthMenu />
+          <button className="nav-burger" onClick={() => setMenu((m) => !m)} aria-label="Menu" aria-expanded={menu}>
+            <span /><span /><span />
+          </button>
+        </div>
       </div>
+
       {menu ? (
-        <nav className="flex flex-wrap gap-1 border-t border-border px-4 py-2 md:hidden">
-          {LINKS.map((l) => (
-            <Link key={l.href} href={l.href} onClick={() => setMenu(false)} className={`rounded-md px-3 py-1.5 text-sm ${path === l.href ? "bg-mint-dim text-mint" : "text-fg-2"}`}>
+        <nav className="nav-sheet" aria-label="All pages">
+          {NAV_LINKS.map((l) => (
+            <Link key={l.href} href={l.href} className={`nav-sheet-item ${isActive(l.href) ? "nav-link-active" : ""}`}>
               {l.label}
             </Link>
           ))}

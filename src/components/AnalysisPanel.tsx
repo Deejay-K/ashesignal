@@ -355,9 +355,12 @@ function PatternToggles({ a, visible, onToggle, onAll }: { a: TimeframeAnalysis;
   const chip = (p: Pattern) => {
     const dead = p.status === "failed" || p.status === "invalidated";
     const on = vis.has(p.id);
+    const tone = dead ? "chip-gray" : p.bias === "bullish" ? "chip-mint" : "chip-red";
     return (
-      <button key={p.id} onClick={() => onToggle(p.id)} className="pill border" style={{ borderColor: on ? (dead ? "#6b7a89" : p.bias === "bullish" ? "#36bd94" : "#f0506e") : "transparent", background: on ? (dead ? "rgba(107,122,137,.15)" : p.bias === "bullish" ? "rgba(54,189,148,.14)" : "rgba(240,80,110,.14)") : "rgba(159,176,192,.08)", color: on ? (dead ? "#9fb0c0" : p.bias === "bullish" ? "#36bd94" : "#f0506e") : "#6b7a89" }} title={p.description}>
-        {p.bias === "bullish" ? "▲" : "▼"} {p.name} · {p.status} · {Math.round(p.confidence * 100)}%
+      <button key={p.id} onClick={() => onToggle(p.id)} className={`chip ${tone}`} data-on={on} title={p.description}>
+        <span>{p.bias === "bullish" ? "▲" : "▼"}</span>
+        <span className="chip-name">{p.name}</span>
+        <span className="chip-meta">{p.status} · {Math.round(p.confidence * 100)}%</span>
       </button>
     );
   };
