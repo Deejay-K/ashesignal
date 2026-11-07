@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ConditionsReport } from "@/lib/market/conditions";
+import Term from "./Term";
 
 export default function TradeConditions({ query, compact = false }: { query?: Record<string, string | undefined>; compact?: boolean }) {
   const [r, setR] = useState<ConditionsReport | null>(null);
@@ -25,6 +26,7 @@ export default function TradeConditions({ query, compact = false }: { query?: Re
         <b className="text-sm tracking-wide">{label}</b>
         <span className="text-xs text-fg-2">{r.verdict === "ok" ? "no macro events or liquidity problems in the window" : r.headline.replace(/^[^:]+:\s*/, "")}</span>
         <span className="ml-auto text-xs text-fg-3">{r.conditions.length} check{r.conditions.length === 1 ? "" : "s"} · {open ? "hide" : "details"}</span>
+        <Term id="conditions" className="text-xs text-fg-3">meaning</Term>
       </button>
       {open ? (
         <div className="mt-2 space-y-1.5 text-sm">

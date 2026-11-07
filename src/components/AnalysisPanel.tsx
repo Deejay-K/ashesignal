@@ -7,6 +7,7 @@ import Link from "next/link";
 import PriceChart, { defaultVisiblePatterns, type ChartOverlays } from "./PriceChart";
 import type { Pattern } from "@/lib/ta/patterns";
 import TradeConditions from "./TradeConditions";
+import Term from "./Term";
 import { Empty, OutlookBadge, QualityBadge, Section } from "./ui";
 import { fmtNum, fmtPct, fmtUsd, pctClass } from "@/lib/format";
 import { TIMEFRAMES, type Candle, type Timeframe } from "@/lib/types";
@@ -188,11 +189,11 @@ function ConsensusStrip({ m }: { m: MultiTfAnalysis }) {
   return (
     <div className={`card border-l-4 p-4 ${cls}`}>
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs uppercase tracking-wider text-fg-3">Multi-timeframe</span>
+        <Term id="alignment" className="text-xs uppercase tracking-wider text-fg-3">Multi-timeframe</Term>
         <span className="pill pill-gray">short-term (15m/1h)</span> <OutlookBadge outlook={c.shortTerm} />
         <span className="pill pill-gray">long-term (4h/1d)</span> <OutlookBadge outlook={c.longTerm} />
         <span className="ml-auto text-xs text-fg-2">
-          Opportunity <b className="num text-fg">{c.opportunityScore}</b>/100
+          <Term id="opportunity">Opportunity</Term> <b className="num text-fg">{c.opportunityScore}</b>/100
         </span>
       </div>
       <p className="mt-2 text-sm text-fg-2">{c.summary}</p>
@@ -213,13 +214,13 @@ function TimeframeReport({ a, asset }: { a: TimeframeAnalysis; asset: AssetQuery
     <div className="grid gap-4 lg:grid-cols-3">
       <Section title={`${a.timeframe} outlook`} className="lg:col-span-2" right={<OutlookBadge outlook={a.outlook} />}>
         <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Mini label="Score" v={<span className={a.score > 0 ? "up" : a.score < 0 ? "down" : ""}>{a.score > 0 ? "+" : ""}{a.score}</span>} />
+          <Mini label={<Term id="score">Score</Term>} v={<span className={a.score > 0 ? "up" : a.score < 0 ? "down" : ""}>{a.score > 0 ? "+" : ""}{a.score}</span>} />
           <Mini label="Trend" v={`${a.trend.direction} (${(a.trend.strength * 100).toFixed(0)}%)`} />
-          <Mini label="RSI 14" v={a.momentum.rsi.toFixed(1)} />
-          <Mini label="ATR" v={`${(a.volatility.atrPct * 100).toFixed(2)}% · ${a.volatility.regime}`} />
+          <Mini label={<Term id="rsi">RSI 14</Term>} v={a.momentum.rsi.toFixed(1)} />
+          <Mini label={<Term id="atr">ATR</Term>} v={`${(a.volatility.atrPct * 100).toFixed(2)}% · ${a.volatility.regime}`} />
           <Mini label="Volume" v={`${a.volume.ratio.toFixed(2)}× avg · ${a.volume.trend}`} />
-          <Mini label="MACD hist" v={<span className={a.momentum.macdHist > 0 ? "up" : "down"}>{fmtNum(a.momentum.macdHist, 4)}</span>} />
-          <Mini label="VWAP (50)" v={fmtUsd(a.vwap)} />
+          <Mini label={<Term id="macd">MACD hist</Term>} v={<span className={a.momentum.macdHist > 0 ? "up" : "down"}>{fmtNum(a.momentum.macdHist, 4)}</span>} />
+          <Mini label={<Term id="vwap">VWAP (50)</Term>} v={fmtUsd(a.vwap)} />
           <Mini label="Vol. POC" v={fmtUsd(a.volumePoc)} />
         </div>
         <h3 className="mb-1 text-xs uppercase tracking-wider text-fg-3">Why</h3>
@@ -295,7 +296,7 @@ function TimeframeReport({ a, asset }: { a: TimeframeAnalysis; asset: AssetQuery
   );
 }
 
-function Mini({ label, v }: { label: string; v: React.ReactNode }) {
+function Mini({ label, v }: { label: React.ReactNode; v: React.ReactNode }) {
   return (
     <div className="card-3 p-2">
       <div className="text-[10px] uppercase tracking-wider text-fg-3">{label}</div>
@@ -374,7 +375,7 @@ function PatternToggles({ a, visible, onToggle, onAll }: { a: TimeframeAnalysis;
         <span className="ml-auto flex gap-1 text-[11px]"><button className="link" onClick={() => onAll(true)}>all</button><span className="text-fg-3">/</span><button className="link" onClick={() => onAll(false)}>none</button></span>
       </div>
       {sticks.length ? <div className="flex flex-wrap items-center gap-1.5"><span className="mr-1 text-[11px] uppercase tracking-wider text-fg-3">Candles</span>{sticks.map(chip)}</div> : null}
-      <p className="text-[11px] text-fg-3">Solid = confirmed, dashed = forming, dotted grey = failed or invalidated. Labels mark where each pattern starts; arrows mark its direction at the latest bar.</p>
+      <p className="text-[11px] text-fg-3">Solid = confirmed, dashed = forming, dotted grey = failed or invalidated (<Term id="pattern-status">what these mean</Term>). Labels mark where each pattern starts; arrows mark its direction at the latest bar.</p>
     </div>
   );
 }
@@ -393,7 +394,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
   return (
     <Section
       title={<span className={s.side === "LONG" ? "up" : "down"}>{s.side} {s.kind === "watch" ? "levels" : "setup"} · {tf}</span>}
-      right={<span className={`pill ${s.kind === "confirmed" ? "pill-mint" : s.kind === "speculative" ? "pill-amber" : "pill-gray"}`}>{s.kind === "watch" ? "watch - not a trade yet" : s.kind}</span>}
+      right={<Term id="setup-kind" className={`pill ${s.kind === "confirmed" ? "pill-mint" : s.kind === "speculative" ? "pill-amber" : "pill-gray"}`}>{s.kind === "watch" ? "watch - not a trade yet" : s.kind}</Term>}
     >
       {s.kind === "watch" ? (
         <div className="mb-2 rounded-lg border border-border bg-bg-3 p-2 text-xs text-fg-2">
@@ -402,18 +403,18 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
         </div>
       ) : null}
       <div className="num space-y-1 text-sm">
-        <Row k={`Entry (${s.entry.type})`} v={`${fmtUsd(s.entry.low)} - ${fmtUsd(s.entry.high)}`} />
-        {s.takeProfits.map((t) => <Row key={t.label} k={t.label} v={<span className="up">{fmtUsd(t.price)} <span className="text-fg-3">({t.rr}R · {t.basis}{t.reliable ? "" : " · estimate"})</span></span>} />)}
-        {s.stopLosses.map((t) => <Row key={t.label} k={t.label} v={<span className="down">{fmtUsd(t.price)} <span className="text-fg-3">({fmtPct(t.pctFromEntry, 2)} · {t.basis}{t.reliable ? "" : " · estimate"})</span></span>} />)}
-        <Row k="R:R to TP2" v={<b>{s.riskRewardTp2}R</b>} />
-        <Row k="Leverage" v={<span><b className={s.leverage.recommended > 1 ? "up" : ""}>{s.leverage.recommended}x</b> <span className="text-fg-3">rec · {s.leverage.conservative}x safe · {s.leverage.aggressive}x max · liq at {s.leverage.liquidationPctAtRecommended}% vs stop {s.leverage.stopDistancePct}%</span></span>} />
-        <Row k="Confidence" v={`${s.confidence}%`} />
-        <Row k="Style" v={`${s.style} · hold ${s.holdingPeriod}`} />
+        <Row k={<Term id="entry">{`Entry (${s.entry.type})`}</Term>} v={`${fmtUsd(s.entry.low)} - ${fmtUsd(s.entry.high)}`} />
+        {s.takeProfits.map((t) => <Row key={t.label} k={<Term id="tp">{t.label}</Term>} v={<span className="up">{fmtUsd(t.price)} <span className="text-fg-3">({t.rr}R · {t.basis}{t.reliable ? "" : " · estimate"})</span></span>} />)}
+        {s.stopLosses.map((t) => <Row key={t.label} k={<Term id="sl">{t.label}</Term>} v={<span className="down">{fmtUsd(t.price)} <span className="text-fg-3">({fmtPct(t.pctFromEntry, 2)} · {t.basis}{t.reliable ? "" : " · estimate"})</span></span>} />)}
+        <Row k={<Term id="rr">R:R to TP2</Term>} v={<b>{s.riskRewardTp2}R</b>} />
+        <Row k={<Term id="leverage">Leverage</Term>} v={<span><b className={s.leverage.recommended > 1 ? "up" : ""}>{s.leverage.recommended}x</b> <span className="text-fg-3">rec · {s.leverage.conservative}x safe · {s.leverage.aggressive}x max · liq at {s.leverage.liquidationPctAtRecommended}% vs stop {s.leverage.stopDistancePct}%</span></span>} />
+        <Row k={<Term id="confidence">Confidence</Term>} v={`${s.confidence}%`} />
+        <Row k={<Term id="holding">Style</Term>} v={`${s.style} · hold ${s.holdingPeriod}`} />
       </div>
       <p className="mt-2 text-xs text-fg-3">{s.holdingReason}</p>
       <Block title="Why this leverage" items={s.leverage.rationale} />
       <Block title="Reasons" items={s.reasons} />
-      <Block title="Invalidated if" items={s.invalidation} tone="down" />
+      <Block title={<Term id="invalidation">Invalidated if</Term>} items={s.invalidation} tone="down" />
       <Block title="Exit early if" items={s.exitEarlyIf} />
       <Block title="Taking profit" items={s.takeProfitWhen} />
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -429,7 +430,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
   );
 }
 
-function Row({ k, v }: { k: string; v: React.ReactNode }) {
+function Row({ k, v }: { k: React.ReactNode; v: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-border py-1 last:border-0">
       <span className="font-sans text-xs text-fg-3">{k}</span>
@@ -438,7 +439,7 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
-function Block({ title, items, tone }: { title: string; items: string[]; tone?: "down" }) {
+function Block({ title, items, tone }: { title: React.ReactNode; items: string[]; tone?: "down" }) {
   return (
     <div className="mt-3">
       <div className={`text-[11px] uppercase tracking-wider ${tone === "down" ? "text-red" : "text-fg-3"}`}>{title}</div>

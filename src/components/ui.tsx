@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { DataQuality } from "@/lib/types";
+import Term from "./Term";
 
 export function QualityBadge({ quality, source, note }: { quality: DataQuality | string; source?: string; note?: string }) {
   const cls = quality === "verified" ? "pill-mint" : quality === "estimated" ? "pill-amber" : "pill-gray";
@@ -19,10 +20,10 @@ export function RiskBadge({ level }: { level: "low" | "medium" | "high" | "extre
 
 export function OutlookBadge({ outlook }: { outlook: string }) {
   const cls = outlook.includes("bullish") ? "pill-mint" : outlook.includes("bearish") ? "pill-red" : "pill-gray";
-  return <span className={`pill ${cls}`}>{outlook}</span>;
+  return <Term id="bullish" className={`pill ${cls}`}>{outlook}</Term>;
 }
 
-export function StatCard({ label, value, sub, children }: { label: string; value: ReactNode; sub?: ReactNode; children?: ReactNode }) {
+export function StatCard({ label, value, sub, children }: { label: ReactNode; value: ReactNode; sub?: ReactNode; children?: ReactNode }) {
   return (
     <div className="card p-4">
       <div className="text-[11px] uppercase tracking-wider text-fg-3">{label}</div>

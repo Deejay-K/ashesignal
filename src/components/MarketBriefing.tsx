@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { MarketBriefing as MB } from "@/lib/ai/briefing";
 import { timeAgo } from "@/lib/format";
+import Term from "./Term";
 
 export default function MarketBriefing() {
   const [b, setB] = useState<{ briefing: MB; createdAt: string } | null>(null);
@@ -23,7 +24,7 @@ export default function MarketBriefing() {
     <section className="card border-l-4 border-mint p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-[11px] uppercase tracking-wider text-fg-3">AI market briefing</span>
-        <span className={`pill ${regime}`}>{m.regime}</span>
+        <Term id="risk-on" className={`pill ${regime}`}>{m.regime}</Term>
         <span className="ml-auto text-xs text-fg-3">{timeAgo(new Date(b!.createdAt).getTime())}</span>
       </div>
       <h2 className="mt-1 text-lg font-bold">{m.headline}</h2>

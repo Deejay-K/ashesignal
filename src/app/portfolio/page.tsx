@@ -7,6 +7,7 @@ import { fmtNum, fmtPct, fmtUsd, pctClass, timeAgo } from "@/lib/format";
 import { Disclaimer, Empty, Section, StatCard } from "@/components/ui";
 import HistoryChart from "@/components/HistoryChart";
 import ExchangePanel from "@/components/ExchangePanel";
+import Term from "@/components/Term";
 
 interface Wallet { id: string; chain: string; address: string; label: string | null }
 const COLORS = ["#36bd94", "#5aa7ff", "#f2b544", "#f0506e", "#a78bfa", "#9fb0c0", "#7fd4b0", "#ff8c5a"];
@@ -72,7 +73,7 @@ export default function PortfolioPage() {
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
               <StatCard label="Total value" value={fmtUsd(p.totalUsd, { compact: p.totalUsd > 1e6 })} sub={`${p.holdings.length} holdings · ${wallets.length} wallet${wallets.length === 1 ? "" : "s"}`} />
               <StatCard label="24h change" value={<span className={pctClass(change24(p))}>{fmtPct(change24(p))}</span>} sub="value-weighted, priced holdings" />
-              <StatCard label="Unrealized P&L" value={<span className={pctClass(unreal(p))}>{unreal(p) != null ? fmtUsd(unreal(p)) : "-"}</span>} sub="on holdings with a cost basis" />
+              <StatCard label={<Term id="unrealized">Unrealized P&L</Term>} value={<span className={pctClass(unreal(p))}>{unreal(p) != null ? fmtUsd(unreal(p)) : "-"}</span>} sub="on holdings with a cost basis" />
               <StatCard label="Priced" value={`${p.pricedPct.toFixed(0)}%`} sub={p.pricedPct < 100 ? "some tokens have no market price" : "all holdings priced"} />
             </div>
           ) : null}

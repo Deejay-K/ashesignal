@@ -1,4 +1,5 @@
 import type { FearGreedPoint } from "@/lib/types";
+import Term from "./Term";
 
 const color = (v: number) => (v <= 24 ? "#f0506e" : v <= 44 ? "#f2a444" : v <= 55 ? "#9fb0c0" : v <= 75 ? "#7fd4b0" : "#36bd94");
 
@@ -24,7 +25,7 @@ export default function FngGauge({ history, compact = false }: { history: FearGr
         <text x="50" y="48" textAnchor="middle" fontSize="20" fontWeight="700" fill="#e6edf3" fontFamily="ui-monospace, monospace">{now.value}</text>
       </svg>
       <div className="min-w-0">
-        <div className="text-[11px] uppercase tracking-wider text-fg-3">Fear &amp; Greed</div>
+        <div className="text-[11px] uppercase tracking-wider text-fg-3"><Term id="fng">Fear &amp; Greed</Term></div>
         <div className="font-semibold" style={{ color: color(now.value) }}>{now.label}</div>
         <div className="num mt-1 text-xs text-fg-3">
           {prev ? <>yday {prev.value} · </> : null}{week ? <>week {week.value} · </> : null}{month ? <>month {month.value}</> : null}

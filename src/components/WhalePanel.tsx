@@ -1,12 +1,13 @@
 import type { WhaleReport } from "@/lib/market/whales";
 import { fmtUsd, timeAgo } from "@/lib/format";
 import { Empty, Section } from "./ui";
+import Term from "./Term";
 
 export default function WhalePanel({ w, explorerTx }: { w: WhaleReport | null; explorerTx?: string }) {
   if (!w) return null;
   const s = w.summary;
   return (
-    <Section title="Whale watch · large transfers" right={w.available && s.count ? <span className={`pill ${s.netToExchangesUsd > 0 ? "pill-red" : "pill-mint"}`}>net {s.netToExchangesUsd > 0 ? "to" : "from"} exchanges {fmtUsd(Math.abs(s.netToExchangesUsd), { compact: true })}</span> : null}>
+    <Section title={<Term id="whale">Whale watch · large transfers</Term>} right={w.available && s.count ? <span className={`pill ${s.netToExchangesUsd > 0 ? "pill-red" : "pill-mint"}`}>net {s.netToExchangesUsd > 0 ? "to" : "from"} exchanges {fmtUsd(Math.abs(s.netToExchangesUsd), { compact: true })}</span> : null}>
       {!w.available ? <Empty>{w.note}</Empty> : (
         <>
           <p className="mb-2 text-sm text-fg-2">{w.note}</p>

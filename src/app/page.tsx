@@ -11,6 +11,7 @@ import WatchlistPreview from "@/components/WatchlistPreview";
 import PortfolioCard from "@/components/PortfolioCard";
 import MarketBriefing from "@/components/MarketBriefing";
 import TradeConditions from "@/components/TradeConditions";
+import Term from "@/components/Term";
 import type { DiscoverItem } from "@/lib/market/discover";
 
 export const dynamic = "force-dynamic";
@@ -27,7 +28,7 @@ export default async function Dashboard() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
         <StatCard label="Total market cap" value={fmtUsd(ov?.totalMarketCapUsd.value, { compact: true })} sub={<span className={pctClass(ov?.marketCapChange24hPct.value)}>{fmtPct(ov?.marketCapChange24hPct.value)} 24h</span>} />
         <StatCard label="24h volume" value={fmtUsd(ov?.totalVolume24hUsd.value, { compact: true })} sub="all exchanges · CoinGecko" />
-        <StatCard label="BTC dominance" value={ov?.btcDominance.value != null ? `${ov.btcDominance.value.toFixed(1)}%` : "-"} />
+        <StatCard label={<Term id="dominance">BTC dominance</Term>} value={ov?.btcDominance.value != null ? `${ov.btcDominance.value.toFixed(1)}%` : "-"} />
         <StatCard label="ETH dominance" value={ov?.ethDominance.value != null ? `${ov.ethDominance.value.toFixed(1)}%` : "-"} />
         <div className="col-span-2 card p-4">
           {f.length ? <FngGauge history={f} compact /> : <Empty>Fear &amp; Greed unavailable</Empty>}

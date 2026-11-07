@@ -47,6 +47,7 @@ export default function AccountPage() {
           <Link key={String(k)} href={String(href)} className="card p-3 hover:border-mint"><div className="text-[11px] uppercase tracking-wider text-fg-3">{k}</div><div className="text-lg font-semibold">{v ?? "…"}</div></Link>
         ))}
       </div>
+      <p className="text-sm text-fg-2">New here? The <Link href="/glossary" className="link">glossary</Link> explains every label in the app.</p>
       <Section title="Notifications">
         <PushToggle />
       </Section>

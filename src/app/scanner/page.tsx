@@ -12,6 +12,7 @@ import WatchButton from "@/components/WatchButton";
 import AiBriefing from "@/components/AiBriefing";
 import WhalePanel from "@/components/WhalePanel";
 import TokenNotes from "@/components/TokenNotes";
+import Term from "@/components/Term";
 
 export default function ScannerPage() {
   return (
@@ -99,9 +100,9 @@ function Report({ r }: { r: ScanReport }) {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
         <StatCard label="Price" value={fmtUsd(m.priceUsd)} sub={<QualityBadge quality={m.priceQuality} source="dexscreener" note={m.note} />} />
-        <StatCard label="Liquidity" value={fmtUsd(m.liquidityUsd, { compact: true })} sub={`${m.pairCount} pool${m.pairCount === 1 ? "" : "s"}`} />
+        <StatCard label={<Term id="liquidity">Liquidity</Term>} value={fmtUsd(m.liquidityUsd, { compact: true })} sub={`${m.pairCount} pool${m.pairCount === 1 ? "" : "s"}`} />
         <StatCard label="Volume 24h" value={fmtUsd(m.volume24h, { compact: true })} sub={m.liquidityUsd ? `${((m.volume24h ?? 0) / m.liquidityUsd).toFixed(1)}× liquidity` : undefined} />
-        <StatCard label="FDV / MC" value={fmtUsd(m.fdv, { compact: true })} sub={`MC ${fmtUsd(m.marketCap, { compact: true })}`} />
+        <StatCard label={<Term id="fdv">FDV / MC</Term>} value={fmtUsd(m.fdv, { compact: true })} sub={`MC ${fmtUsd(m.marketCap, { compact: true })}`} />
         <StatCard label="Txns 24h" value={m.txns24h.toLocaleString()} sub={m.buySellRatio24h != null ? `buy/sell ${m.buySellRatio24h.toFixed(2)}` : undefined} />
         <StatCard label="Pair age" value={m.ageHours != null ? (m.ageHours < 48 ? `${m.ageHours.toFixed(0)} h` : `${(m.ageHours / 24).toFixed(0)} d`) : "-"} sub={<span className="num">{["m5", "h1", "h6", "h24"].map((k) => <span key={k} className={`mr-1 ${pctClass(m.change[k as keyof typeof m.change])}`}>{k} {fmtPct(m.change[k as keyof typeof m.change], 0)}</span>)}</span>} />
       </div>

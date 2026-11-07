@@ -6,6 +6,7 @@ import { EXCHANGE_LABELS } from "@/lib/exchanges";
 import type { ExchangeFill, ExchangeBalance, ExchangeId } from "@/lib/exchanges/types";
 import { fmtNum, fmtUsd, pctClass, timeAgo } from "@/lib/format";
 import { Empty, Section, StatCard } from "./ui";
+import Term from "./Term";
 
 interface Acc { id: string; exchange: ExchangeId; label: string | null; permissions: string[] | null; lastOkAt: string | null; error: string | null; balances: ExchangeBalance[]; fills?: ExchangeFill[] }
 interface Res { enabled: boolean; note?: string; accounts: Acc[]; realized: { perAsset: RealizedLot[]; totalRealizedUsd: number; totalFeesUsd: number; tradeCount: number; unpricedQuotes: string[] } | null }
@@ -90,7 +91,7 @@ export default function ExchangePanel({ onChange }: { onChange?: () => void }) {
         </Section>
         <div className="lg:col-span-2 space-y-4">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label="Realized P&L" value={<span className={pctClass(rz?.totalRealizedUsd)}>{rz ? fmtUsd(rz.totalRealizedUsd) : "-"}</span>} sub="FIFO, fees included" />
+            <StatCard label={<Term id="fifo">Realized P&L</Term>} value={<span className={pctClass(rz?.totalRealizedUsd)}>{rz ? fmtUsd(rz.totalRealizedUsd) : "-"}</span>} sub="FIFO, fees included" />
             <StatCard label="Fees paid" value={rz ? fmtUsd(rz.totalFeesUsd) : "-"} />
             <StatCard label="Trades" value={rz ? rz.tradeCount : "-"} sub="across connected exchanges" />
             <StatCard label="Assets traded" value={rz ? rz.perAsset.length : "-"} />

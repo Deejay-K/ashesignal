@@ -17,6 +17,7 @@ export const NAV_LINKS = [
   { href: "/setups", label: "Setups", primary: 3 },
   { href: "/performance", label: "Performance", primary: 3 },
   { href: "/sentiment", label: "Sentiment", primary: 3 },
+  { href: "/glossary", label: "Glossary", primary: 3 },
   { href: "/account", label: "Account", primary: 3 },
 ];
 

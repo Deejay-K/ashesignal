@@ -24,7 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <main className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-5">{children}</main>
         <BottomNav />
         <footer className="mx-auto max-w-7xl px-4 pb-8 pt-4 text-xs text-fg-3">
-          Data: Binance, CoinGecko, DexScreener, GeckoTerminal, GoPlus, Alternative.me · AsheSignal by Ashe Foundry · Not financial advice.
+          Data: Binance, CoinGecko, DexScreener, GeckoTerminal, GoPlus, Alternative.me · <a href="/glossary" className="link">Glossary</a> · AsheSignal by Ashe Foundry · Not financial advice.
         </footer>
       </body>
     </html>
