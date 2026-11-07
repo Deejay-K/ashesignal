@@ -321,7 +321,8 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
   const abs = Math.abs(i.score);
   const issues: string[] = [];
   if (abs < 15) issues.push("Score is inside the neutral band (-15 to +15): no directional edge on this timeframe yet.");
-  if (i.atrPct > 0.25) issues.push("Volatility is extreme (ATR > 25% of price): stops are very wide; treat as untradeable until it calms.");
+  if (i.atrPct > 0.12) issues.push(`Volatility is extreme (ATR ${(i.atrPct * 100).toFixed(1)}% of price): stops cannot be placed sensibly; treat as untradeable until it calms.`);
+  if (i.volRatio < 0.5) issues.push(`Low volume: ${i.volRatio.toFixed(2)}x the 20-period average. No trade until participation returns.`);
 
   // Side: score sign; when neutral, lean with the trend so targets are still meaningful.
   const side: Setup["side"] = i.score > 0 ? "LONG" : i.score < 0 ? "SHORT" : i.dir === "down" ? "SHORT" : i.dir === "up" ? "LONG" : i.price >= i.ema50 ? "LONG" : "SHORT";

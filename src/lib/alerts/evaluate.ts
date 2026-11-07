@@ -9,6 +9,7 @@ import type { Timeframe } from "@/lib/types";
 import { deliver } from "./notify";
 import { liquidityChanges } from "@/lib/market/liquidity";
 import { detectNewListings, type NewListing } from "@/lib/market/listings";
+import { globalConditions } from "@/lib/market/conditions";
 import { fmtUsd } from "@/lib/format";
 
 import { type AlertType } from "./types";
@@ -51,7 +52,13 @@ export async function evaluateAlerts(sb: SupabaseClient) {
     let msg: { title: string; body: string } | null = null;
     const newState: Record<string, unknown> = { ...a.state };
 
-    if (a.type === "new_listing") {
+    if (a.type === "macro_event") {
+      const g = await globalConditions();
+      const soon = g.events.filter((e) => e.impact === "High" && Date.parse(e.time) - Date.now() > 0 && Date.parse(e.time) - Date.now() <= 2 * 3_600_000);
+      const sig = soon.map((e) => e.time).join(",");
+      if (soon.length && sig !== a.state.lastMacro) msg = { title: `Macro event in ${Math.round((Date.parse(soon[0].time) - Date.now()) / 60_000)} min: ${soon[0].title}`, body: `${soon.map((e) => `${e.title} at ${new Date(e.time).toLocaleTimeString()}`).join("; ")}. High volatility window - avoid new positions and tighten management.` };
+      if (sig) newState.lastMacro = sig;
+    } else if (a.type === "new_listing") {
       if (!listings) listings = (await detectNewListings(sb)).fresh;
       const chainFilter = a.params.chain ? String(a.params.chain) : null;
       const mine = listings.filter((l) => !chainFilter || l.chain === chainFilter).slice(0, 10);

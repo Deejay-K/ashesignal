@@ -30,6 +30,7 @@ const HOST_LIMITS: Record<string, { perMinute: number }> = {
   "api.gopluslabs.io": { perMinute: 30 },
   "api.alternative.me": { perMinute: 20 },
   "api.kraken.com": { perMinute: 50 },
+  "nfs.faireconomy.media": { perMinute: 10 },
   "api.exchange.coinbase.com": { perMinute: 200 },
   "www.okx.com": { perMinute: 100 },
   "api.bybit.com": { perMinute: 100 },

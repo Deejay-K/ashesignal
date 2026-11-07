@@ -57,6 +57,7 @@ export function localBriefing(ctx: BriefingContext): Briefing {
   if (p.volatility.regime === "squeeze") risks.push("Bollinger squeeze - the next move can be fast in either direction; don't assume the direction before the break.");
   if (p.momentum.rsi >= 70) risks.push(`RSI ${p.momentum.rsi.toFixed(0)} is overbought on ${ptf}.`);
   if (p.momentum.rsi <= 30) risks.push(`RSI ${p.momentum.rsi.toFixed(0)} is oversold on ${ptf} - bounces can be sharp.`);
+  if (p.volume.ratio < 0.5) risks.push(`Low volume on ${ptf} (${p.volume.ratio.toFixed(2)}x average): no trade until participation returns.`);
   if (p.volume.trend === "falling" && p.trend.direction !== "sideways") risks.push(`Volume is fading while the ${ptf} trend is ${p.trend.direction} - participation is thinning.`);
   for (const w of p.weakeningMomentum) risks.push(w);
   for (const f of failedP) risks.push(f);

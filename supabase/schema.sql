@@ -297,3 +297,5 @@ drop policy if exists "own exchange accounts" on public.exchange_accounts;
 create policy "own exchange accounts" on public.exchange_accounts for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 alter table public.holdings_snapshots alter column wallet_id drop not null;
 alter table public.saved_setups add column if not exists leverage numeric;
+alter table public.alerts drop constraint if exists alerts_type_check;
+alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','liquidity_change','new_listing','sentiment_zone','macro_event'));

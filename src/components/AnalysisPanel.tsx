@@ -6,6 +6,7 @@ import { mergeCandle, subscribeKline } from "@/lib/live";
 import Link from "next/link";
 import PriceChart, { defaultVisiblePatterns, type ChartOverlays } from "./PriceChart";
 import type { Pattern } from "@/lib/ta/patterns";
+import TradeConditions from "./TradeConditions";
 import { Empty, OutlookBadge, QualityBadge, Section } from "./ui";
 import { fmtNum, fmtPct, fmtUsd, pctClass } from "@/lib/format";
 import { TIMEFRAMES, type Candle, type Timeframe } from "@/lib/types";
@@ -144,6 +145,7 @@ export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asse
 
   return (
     <div className="space-y-4">
+      <TradeConditions query={{ symbol: asset.symbol, id: asset.id, network: asset.network, pool: asset.pool, tf }} />
       {multi ? <ConsensusStrip m={multi} /> : null}
 
       <Section

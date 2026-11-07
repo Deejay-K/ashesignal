@@ -10,6 +10,7 @@ import FngGauge from "@/components/FngGauge";
 import WatchlistPreview from "@/components/WatchlistPreview";
 import PortfolioCard from "@/components/PortfolioCard";
 import MarketBriefing from "@/components/MarketBriefing";
+import TradeConditions from "@/components/TradeConditions";
 import type { DiscoverItem } from "@/lib/market/discover";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,7 @@ export default async function Dashboard() {
       </div>
       {!g.ok ? <p className="text-xs text-red">Market overview unavailable: {g.error}</p> : null}
 
+      <TradeConditions compact />
       <MarketBriefing />
 
       <div className="grid gap-4 lg:grid-cols-3">
