@@ -67,6 +67,8 @@ export interface CoinRow {
   change1hPct: number | null;
   change24hPct: number | null;
   change7dPct: number | null;
+  change30dPct?: number | null;
+  change1yPct?: number | null;
   sparkline7d?: number[];
   ath?: number | null;
   athChangePct?: number | null;

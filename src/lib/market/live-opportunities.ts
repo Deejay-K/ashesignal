@@ -3,6 +3,10 @@
 // same categorize() rules, just computed on request and cached in memory for a few minutes.
 
 import { getMarkets, getCoin, getMarketChart } from "@/lib/providers/coingecko";
+
+/** Resolve with whatever is ready after ms; the underlying work keeps filling the memo for the next request. */
+function within<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> { return Promise.race([p, new Promise<T>((res) => setTimeout(() => res(fallback), ms))]); }
+export { within };
 import { getKlines, getTradingSymbols } from "@/lib/providers/binance";
 import { getTrendingPools } from "@/lib/providers/geckoterminal";
 import { analyzeTimeframe } from "@/lib/ta/analysis";
@@ -64,7 +68,7 @@ export function liveTaCategories(n = 40): Promise<Opportunity[]> {
 }
 
 /** Speculative: the top trending DEX pools right now, fully scanned (slow: ~6 scans). */
-export function liveSpeculative(n = 6): Promise<Opportunity[]> {
+export function liveSpeculative(n = 4): Promise<Opportunity[]> {
   return cached(`spec:${n}`, 5 * 60_000, async () => {
     const trend = await safe(getTrendingPools());
     if (!trend.ok) return [];
@@ -73,7 +77,7 @@ export function liveSpeculative(n = 6): Promise<Opportunity[]> {
     const now = new Date().toISOString();
     const out: Opportunity[] = [];
     await Promise.all(pools.map(async (p) => {
-      const r = await safe(scanAddress(p.baseTokenAddress!, ["1h", "4h"]));
+      const r = await Promise.race([safe(scanAddress(p.baseTokenAddress!, ["1h", "4h"])), new Promise<{ ok: false; error: string }>((res) => setTimeout(() => res({ ok: false, error: "timeout" }), 18_000))]);
       if (!r.ok || !r.data.token || r.data.market.priceUsd == null || (r.data.market.liquidityUsd ?? 0) < 10_000) return;
       if (r.data.security && r.data.security.riskScore >= 90) return;
       const rep = r.data;
@@ -96,19 +100,19 @@ export function liveSpeculative(n = 6): Promise<Opportunity[]> {
 }
 
 /** Spot: the top N coins by market cap scored live (2 CoinGecko calls each; keep N small). */
-export function liveSpot(n = 12): Promise<Opportunity[]> {
+export function liveSpot(n = 6): Promise<Opportunity[]> {
   return cached(`spot:${n}`, 10 * 60_000, async () => {
     const top = await safe(getMarkets(1, 60, false));
     if (!top.ok) return [];
     const coins = top.data.filter((c) => !EXCLUDE.test(c.symbol) && !EXCLUDE.test(c.id) && !EXCLUDE.test(c.name)).slice(0, n);
-    const btc = await safe(getCoin("bitcoin"));
-    const eth = await safe(getCoin("ethereum"));
     const now = new Date().toISOString();
     const out: Opportunity[] = [];
+    const btc1y = top.data.find((c) => c.id === "bitcoin")?.change1yPct ?? null;
+    const eth1y = top.data.find((c) => c.id === "ethereum")?.change1yPct ?? null;
     for (const c of coins) {
       const [coin, chart] = await Promise.all([safe(getCoin(c.id)), safe(getMarketChart(c.id, 365))]);
       if (!coin.ok || !chart.ok) continue;
-      const d = buildSpot({ coin: coin.data, dailyCloses: chart.data.prices.map((p) => p[1]), btc1y: btc.ok ? btc.data.change1yPct : null, eth1y: eth.ok ? eth.data.change1yPct : null });
+      const d = buildSpot({ coin: coin.data, dailyCloses: chart.data.prices.map((p) => p[1]), btc1y, eth1y });
       if (!d || d.score < 40) continue;
       const pt = d.analysis.profitTaking[0]?.price ?? null;
       out.push({

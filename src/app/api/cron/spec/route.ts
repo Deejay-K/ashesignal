@@ -29,20 +29,33 @@ export async function GET(req: Request) {
   if (fresh.ok) for (const p of fresh.data) if (p.baseTokenAddress && GT_TO_DEX[p.network] && (p.liquidityUsd ?? 0) >= 15_000 && (p.volume24h ?? 0) >= 20_000) add({ chain: GT_TO_DEX[p.network], address: p.baseTokenAddress, source: "new", spike: null, liq: p.liquidityUsd });
   if (boosted.ok) for (const b of boosted.data.slice(0, 15)) add({ chain: b.chainId, address: b.tokenAddress, source: "boosted", spike: null, liq: null });
 
-  const list = [...cands.values()];
   const url = new URL(req.url);
-  const BATCH = 6;
-  const batches = Math.max(1, Math.ceil(list.length / BATCH));
-  const batch = url.searchParams.get("batch") != null ? Number(url.searchParams.get("batch")) % batches : Math.floor(new Date().getMinutes() / 5) % batches;
-  const slice = list.slice(batch * BATCH, batch * BATCH + BATCH);
+  const started = Date.now();
+  const BUDGET_MS = Number(url.searchParams.get("budget") ?? 45_000);
+  const fill = url.searchParams.get("fill") === "1";
+  // Work on the stalest candidates first (never scanned, or not refreshed in 2 h); fill=1 just allows a bigger slice.
+  const all = [...cands.values()];
+  const { data: freshRows } = await sb.from("spec_opportunities").select("asset_key").gt("updated_at", new Date(Date.now() - 2 * 3600_000).toISOString());
+  const recent = new Set((freshRows ?? []).map((r) => r.asset_key));
+  const list = all.filter((c) => !recent.has(`addr:${c.chain}:${c.address.toLowerCase()}`));
+  const slice = list.slice(0, fill ? 40 : 8);
+  const batch = 0, batches = 1;
 
   const { data: prevRows } = await sb.from("spec_opportunities").select("asset_key, first_seen").in("asset_key", slice.map((c) => `addr:${c.chain}:${c.address.toLowerCase()}`));
   const prev = new Set((prevRows ?? []).map((r) => r.asset_key));
   const rows: Record<string, unknown>[] = [];
   const history: Record<string, unknown>[] = [];
   const errors: string[] = [];
-  await Promise.all(slice.map(async (c) => {
-    const r = await safe(scanAddress(c.address, ["1h", "4h"]));
+  let processed = 0;
+  const scanWithTimeout = (addr: string) => Promise.race([
+    safe(scanAddress(addr, ["1h", "4h"])),
+    new Promise<{ ok: false; error: string }>((res) => setTimeout(() => res({ ok: false, error: "scan timeout" }), 20_000)),
+  ]);
+  // two scans at a time: enough to use the budget, few enough to respect GeckoTerminal / GoPlus limits
+  const queue = [...slice];
+  const worker = async () => { for (;;) { const c = queue.shift(); if (!c || Date.now() - started > BUDGET_MS) return; processed++; await one(c); } };
+  const one = async (c: Cand) => {
+    const r = await scanWithTimeout(c.address);
     if (!r.ok) { errors.push(`${c.address.slice(0, 8)}: ${r.error}`); return; }
     const rep = r.data;
     if (!rep.token || rep.market.priceUsd == null) return;
@@ -57,7 +70,8 @@ export async function GET(req: Request) {
       risk_level: rep.verdict.riskLevel, security_score: rep.security?.riskScore ?? null, source_tag: c.source, detail, updated_at: new Date().toISOString(),
     });
     if (!prev.has(key)) history.push({ asset_key: key, symbol: rep.token.symbol, timeframe: detail.ta?.timeframe ?? null, category: "speculative", prev_category: "none", reason: detail.attention[0], snapshot: { price: rep.market.priceUsd, liquidity: rep.market.liquidityUsd, risk: rep.verdict.riskLevel } });
-  }));
+  };
+  await Promise.all([worker(), worker()]);
   if (rows.length) {
     const { error } = await sb.from("spec_opportunities").upsert(rows, { onConflict: "asset_key" });
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -70,5 +84,7 @@ export async function GET(req: Request) {
     await sb.from("category_history").insert(stale.map((s) => ({ asset_key: s.asset_key, symbol: s.symbol, category: "none", prev_category: "speculative", reason: "No longer trending or refreshed for 24h; removed from Speculative." })));
     await sb.from("spec_opportunities").delete().lt("updated_at", cutoff);
   }
-  return NextResponse.json({ ok: true, candidates: list.length, batch, batches, stored: rows.length, newEntries: history.length, expired: stale?.length ?? 0, errors: errors.slice(0, 5) });
+  void batch; void batches;
+  const remaining = list.length - processed;
+  return NextResponse.json({ ok: true, candidates: all.length, processed, stored: rows.length, newEntries: history.length, remaining, done: remaining <= 0, hint: remaining > 0 ? "Reload this URL to continue." : "All current candidates scanned within the last 2 h.", expired: stale?.length ?? 0, seconds: Math.round((Date.now() - started) / 1000), errors: errors.slice(0, 5) });
 }

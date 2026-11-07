@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Opportunity, RiskLevel } from "@/lib/market/opportunities";
-import { liveTaCategories, liveSpeculative, liveSpot } from "@/lib/market/live-opportunities";
+import { liveTaCategories, liveSpeculative, liveSpot, within } from "@/lib/market/live-opportunities";
 
 export const maxDuration = 60;
 
@@ -27,9 +27,9 @@ export async function GET(req: NextRequest) {
     // Live fallback: any category the worker has not filled yet is computed on request from current market data.
     const has = (c: string) => items.some((i) => i.category === c);
     const jobs: Promise<void>[] = [];
-    if ((want("confirmed") || want("watching")) && (wantLive || (!has("confirmed") && !has("watching")))) jobs.push(liveTaCategories(40).then((x) => { const add = x.filter((i) => want(i.category)); if (add.length) { items.push(...add); live.push("confirmed", "watching"); } }));
-    if (want("speculative") && (wantLive || !has("speculative"))) jobs.push(liveSpeculative(6).then((x) => { if (x.length) { items.push(...x); live.push("speculative"); } }));
-    if (want("spot") && (wantLive || !has("spot"))) jobs.push(liveSpot(12).then((x) => { if (x.length) { items.push(...x); live.push("spot"); } }));
+    if ((want("confirmed") || want("watching")) && (wantLive || (!has("confirmed") && !has("watching")))) jobs.push(within(liveTaCategories(40), 40_000, []).then((x) => { const add = x.filter((i) => want(i.category)); if (add.length) { items.push(...add); live.push("confirmed", "watching"); } }));
+    if (want("speculative") && (wantLive || !has("speculative"))) jobs.push(within(liveSpeculative(4), 40_000, []).then((x) => { if (x.length) { items.push(...x); live.push("speculative"); } }));
+    if (want("spot") && (wantLive || !has("spot"))) jobs.push(within(liveSpot(6), 40_000, []).then((x) => { if (x.length) { items.push(...x); live.push("spot"); } }));
     await Promise.all(jobs);
   };
   if (!sb) {

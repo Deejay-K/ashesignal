@@ -59,6 +59,8 @@ interface CgMarket {
   price_change_percentage_1h_in_currency?: number | null;
   price_change_percentage_24h_in_currency?: number | null;
   price_change_percentage_7d_in_currency?: number | null;
+  price_change_percentage_30d_in_currency?: number | null;
+  price_change_percentage_1y_in_currency?: number | null;
   price_change_percentage_24h?: number | null;
   sparkline_in_7d?: { price: number[] };
   ath?: number | null;
@@ -78,6 +80,8 @@ function toRow(m: CgMarket): CoinRow {
     change1hPct: m.price_change_percentage_1h_in_currency ?? null,
     change24hPct: m.price_change_percentage_24h_in_currency ?? m.price_change_percentage_24h ?? null,
     change7dPct: m.price_change_percentage_7d_in_currency ?? null,
+    change30dPct: m.price_change_percentage_30d_in_currency ?? null,
+    change1yPct: m.price_change_percentage_1y_in_currency ?? null,
     sparkline7d: m.sparkline_in_7d?.price,
     ath: m.ath ?? null,
     athChangePct: m.ath_change_percentage ?? null,
@@ -88,7 +92,7 @@ function toRow(m: CgMarket): CoinRow {
 export async function getMarkets(page = 1, perPage = 100, sparkline = true): Promise<CoinRow[]> {
   const url =
     `${BASE}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${perPage}&page=${page}` +
-    `&sparkline=${sparkline}&price_change_percentage=1h,24h,7d`;
+    `&sparkline=${sparkline}&price_change_percentage=1h,24h,7d,30d,1y`;
   const r = await fetchJson<CgMarket[]>(url, opts(60_000));
   return r.map(toRow);
 }

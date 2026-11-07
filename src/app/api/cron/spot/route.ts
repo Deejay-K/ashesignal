@@ -22,10 +22,18 @@ export async function GET(req: Request) {
   if (!top.ok) return NextResponse.json({ error: top.error }, { status: 502 });
   const coins = top.data.filter((c) => !EXCLUDE.test(c.symbol) && !EXCLUDE.test(c.id) && !EXCLUDE.test(c.name));
   const url = new URL(req.url);
-  const BATCH = Number(url.searchParams.get("n") ?? 5);
-  const batches = Math.ceil(coins.length / BATCH);
-  const batch = url.searchParams.get("batch") != null ? Number(url.searchParams.get("batch")) % batches : Math.floor(Date.now() / 300_000) % batches;
-  const slice = coins.slice(batch * BATCH, batch * BATCH + BATCH);
+  const started = Date.now();
+  const BUDGET_MS = Number(url.searchParams.get("budget") ?? 45_000);
+  const fill = url.searchParams.get("fill") === "1";
+  // fill=1: process coins not refreshed in the last 6 h, rank order, as many as fit in the budget; reload until remaining = 0.
+  // default (worker tick): same rule, so the rotation always works on the stalest coins first.
+  const { data: freshRows } = await sb.from("spot_picks").select("asset_key, updated_at").gt("updated_at", new Date(Date.now() - 6 * 3600_000).toISOString());
+  const fresh = new Set((freshRows ?? []).map((r) => r.asset_key));
+  const { data: lowRows } = await sb.from("category_history").select("asset_key").eq("prev_category", "spot").eq("category", "none").gt("changed_at", new Date(Date.now() - 6 * 3600_000).toISOString());
+  for (const r of lowRows ?? []) fresh.add(r.asset_key); // recently rejected: do not re-score every tick
+  const pending = coins.filter((c) => !fresh.has(`cg:${c.id}`));
+  const slice = pending.slice(0, fill ? 60 : Number(url.searchParams.get("n") ?? 12));
+  const batch = 0, batches = 1;
 
   const btc = top.data.find((c) => c.id === "bitcoin");
   const eth = top.data.find((c) => c.id === "ethereum");
@@ -39,7 +47,10 @@ export async function GET(req: Request) {
   const history: Record<string, unknown>[] = [];
   const dropped: string[] = [];
   const errors: string[] = [];
+  let processed = 0;
   for (const c of slice) {
+    if (Date.now() - started > BUDGET_MS) break;
+    processed++;
     const [coin, chart] = await Promise.all([safe(getCoin(c.id)), safe(getMarketChart(c.id, 365))]);
     if (!coin.ok || !chart.ok) { errors.push(`${c.symbol}: ${!coin.ok ? coin.error : !chart.ok ? chart.error : ""}`); continue; }
     const closes = chart.data.prices.map((p) => p[1]);
@@ -62,5 +73,7 @@ export async function GET(req: Request) {
   if (dropped.length) await sb.from("spot_picks").delete().in("asset_key", dropped);
   if (history.length) await sb.from("category_history").insert(history);
   await sb.from("spot_picks").delete().lt("updated_at", new Date(Date.now() - 7 * 86_400_000).toISOString());
-  return NextResponse.json({ ok: true, batch, batches, stored: rows.length, dropped: dropped.length, errors: errors.slice(0, 5) });
+  void batch; void batches;
+  const remaining = pending.length - processed;
+  return NextResponse.json({ ok: true, processed, stored: rows.length, dropped: dropped.length, remaining, done: remaining <= 0, hint: remaining > 0 ? "Reload this URL to continue (CoinGecko free tier allows about 10 coins per call)." : "All top-150 coins scored within the last 6 h.", seconds: Math.round((Date.now() - started) / 1000), errors: errors.slice(0, 5) });
 }
