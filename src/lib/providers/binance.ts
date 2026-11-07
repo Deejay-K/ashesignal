@@ -4,7 +4,7 @@
 import { fetchJson } from "@/lib/fetch";
 import type { Candle, Timeframe } from "@/lib/types";
 
-// Binance geo-blocks api.binance.com from US IPs (HTTP 451) — and Vercel functions run in the US.
+// Binance geo-blocks api.binance.com from US IPs (HTTP 451) - and Vercel functions run in the US.
 // data-api.binance.vision is Binance's official public market-data mirror with the same /api/v3
 // endpoints and no geo-block. We try hosts in order and remember the first that works.
 const HOSTS = [
@@ -16,18 +16,31 @@ const HOSTS = [
 let goodHost: string | null = null;
 
 async function bget<T>(path: string, ttl: number): Promise<T> {
-  const order = goodHost ? [goodHost, ...HOSTS.filter((h) => h !== goodHost)] : HOSTS;
+  const order = goodHost
+    ? [goodHost, ...HOSTS.filter((h) => h !== goodHost)]
+    : HOSTS;
   let lastErr: unknown;
   for (const host of order) {
     try {
-      const r = await fetchJson<T>(`${host}${path}`, { provider: "binance", ttl, retries: 0 });
+      const r = await fetchJson<T>(`${host}${path}`, {
+        provider: "binance",
+        ttl,
+        retries: 0,
+      });
       goodHost = host;
       return r;
     } catch (e) {
       lastErr = e;
       const status = (e as { status?: number | null }).status;
       // 451/403 = geo-block, 5xx/timeouts = try next host; 4xx like 400 (bad symbol) is real → stop
-      if (status != null && status < 500 && status !== 451 && status !== 403 && status !== 429) throw e;
+      if (
+        status != null &&
+        status < 500 &&
+        status !== 451 &&
+        status !== 403 &&
+        status !== 429
+      )
+        throw e;
     }
   }
   throw lastErr;
@@ -39,8 +52,12 @@ let symbolSetAt = 0;
 /** Set of all currently TRADING spot symbols, e.g. "BTCUSDT". Cached 1h. */
 export async function getTradingSymbols(): Promise<Set<string>> {
   if (symbolSet && Date.now() - symbolSetAt < 3_600_000) return symbolSet;
-  const r = await bget<{ symbols: { symbol: string; status: string; quoteAsset: string }[] }>(`/exchangeInfo?permissions=SPOT`, 3_600_000);
-  symbolSet = new Set(r.symbols.filter((s) => s.status === "TRADING").map((s) => s.symbol));
+  const r = await bget<{
+    symbols: { symbol: string; status: string; quoteAsset: string }[];
+  }>(`/exchangeInfo?permissions=SPOT`, 3_600_000);
+  symbolSet = new Set(
+    r.symbols.filter((s) => s.status === "TRADING").map((s) => s.symbol),
+  );
   symbolSetAt = Date.now();
   return symbolSet;
 }
@@ -57,10 +74,24 @@ export async function resolveSymbol(ticker: string): Promise<string | null> {
   return null;
 }
 
-export async function getKlines(symbol: string, tf: Timeframe, limit = 500): Promise<Candle[]> {
+export async function getKlines(
+  symbol: string,
+  tf: Timeframe,
+  limit = 500,
+): Promise<Candle[]> {
   const interval = tf; // Binance uses the same codes: 1m 5m 15m 30m 1h 4h 12h 1d 1w 1M
-  const ttl = tf === "1m" ? 10_000 : tf === "5m" ? 20_000 : tf === "15m" || tf === "30m" ? 30_000 : 60_000;
-  const r = await bget<(string | number)[][]>(`/klines?symbol=${symbol}&interval=${interval}&limit=${Math.min(limit, 1000)}`, ttl);
+  const ttl =
+    tf === "1m"
+      ? 10_000
+      : tf === "5m"
+        ? 20_000
+        : tf === "15m" || tf === "30m"
+          ? 30_000
+          : 60_000;
+  const r = await bget<(string | number)[][]>(
+    `/klines?symbol=${symbol}&interval=${interval}&limit=${Math.min(limit, 1000)}`,
+    ttl,
+  );
   return r.map((k) => ({
     time: Math.floor(Number(k[0]) / 1000),
     open: Number(k[1]),
@@ -83,7 +114,10 @@ export interface Ticker24h {
 }
 
 export async function getTicker24h(symbol: string): Promise<Ticker24h> {
-  const r = await bget<Record<string, string>>(`/ticker/24hr?symbol=${symbol}`, 15_000);
+  const r = await bget<Record<string, string>>(
+    `/ticker/24hr?symbol=${symbol}`,
+    15_000,
+  );
   return {
     symbol: r.symbol,
     lastPrice: Number(r.lastPrice),
@@ -96,11 +130,15 @@ export async function getTicker24h(symbol: string): Promise<Ticker24h> {
   };
 }
 
-/** All USDT tickers at once — used for "unusual volume" and gainers/losers scans. */
+/** All USDT tickers at once - used for "unusual volume" and gainers/losers scans. */
 export async function getAllUsdtTickers(): Promise<Ticker24h[]> {
   const r = await bget<Record<string, string>[]>(`/ticker/24hr`, 30_000);
   return r
-    .filter((t) => t.symbol.endsWith("USDT") && !/UP|DOWN|BULL|BEAR/.test(t.symbol.replace("USDT", "")))
+    .filter(
+      (t) =>
+        t.symbol.endsWith("USDT") &&
+        !/UP|DOWN|BULL|BEAR/.test(t.symbol.replace("USDT", "")),
+    )
     .map((t) => ({
       symbol: t.symbol,
       lastPrice: Number(t.lastPrice),

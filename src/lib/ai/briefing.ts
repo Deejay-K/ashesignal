@@ -60,21 +60,60 @@ function compact(a: MultiTfAnalysis) {
       opportunityScore: x.opportunityScore,
       trend: x.trend,
       momentum: x.momentum,
-      volume: { ratio: +x.volume.ratio.toFixed(2), trend: x.volume.trend, note: x.volume.note },
-      volatility: { atrPct: +(x.volatility.atrPct * 100).toFixed(2), regime: x.volatility.regime },
+      volume: {
+        ratio: +x.volume.ratio.toFixed(2),
+        trend: x.volume.trend,
+        note: x.volume.note,
+      },
+      volatility: {
+        atrPct: +(x.volatility.atrPct * 100).toFixed(2),
+        regime: x.volatility.regime,
+      },
       vwap: x.vwap,
       volumePoc: x.volumePoc,
-      levels: x.levels.map((l) => ({ price: l.price, kind: l.kind, touches: l.touches })),
+      levels: x.levels.map((l) => ({
+        price: l.price,
+        kind: l.kind,
+        touches: l.touches,
+      })),
       fib: x.fib,
       breakout: x.breakout,
-      reasons: x.reasons.map((r) => `${r.weight > 0 ? "+" : ""}${r.weight.toFixed(0)} ${r.text}`),
-      patternsCompleted: x.patterns.completed.map((p) => `${p.name} (${p.bias}, conf ${Math.round(p.confidence * 100)}%) ${p.description}`),
-      patternsForming: x.patterns.forming.map((p) => `${p.name} (${p.bias}, unconfirmed) ${p.description}`),
+      reasons: x.reasons.map(
+        (r) => `${r.weight > 0 ? "+" : ""}${r.weight.toFixed(0)} ${r.text}`,
+      ),
+      patternsCompleted: x.patterns.completed.map(
+        (p) =>
+          `${p.name} (${p.bias}, conf ${Math.round(p.confidence * 100)}%) ${p.description}`,
+      ),
+      patternsForming: x.patterns.forming.map(
+        (p) => `${p.name} (${p.bias}, unconfirmed) ${p.description}`,
+      ),
       weakeningMomentum: x.weakeningMomentum,
       reversalSigns: x.reversalSigns,
       scenarios: x.scenarios,
       setup: x.setup
-        ? { side: x.setup.side, kind: x.setup.kind, entry: x.setup.entry, takeProfits: x.setup.takeProfits.map((t) => ({ label: t.label, price: t.price, rr: t.rr, basis: t.basis })), stopLosses: x.setup.stopLosses.map((s) => ({ label: s.label, price: s.price, basis: s.basis })), riskRewardTp2: x.setup.riskRewardTp2, confidence: x.setup.confidence, style: x.setup.style, holdingPeriod: x.setup.holdingPeriod, invalidation: x.setup.invalidation, reasons: x.setup.reasons }
+        ? {
+            side: x.setup.side,
+            kind: x.setup.kind,
+            entry: x.setup.entry,
+            takeProfits: x.setup.takeProfits.map((t) => ({
+              label: t.label,
+              price: t.price,
+              rr: t.rr,
+              basis: t.basis,
+            })),
+            stopLosses: x.setup.stopLosses.map((s) => ({
+              label: s.label,
+              price: s.price,
+              basis: s.basis,
+            })),
+            riskRewardTp2: x.setup.riskRewardTp2,
+            confidence: x.setup.confidence,
+            style: x.setup.style,
+            holdingPeriod: x.setup.holdingPeriod,
+            invalidation: x.setup.invalidation,
+            reasons: x.setup.reasons,
+          }
         : { none: x.setupReason },
     };
   }
@@ -82,11 +121,20 @@ function compact(a: MultiTfAnalysis) {
 }
 
 export async function generateBriefing(ctx: BriefingContext) {
-  if (aiProvider() === "local") return { data: localBriefing(ctx), model: AI_MODEL(), inputTokens: 0, outputTokens: 0 };
+  if (aiProvider() === "local")
+    return {
+      data: localBriefing(ctx),
+      model: AI_MODEL(),
+      inputTokens: 0,
+      outputTokens: 0,
+    };
   try {
     return await generateBriefingRemote(ctx);
   } catch (e) {
-    console.warn("remote briefing failed, using local writer:", (e as Error).message);
+    console.warn(
+      "remote briefing failed, using local writer:",
+      (e as Error).message,
+    );
     const b = localBriefing(ctx);
     b.disagreements = `(Remote model failed: ${(e as Error).message}. This briefing was written by the local engine writer.)`;
     return { data: b, model: "engine-writer", inputTokens: 0, outputTokens: 0 };
@@ -98,7 +146,7 @@ async function generateBriefingRemote(ctx: BriefingContext) {
 Generated at: ${new Date().toISOString()}
 
 FUNDAMENTALS (CoinGecko/DexScreener): ${JSON.stringify(ctx.fundamentals ?? {})}
-MARKET SENTIMENT (Fear & Greed): ${ctx.fng ? `${ctx.fng.value} — ${ctx.fng.label}` : "unavailable"}
+MARKET SENTIMENT (Fear & Greed): ${ctx.fng ? `${ctx.fng.value} - ${ctx.fng.label}` : "unavailable"}
 SECURITY (GoPlus, DEX tokens only): ${JSON.stringify(ctx.security ?? null)}
 
 ENGINE OUTPUT (source of truth for every number):
@@ -123,15 +171,33 @@ export interface MarketBriefing {
 const MARKET_SYSTEM = `You are AsheSignal's market desk writing the daily crypto briefing from structured data (global stats, Fear & Greed, top movers, unusual volume, and the engine's bullish/bearish 4h picks with scores). Use only numbers present in the data. Be specific and concise; no disclaimers. Reply with ONLY a JSON object with keys: headline, summary, regime (risk-on|risk-off|mixed|ranging), whatToWatch (array), bullishPicks (array of {symbol, why}), bearishPicks (array of {symbol, why}), cautions (array).`;
 
 export async function generateMarketBriefing(data: Record<string, unknown>) {
-  if (aiProvider() === "local") return { data: localMarketBriefing(data), model: AI_MODEL(), inputTokens: 0, outputTokens: 0 };
+  if (aiProvider() === "local")
+    return {
+      data: localMarketBriefing(data),
+      model: AI_MODEL(),
+      inputTokens: 0,
+      outputTokens: 0,
+    };
   try {
     return await generateMarketBriefingRemote(data);
   } catch (e) {
-    console.warn("remote market briefing failed, using local writer:", (e as Error).message);
-    return { data: localMarketBriefing(data), model: "engine-writer", inputTokens: 0, outputTokens: 0 };
+    console.warn(
+      "remote market briefing failed, using local writer:",
+      (e as Error).message,
+    );
+    return {
+      data: localMarketBriefing(data),
+      model: "engine-writer",
+      inputTokens: 0,
+      outputTokens: 0,
+    };
   }
 }
 
 async function generateMarketBriefingRemote(data: Record<string, unknown>) {
-  return askJson<MarketBriefing>(MARKET_SYSTEM, `Generated at ${new Date().toISOString()}\n\nDATA:\n${JSON.stringify(data)}\n\nWrite the briefing JSON now.`, 1400);
+  return askJson<MarketBriefing>(
+    MARKET_SYSTEM,
+    `Generated at ${new Date().toISOString()}\n\nDATA:\n${JSON.stringify(data)}\n\nWrite the briefing JSON now.`,
+    1400,
+  );
 }

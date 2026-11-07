@@ -1,5 +1,8 @@
-export function fmtUsd(v: number | null | undefined, opts: { compact?: boolean } = {}): string {
-  if (v == null || !Number.isFinite(v)) return "—";
+export function fmtUsd(
+  v: number | null | undefined,
+  opts: { compact?: boolean } = {},
+): string {
+  if (v == null || !Number.isFinite(v)) return "-";
   if (opts.compact) {
     const a = Math.abs(v);
     if (a >= 1e12) return `$${(v / 1e12).toFixed(2)}T`;
@@ -7,7 +10,8 @@ export function fmtUsd(v: number | null | undefined, opts: { compact?: boolean }
     if (a >= 1e6) return `$${(v / 1e6).toFixed(2)}M`;
     if (a >= 1e3) return `$${(v / 1e3).toFixed(1)}K`;
   }
-  if (v >= 1000) return `$${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  if (v >= 1000)
+    return `$${v.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
   if (v >= 1) return `$${v.toFixed(2)}`;
   if (v >= 0.01) return `$${v.toFixed(4)}`;
   if (v >= 0.0001) return `$${v.toFixed(6)}`;
@@ -15,15 +19,16 @@ export function fmtUsd(v: number | null | undefined, opts: { compact?: boolean }
 }
 
 export function fmtNum(v: number | null | undefined, digits = 2): string {
-  if (v == null || !Number.isFinite(v)) return "—";
-  if (Math.abs(v) >= 1000) return v.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (v == null || !Number.isFinite(v)) return "-";
+  if (Math.abs(v) >= 1000)
+    return v.toLocaleString("en-US", { maximumFractionDigits: 0 });
   if (Math.abs(v) >= 1) return v.toFixed(digits);
   if (Math.abs(v) >= 0.01) return v.toFixed(4);
   return v.toPrecision(3);
 }
 
 export function fmtPct(v: number | null | undefined, digits = 2): string {
-  if (v == null || !Number.isFinite(v)) return "—";
+  if (v == null || !Number.isFinite(v)) return "-";
   return `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
 }
 

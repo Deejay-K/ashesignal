@@ -1,4 +1,4 @@
--- AsheSignal — Stage 2+ database schema (Supabase / Postgres)
+-- AsheSignal - Stage 2+ database schema (Supabase / Postgres)
 -- Run in the Supabase SQL editor. All user tables are protected by RLS.
 
 create extension if not exists pgcrypto;
@@ -230,3 +230,49 @@ create index if not exists ai_briefings_asset_time on public.ai_briefings(asset_
 alter table public.ai_briefings enable row level security;
 drop policy if exists "briefings readable" on public.ai_briefings;
 create policy "briefings readable" on public.ai_briefings for select using (true);   -- written by service role
+
+-- ---------- Stage 7 additions (safe to re-run) ----------
+create table if not exists public.token_notes (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  asset_key text not null,
+  symbol text,
+  note text not null default '',
+  updated_at timestamptz default now(),
+  primary key (user_id, asset_key)
+);
+alter table public.token_notes enable row level security;
+drop policy if exists "own notes" on public.token_notes;
+create policy "own notes" on public.token_notes for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- DEX pool liquidity snapshots (worker) for liquidity-change discovery + alerts; shared data
+create table if not exists public.pool_snapshots (
+  id bigserial primary key,
+  chain text not null,
+  pool text not null,
+  symbol text,
+  token_address text,
+  liquidity_usd numeric,
+  volume24h_usd numeric,
+  price_usd numeric,
+  taken_at timestamptz default now()
+);
+create index if not exists pool_snapshots_pool_time on public.pool_snapshots(chain, pool, taken_at desc);
+create index if not exists pool_snapshots_time on public.pool_snapshots(taken_at desc);
+alter table public.pool_snapshots enable row level security;
+drop policy if exists "pool snapshots readable" on public.pool_snapshots;
+create policy "pool snapshots readable" on public.pool_snapshots for select using (true);
+
+-- new-listing watermark (what the worker has already seen)
+create table if not exists public.seen_listings (
+  key text primary key,           -- 'cg:<id>' or 'dex:<chain>:<address>'
+  symbol text,
+  chain text,
+  first_seen timestamptz default now()
+);
+alter table public.seen_listings enable row level security;
+drop policy if exists "seen listings readable" on public.seen_listings;
+create policy "seen listings readable" on public.seen_listings for select using (true);
+
+-- allow the two new alert types
+alter table public.alerts drop constraint if exists alerts_type_check;
+alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','liquidity_change','new_listing','sentiment_zone'));

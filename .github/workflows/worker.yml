@@ -20,3 +20,5 @@ jobs:
       - name: AI market briefing (hourly)
         if: ${{ github.event_name == 'workflow_dispatch' || endsWith(github.run_id, '3') }}
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/briefing?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: DEX liquidity snapshot
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/liquidity?secret=${{ secrets.CRON_SECRET }}" || true

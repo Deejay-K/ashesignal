@@ -21,6 +21,10 @@ export async function PUT(req: NextRequest) {
   const allowed = ["display_name", "trading_balance", "portfolio_value", "risk_pct", "max_exposure_pct", "default_leverage", "preferences"];
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const k of allowed) if (k in b) patch[k] = b[k];
+  if (b.preferences && typeof b.preferences === "object") {
+    const { data: cur } = await sb.from("profiles").select("preferences").eq("id", u.user.id).maybeSingle();
+    patch.preferences = { ...((cur?.preferences as object) ?? {}), ...(b.preferences as object) };
+  }
   const { error } = await sb.from("profiles").upsert({ id: u.user.id, ...patch });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

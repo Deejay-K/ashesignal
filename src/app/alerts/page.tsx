@@ -20,7 +20,7 @@ function Alerts() {
   const [state, setState] = useState<"loading" | "guest" | "disabled" | "ok">("loading");
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
-  const [form, setForm] = useState({ symbol: sp.get("symbol") ?? "", id: sp.get("id") ?? "", type: "price_above", timeframe: sp.get("tf") ?? "1h", price: sp.get("price") ?? "", pct: "5", bars: "24", rsi: "70", ratio: "2", zone: "Extreme Fear", cooldown: "60" });
+  const [form, setForm] = useState({ symbol: sp.get("symbol") ?? "", id: sp.get("id") ?? "", address: sp.get("address") ?? "", type: sp.get("address") ? "liquidity_change" : "price_above", timeframe: sp.get("tf") ?? "1h", price: sp.get("price") ?? "", pct: sp.get("address") ? "30" : "5", bars: "24", rsi: "70", ratio: "2", zone: "Extreme Fear", chain: "", cooldown: "60" });
   const [err, setErr] = useState<string | null>(null);
 
   const load = async () => {
@@ -42,7 +42,8 @@ function Alerts() {
     setErr(null);
     const params: Record<string, string | number> = {};
     for (const p of def.params) params[p] = p === "zone" ? form.zone : Number(form[p as keyof typeof form]);
-    const r = await fetch("/api/me/alerts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ symbol: form.symbol || "MARKET", assetKey: form.id ? `cg:${form.id}` : `sym:${form.symbol.toUpperCase()}`, assetRef: { symbol: form.symbol.toUpperCase(), id: form.id || undefined }, type: form.type, timeframe: form.timeframe, params, cooldownMinutes: Number(form.cooldown) }) });
+    if (form.type === "new_listing" && form.chain) params.chain = form.chain;
+    const r = await fetch("/api/me/alerts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ symbol: form.symbol || (form.type === "new_listing" ? "LISTINGS" : "MARKET"), assetKey: form.address ? `addr:${form.address}` : form.id ? `cg:${form.id}` : `sym:${form.symbol.toUpperCase()}`, assetRef: { symbol: form.symbol.toUpperCase(), id: form.id || undefined, address: form.address || undefined }, type: form.type, timeframe: form.timeframe, params, cooldownMinutes: Number(form.type === "new_listing" ? Math.max(60, Number(form.cooldown)) : form.cooldown) }) });
     if (!r.ok) return setErr((await r.json()).error);
     load();
   };
@@ -60,7 +61,9 @@ function Alerts() {
           <Section title="New alert">
             <form className="space-y-2 text-xs text-fg-3" onSubmit={submit}>
               <label>Type<select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{ALERT_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}</select></label>
-              {form.type !== "sentiment_zone" ? (
+              {form.type === "liquidity_change" ? <label>Token contract address<input className="num" required value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="0x… or Solana mint" /></label> : null}
+              {form.type === "new_listing" ? <label>Chain filter (optional)<input value={form.chain} onChange={(e) => setForm({ ...form, chain: e.target.value })} placeholder="solana, base, ethereum… blank = all" /></label> : null}
+              {form.type !== "sentiment_zone" && form.type !== "new_listing" ? (
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     <label>Ticker<input value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} placeholder="BTC" required /></label>

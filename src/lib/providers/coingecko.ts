@@ -7,14 +7,20 @@ import type { CoinRow, MarketOverview, Sourced } from "@/lib/types";
 
 const PRO = process.env.COINGECKO_PRO_API_KEY;
 const DEMO = process.env.COINGECKO_API_KEY;
-const BASE = PRO ? "https://pro-api.coingecko.com/api/v3" : "https://api.coingecko.com/api/v3";
+const BASE = PRO
+  ? "https://pro-api.coingecko.com/api/v3"
+  : "https://api.coingecko.com/api/v3";
 const HEADERS: Record<string, string> = PRO
   ? { "x-cg-pro-api-key": PRO }
   : DEMO
     ? { "x-cg-demo-api-key": DEMO }
     : {};
 
-const opts = (ttl: number) => ({ provider: "coingecko", headers: HEADERS, ttl });
+const opts = (ttl: number) => ({
+  provider: "coingecko",
+  headers: HEADERS,
+  ttl,
+});
 
 function s<T>(value: T | null | undefined, note?: string): Sourced<T> {
   return {
@@ -76,7 +82,10 @@ function toRow(m: CgMarket): CoinRow {
     rank: m.market_cap_rank,
     volume24hUsd: m.total_volume,
     change1hPct: m.price_change_percentage_1h_in_currency ?? null,
-    change24hPct: m.price_change_percentage_24h_in_currency ?? m.price_change_percentage_24h ?? null,
+    change24hPct:
+      m.price_change_percentage_24h_in_currency ??
+      m.price_change_percentage_24h ??
+      null,
     change7dPct: m.price_change_percentage_7d_in_currency ?? null,
     sparkline7d: m.sparkline_in_7d?.price,
     ath: m.ath ?? null,
@@ -85,7 +94,11 @@ function toRow(m: CgMarket): CoinRow {
   };
 }
 
-export async function getMarkets(page = 1, perPage = 100, sparkline = true): Promise<CoinRow[]> {
+export async function getMarkets(
+  page = 1,
+  perPage = 100,
+  sparkline = true,
+): Promise<CoinRow[]> {
   const url =
     `${BASE}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${perPage}&page=${page}` +
     `&sparkline=${sparkline}&price_change_percentage=1h,24h,7d`;
@@ -103,10 +116,30 @@ export async function getMarketsByIds(ids: string[]): Promise<CoinRow[]> {
 }
 
 export async function getTrending(): Promise<
-  { id: string; symbol: string; name: string; image?: string; rank: number | null; priceUsd: number | null; change24hPct: number | null }[]
+  {
+    id: string;
+    symbol: string;
+    name: string;
+    image?: string;
+    rank: number | null;
+    priceUsd: number | null;
+    change24hPct: number | null;
+  }[]
 > {
   const r = await fetchJson<{
-    coins: { item: { id: string; symbol: string; name: string; small?: string; market_cap_rank: number | null; data?: { price?: number; price_change_percentage_24h?: { usd?: number } } } }[];
+    coins: {
+      item: {
+        id: string;
+        symbol: string;
+        name: string;
+        small?: string;
+        market_cap_rank: number | null;
+        data?: {
+          price?: number;
+          price_change_percentage_24h?: { usd?: number };
+        };
+      };
+    }[];
   }>(`${BASE}/search/trending`, opts(120_000));
   return r.coins.map(({ item }) => ({
     id: item.id,
@@ -120,11 +153,18 @@ export async function getTrending(): Promise<
 }
 
 export async function search(q: string) {
-  const r = await fetchJson<{ coins: { id: string; name: string; symbol: string; market_cap_rank: number | null; thumb?: string }[] }>(
-    `${BASE}/search?query=${encodeURIComponent(q)}`,
-    opts(300_000),
-  );
-  return r.coins.slice(0, 20).map((c) => ({ ...c, symbol: c.symbol.toUpperCase() }));
+  const r = await fetchJson<{
+    coins: {
+      id: string;
+      name: string;
+      symbol: string;
+      market_cap_rank: number | null;
+      thumb?: string;
+    }[];
+  }>(`${BASE}/search?query=${encodeURIComponent(q)}`, opts(300_000));
+  return r.coins
+    .slice(0, 20)
+    .map((c) => ({ ...c, symbol: c.symbol.toUpperCase() }));
 }
 
 export interface CoinDetail {
@@ -152,7 +192,14 @@ export interface CoinDetail {
   change1yPct: number | null;
   sentimentUpPct: number | null;
   homepage?: string;
-  tickers: { exchange: string; base: string; target: string; lastUsd: number | null; volumeUsd: number | null; trustScore: string | null }[];
+  tickers: {
+    exchange: string;
+    base: string;
+    target: string;
+    lastUsd: number | null;
+    volumeUsd: number | null;
+    trustScore: string | null;
+  }[];
 }
 
 export async function getCoin(id: string): Promise<CoinDetail> {
@@ -186,7 +233,8 @@ export async function getCoin(id: string): Promise<CoinDetail> {
     change1yPct: md.price_change_percentage_1y ?? null,
     sentimentUpPct: r.sentiment_votes_up_percentage ?? null,
     homepage: r.links?.homepage?.[0] || undefined,
-    tickers: (r.tickers ?? []).slice(0, 40).map((t: any) => ({ // eslint-disable-line @typescript-eslint/no-explicit-any
+    tickers: (r.tickers ?? []).slice(0, 40).map((t: any) => ({
+      // eslint-disable-line @typescript-eslint/no-explicit-any
       exchange: t.market?.name ?? "?",
       base: t.base,
       target: t.target,
@@ -197,9 +245,12 @@ export async function getCoin(id: string): Promise<CoinDetail> {
   };
 }
 
-/** Daily close history from CoinGecko — fallback OHLCV source for coins with no Binance pair. */
+/** Daily close history from CoinGecko - fallback OHLCV source for coins with no Binance pair. */
 export async function getMarketChart(id: string, days: number) {
-  const r = await fetchJson<{ prices: [number, number][]; total_volumes: [number, number][] }>(
+  const r = await fetchJson<{
+    prices: [number, number][];
+    total_volumes: [number, number][];
+  }>(
     `${BASE}/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${days}`,
     opts(300_000),
   );
@@ -207,7 +258,10 @@ export async function getMarketChart(id: string, days: number) {
 }
 
 /** CoinGecko OHLC endpoint (4h candles for ≤30 days, daily beyond). No volume. */
-export async function getOhlc(id: string, days: 1 | 7 | 14 | 30 | 90 | 180 | 365) {
+export async function getOhlc(
+  id: string,
+  days: 1 | 7 | 14 | 30 | 90 | 180 | 365,
+) {
   return fetchJson<[number, number, number, number, number][]>(
     `${BASE}/coins/${encodeURIComponent(id)}/ohlc?vs_currency=usd&days=${days}`,
     opts(300_000),

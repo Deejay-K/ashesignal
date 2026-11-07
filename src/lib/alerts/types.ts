@@ -14,5 +14,7 @@ export const ALERT_TYPES = [
   { type: "sl", label: "Stop-loss level reached", params: ["price"] },
   { type: "volume_spike", label: "Volume ≥ N× average", params: ["ratio"] },
   { type: "sentiment_zone", label: "Fear & Greed enters zone", params: ["zone"] },
+  { type: "liquidity_change", label: "DEX liquidity changes ±% (24h)", params: ["pct"] },
+  { type: "new_listing", label: "New token listings (global)", params: [] },
 ] as const;
 export type AlertType = (typeof ALERT_TYPES)[number]["type"];

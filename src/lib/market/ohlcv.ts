@@ -3,7 +3,12 @@
 //   2. GeckoTerminal DEX pool (verified, most timeframes; 30m/1w/1M resampled)
 //   3. CoinGecko market_chart (estimated: hourly/daily closes only, no OHLC)
 
-import { TF_MS, type Candle, type OhlcvResult, type Timeframe } from "@/lib/types";
+import {
+  TF_MS,
+  type Candle,
+  type OhlcvResult,
+  type Timeframe,
+} from "@/lib/types";
 import * as binance from "@/lib/providers/binance";
 import * as gt from "@/lib/providers/geckoterminal";
 import * as cg from "@/lib/providers/coingecko";
@@ -17,14 +22,24 @@ export interface AssetRef {
   pool?: { network: string; address: string }; // GeckoTerminal network + pool
 }
 
-export async function getOhlcv(ref: AssetRef, tf: Timeframe, limit = 500): Promise<OhlcvResult> {
+export async function getOhlcv(
+  ref: AssetRef,
+  tf: Timeframe,
+  limit = 500,
+): Promise<OhlcvResult> {
   // 1) Binance
   if (ref.symbol) {
     try {
       const sym = await binance.resolveSymbol(ref.symbol);
       if (sym) {
         const candles = await binance.getKlines(sym, tf, limit);
-        if (candles.length) return { candles, source: "binance", symbol: sym, quality: "verified" };
+        if (candles.length)
+          return {
+            candles,
+            source: "binance",
+            symbol: sym,
+            quality: "verified",
+          };
       }
     } catch (e) {
       console.warn("binance ohlcv failed", (e as Error).message);
@@ -37,7 +52,17 @@ export async function getOhlcv(ref: AssetRef, tf: Timeframe, limit = 500): Promi
         const id = await v.resolve(ref.symbol);
         if (!id) continue;
         const candles = await v.klines(id, tf, limit);
-        if (candles.length) return { candles, source: v.name, symbol: id, quality: "verified", note: candles.length < 60 ? `${v.name} only returned ${candles.length} candles on ${tf}.` : undefined };
+        if (candles.length)
+          return {
+            candles,
+            source: v.name,
+            symbol: id,
+            quality: "verified",
+            note:
+              candles.length < 60
+                ? `${v.name} only returned ${candles.length} candles on ${tf}.`
+                : undefined,
+          };
       } catch (e) {
         console.warn(`${v.name} ohlcv failed`, (e as Error).message);
       }
@@ -46,10 +71,30 @@ export async function getOhlcv(ref: AssetRef, tf: Timeframe, limit = 500): Promi
   // 2) GeckoTerminal
   if (ref.pool) {
     try {
-      const base = await gt.getPoolOhlcv(ref.pool.network, ref.pool.address, tf, limit);
+      const base = await gt.getPoolOhlcv(
+        ref.pool.network,
+        ref.pool.address,
+        tf,
+        limit,
+      );
       if (base.length) {
-        const candles = tf === "30m" ? resample(base, TF_MS["30m"]) : tf === "1w" ? resample(base, TF_MS["1w"]) : tf === "1M" ? resample(base, TF_MS["1M"]) : base;
-        return { candles, source: "geckoterminal", symbol: ref.pool.address, quality: "verified", note: ["30m", "1w", "1M"].includes(tf) ? "Resampled from smaller GeckoTerminal candles." : undefined };
+        const candles =
+          tf === "30m"
+            ? resample(base, TF_MS["30m"])
+            : tf === "1w"
+              ? resample(base, TF_MS["1w"])
+              : tf === "1M"
+                ? resample(base, TF_MS["1M"])
+                : base;
+        return {
+          candles,
+          source: "geckoterminal",
+          symbol: ref.pool.address,
+          quality: "verified",
+          note: ["30m", "1w", "1M"].includes(tf)
+            ? "Resampled from smaller GeckoTerminal candles."
+            : undefined,
+        };
       }
     } catch (e) {
       console.warn("geckoterminal ohlcv failed", (e as Error).message);
@@ -60,17 +105,37 @@ export async function getOhlcv(ref: AssetRef, tf: Timeframe, limit = 500): Promi
     try {
       const days = tf === "1h" ? 30 : tf === "4h" || tf === "12h" ? 90 : 365;
       const chart = await cg.getMarketChart(ref.coingeckoId, days);
-      const points = chart.prices.map(([t, p], idx) => ({ t, p, v: chart.total_volumes[idx]?.[1] ?? 0 }));
+      const points = chart.prices.map(([t, p], idx) => ({
+        t,
+        p,
+        v: chart.total_volumes[idx]?.[1] ?? 0,
+      }));
       const candles = synthesize(points, TF_MS[tf]);
-      if (candles.length) return { candles, source: "coingecko", symbol: ref.coingeckoId, quality: "estimated", note: "No exchange candles available — OHLC synthesized from CoinGecko price samples. Wicks are approximate." };
+      if (candles.length)
+        return {
+          candles,
+          source: "coingecko",
+          symbol: ref.coingeckoId,
+          quality: "estimated",
+          note: "No exchange candles available - OHLC synthesized from CoinGecko price samples. Wicks are approximate.",
+        };
     } catch (e) {
       console.warn("coingecko chart failed", (e as Error).message);
     }
   }
-  return { candles: [], source: "none", symbol: ref.symbol ?? ref.coingeckoId ?? ref.pool?.address ?? "?", quality: "unavailable", note: "No OHLCV source could serve this asset on this timeframe." };
+  return {
+    candles: [],
+    source: "none",
+    symbol: ref.symbol ?? ref.coingeckoId ?? ref.pool?.address ?? "?",
+    quality: "unavailable",
+    note: "No OHLCV source could serve this asset on this timeframe.",
+  };
 }
 
-function synthesize(points: { t: number; p: number; v: number }[], bucketMs: number): Candle[] {
+function synthesize(
+  points: { t: number; p: number; v: number }[],
+  bucketMs: number,
+): Candle[] {
   const out: Candle[] = [];
   const bucketS = bucketMs / 1000;
   let cur: Candle | null = null;
