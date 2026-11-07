@@ -8,6 +8,7 @@ import CoinTable from "@/components/CoinTable";
 import { Disclaimer, Empty, RiskBadge, Section, StatCard } from "@/components/ui";
 import FngGauge from "@/components/FngGauge";
 import WatchlistPreview from "@/components/WatchlistPreview";
+import PortfolioCard from "@/components/PortfolioCard";
 import type { DiscoverItem } from "@/lib/market/discover";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +52,7 @@ export default async function Dashboard() {
       </div>
       {d?.errors.length ? <p className="text-xs text-amber">Some discovery sources failed: {d.errors.join(" · ")}</p> : null}
 
+      <PortfolioCard />
       <WatchlistPreview />
 
       <Section title="Top 50 by market cap" right={<span className="pill pill-mint">verified · coingecko</span>}>

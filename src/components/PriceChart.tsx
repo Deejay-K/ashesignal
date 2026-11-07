@@ -38,7 +38,21 @@ export default function PriceChart({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
+  const seriesRef = useRef<{ candle: ISeriesApi<"Candlestick">; vol: ISeriesApi<"Histogram">; count: number; first: number } | null>(null);
 
+  // Fast path: same series (same first candle, length within +1) → update the last bar only.
+  useEffect(() => {
+    const s = seriesRef.current;
+    if (!s || !candles.length) return;
+    if (candles[0].time !== s.first || candles.length < s.count || candles.length > s.count + 1) return;
+    const c = candles[candles.length - 1];
+    s.candle.update({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close });
+    s.vol.update({ time: c.time as UTCTimestamp, value: c.volume, color: c.close >= c.open ? "rgba(54,189,148,0.35)" : "rgba(240,80,110,0.35)" });
+    s.count = candles.length;
+  }, [candles]);
+
+  // Full rebuild only when the dataset, analysis or overlays actually change.
+  const rebuildKey = `${candles[0]?.time}|${analysis?.timeframe}|${analysis?.score}|${JSON.stringify(overlays)}|${height}`;
   useEffect(() => {
     if (!ref.current || !candles.length) return;
     const el = ref.current;
@@ -66,6 +80,7 @@ export default function PriceChart({
     const vol = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol" });
     chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     vol.setData(candles.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume, color: c.close >= c.open ? "rgba(54,189,148,0.35)" : "rgba(240,80,110,0.35)" })));
+    seriesRef.current = { candle: candleSeries, vol, count: candles.length, first: candles[0].time };
 
     const closes = candles.map((c) => c.close);
     const addLine = (vals: number[], color: string, width: 1 | 2 = 1, style = LineStyle.Solid) => {
@@ -111,8 +126,10 @@ export default function PriceChart({
     return () => {
       chart.remove();
       chartRef.current = null;
+      seriesRef.current = null;
     };
-  }, [candles, analysis, overlays, height]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rebuildKey]);
 
   return <div ref={ref} style={{ height }} className="w-full" />;
 }

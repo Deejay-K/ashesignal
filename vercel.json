@@ -2,6 +2,7 @@
   "crons": [
     { "path": "/api/cron/resolve", "schedule": "0 6 * * *" },
     { "path": "/api/cron/alerts", "schedule": "0 7 * * *" },
-    { "path": "/api/cron/signals", "schedule": "0 8 * * *" }
+    { "path": "/api/cron/signals", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/snapshot", "schedule": "0 9 * * *" }
   ]
 }

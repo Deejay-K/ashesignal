@@ -12,6 +12,7 @@ const LINKS = [
   { href: "/scanner", label: "Scanner" },
   { href: "/risk", label: "Risk" },
   { href: "/sentiment", label: "Sentiment" },
+  { href: "/portfolio", label: "Portfolio" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/setups", label: "Setups" },
   { href: "/alerts", label: "Alerts" },

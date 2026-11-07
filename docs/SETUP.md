@@ -95,6 +95,16 @@ NEXT_PUBLIC_SITE_URL      = https://ashesignal.vercel.app   (your real URL)
 - **Email:** sign up at resend.com (free: 3k emails/month), create an API key → `RESEND_API_KEY` in Vercel. Until you verify a domain, mail comes from `onboarding@resend.dev` and can only be sent to your own Resend account email. Tick "Email me" on `/account`.
 - Every fired alert always shows in the Inbox on `/alerts`, even with neither configured.
 
+## 8. Stage 4 — wallet & portfolio tracking (two free keys)
+
+1. **Alchemy** (Ethereum, Base, Polygon, Arbitrum, Optimism, BNB): https://dashboard.alchemy.com → sign up → **Create new app** → any name, pick Ethereum Mainnet → open the app → **API key** → copy. One key works for all networks.
+2. **Helius** (Solana): https://dashboard.helius.dev → sign up → **API Keys** → copy.
+3. Vercel → Environment Variables: `ALCHEMY_API_KEY`, `HELIUS_API_KEY` (both Secret) → Redeploy. Also add them to `.env.local` for local dev.
+4. Supabase → SQL Editor → run `supabase/schema.sql` again (adds the `cost_basis` table).
+5. On the site: **Portfolio** → add a wallet (chain + public address + label). Holdings, allocation, transactions load live; history builds up from the daily worker snapshot plus every visit.
+
+Cost basis is entered manually per asset (tap "set" in the Holdings table) and drives Unrealized P&L. Never enter a private key or seed phrase anywhere — the app only accepts public addresses and rejects anything that looks like a seed phrase.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).
@@ -109,4 +119,5 @@ NEXT_PUBLIC_SITE_URL      = https://ashesignal.vercel.app   (your real URL)
 | Watchlist | this browser only | synced (Supabase) |
 | Save setups, auto-resolved vs live price, personal hit-rate (`/setups`) | ✗ | ✓ |
 | Alerts (price, %, RSI, MACD, pattern, breakout, volume, F&G) + push/email/inbox | ✗ | ✓ |
+| Wallet / portfolio tracking with history and cost basis | ✗ | ✓ |
 | Risk profile (balance, risk %, exposure, leverage) | this browser only | synced |

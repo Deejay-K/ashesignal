@@ -36,12 +36,13 @@ Push to a GitHub repo, import in Vercel, add env vars (optional), deploy. All pa
 | `/setups` | Saved setups with manual outcome tracking and personal win-rate (account required) |
 | `/login`, `/account` | Magic-link / Google sign-in, account overview, notification settings |
 | `/alerts` | 13 alert types (price, % move, RSI, MACD cross, pattern, breakout/breakdown, TP/SL, volume spike, Fear & Greed zone) with push, email and inbox |
+| `/portfolio` | Read-only wallet tracking across 6 EVM chains + Solana: holdings, prices, allocation, network split, transactions, value history, manual cost basis → unrealized P&L |
 | `/performance` | The engine grading itself: every emitted signal on the top-30 coins logged and resolved against real price — win rate, TP/SL counts, MFE/MAE by timeframe, kind and side |
 
 Every number shows its **source and quality** (verified / estimated / unavailable).
 
 ## What is *not* in Stage 1 (and the plan)
 
-Wallet/portfolio tracking (Stage 4), LLM narrative layer (Stage 5). Per-token social sentiment and whale feeds need paid or keyed APIs — see the limitations section in the architecture doc.
+LLM narrative layer (Stage 5) and read-only exchange keys for realized P&L. Per-token social sentiment and whale feeds need paid or keyed APIs — see the limitations section in the architecture doc.
 
 Not financial advice. Analysis is probabilistic; use the risk calculator and never trade more than you can lose.

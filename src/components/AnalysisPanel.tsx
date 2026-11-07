@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { mergeCandle, subscribeKline } from "@/lib/live";
 import Link from "next/link";
 import PriceChart, { type ChartOverlays } from "./PriceChart";
 import { Empty, OutlookBadge, QualityBadge, Section } from "./ui";
@@ -69,7 +70,33 @@ export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asse
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
-  // refresh the active timeframe periodically (near-real-time for low TFs)
+  // live ticks via WebSocket when the chart comes from Binance
+  const [live, setLive] = useState(false);
+  useEffect(() => {
+    if (meta?.source !== "binance" || !asset.symbol) {
+      setLive(false);
+      return;
+    }
+    let sym: string | null = null;
+    let unsub = () => {};
+    let alive = true;
+    fetch(`/api/ohlcv?${qs(asset, { tf, limit: "1" })}`).then((r) => r.json()).then((o) => {
+      if (!alive || o.source !== "binance") return;
+      sym = o.symbol;
+      unsub = subscribeKline(sym!, tf, (c) => {
+        setCandles((prev) => mergeCandle(prev, c));
+        setLive(true);
+      });
+    });
+    return () => {
+      alive = false;
+      unsub();
+      setLive(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta?.source, key, tf]);
+
+  // refresh the active timeframe periodically (fallback when no live socket; also refreshes analysis)
   useEffect(() => {
     const ms = tf === "1m" ? 15_000 : tf === "5m" ? 30_000 : tf === "15m" || tf === "30m" ? 60_000 : 120_000;
     const t = setInterval(() => {
@@ -87,6 +114,7 @@ export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asse
         title={title ?? "Chart"}
         right={
           <div className="flex items-center gap-2">
+            {live ? <span className="pill pill-mint"><span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-mint" /> live</span> : null}
             {meta ? <QualityBadge quality={meta.quality} source={meta.source} note={meta.note} /> : null}
           </div>
         }

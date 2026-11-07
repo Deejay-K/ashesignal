@@ -15,3 +15,5 @@ jobs:
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/alerts?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Log engine signals (one batch of coins per tick, rotates automatically)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/signals?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Portfolio snapshots (skips users snapshotted <20h ago)
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/snapshot?secret=${{ secrets.CRON_SECRET }}" || true

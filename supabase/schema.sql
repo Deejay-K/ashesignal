@@ -198,3 +198,16 @@ begin
   return new;
 end $$;
 update public.profiles p set email = u.email from auth.users u where u.id = p.id and p.email is null;
+
+-- ---------- Stage 4 additions (safe to re-run) ----------
+create table if not exists public.cost_basis (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  chain text not null,
+  address text not null,        -- token contract/mint, or the literal 'native'
+  cost_per_unit numeric not null,
+  updated_at timestamptz default now(),
+  primary key (user_id, chain, address)
+);
+alter table public.cost_basis enable row level security;
+drop policy if exists "own cost basis" on public.cost_basis;
+create policy "own cost basis" on public.cost_basis for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

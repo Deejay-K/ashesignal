@@ -56,6 +56,7 @@ export default function AccountPage() {
           <li>Saved setups and their outcomes — auto-resolved against live price every few minutes</li>
           <li>Risk profile on the Risk page (balance, risk %, exposure, leverage)</li>
           <li>Alerts and notification preferences</li>
+          <li>Wallets (public addresses) and portfolio history</li>
         </ul>
       </Section>
     </div>
