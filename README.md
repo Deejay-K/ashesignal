@@ -41,6 +41,8 @@ Push to a GitHub repo, import in Vercel, add env vars (optional), deploy. All pa
 | `/glossary` | Every label in the app explained (risk-on/off, score, confirmed/speculative/watch, TP/SL, R, leverage, pattern statuses, Fear & Greed zones, indicators, DEX terms, P&L). Labels across the app carry a small ? that links to the entry. |
 | `/performance` | The engine grading itself: every emitted signal on the top-30 coins logged and resolved against real price - win rate, TP/SL counts, MFE/MAE by timeframe, kind and side |
 
+Six themes (Foundry, Terminal, Trader, Midnight, Ember, Paper light mode) switchable from Account or the menu; charts follow the theme. Press / anywhere to search; every setup has a Copy button.
+
 A trade-conditions banner on the dashboard and every chart says whether to trade at all right now (macro events within 24 h, expiry, weekend liquidity, low volume, extreme volatility, thin liquidity, wide spreads). Each setup carries risk-derived leverage advice.
 
 AI analyst briefings (Stage 5) sit under every analysis: a Claude model writes the plain-language read strictly from the engine's numbers, keeps a history per asset, and the dashboard carries an hourly market briefing.

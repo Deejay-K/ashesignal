@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import BottomNav from "@/components/BottomNav";
+import { THEME_BOOT } from "@/lib/themes";
 
 
 export const metadata: Metadata = {
@@ -14,11 +15,15 @@ export const metadata: Metadata = {
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#0b0f14" };
 metadata.manifest = "/manifest.json";
 metadata.appleWebApp = { capable: true, statusBarStyle: "black-translucent", title: "AsheSignal" };
-metadata.icons = { icon: "/icon-192.png", apple: "/icon-192.png" };
+metadata.icons = { icon: [{ url: "/favicon.svg", type: "image/svg+xml" }, { url: "/icon-192.png", sizes: "192x192" }], apple: "/icon-192.png" };
+metadata.openGraph = { title: "AsheSignal - Crypto Trading Intelligence", description: "Multi-timeframe technicals, pattern overlays, risk-first setups, trade conditions, portfolio and alerts. Real market data.", siteName: "AsheSignal", type: "website" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+      </head>
       <body className="min-h-screen">
         <Nav />
         <main className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-5">{children}</main>

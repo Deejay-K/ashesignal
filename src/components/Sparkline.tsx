@@ -8,7 +8,7 @@ export default function Sparkline({ data, w = 96, h = 28 }: { data: number[]; w?
   const up = pts[pts.length - 1] >= pts[0];
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden>
-      <polyline fill="none" stroke={up ? "#36bd94" : "#f0506e"} strokeWidth="1.5" points={d} />
+      <polyline fill="none" stroke={up ? "var(--mint)" : "var(--red)"} strokeWidth="1.5" points={d} />
     </svg>
   );
 }

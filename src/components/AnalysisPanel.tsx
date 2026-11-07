@@ -390,6 +390,19 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
     const r = await fetch("/api/me/setups", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ setup: s, symbol: asset.symbol ?? asset.id ?? "?", timeframe: tf, score, assetKey: asset.id ? `cg:${asset.id}` : asset.pool ? `pool:${asset.network}:${asset.pool}` : `sym:${asset.symbol}` }) });
     setSaved(r.ok ? "saved" : "error");
   };
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    const lines = [
+      `${asset.symbol ?? asset.id ?? ""} ${s.side} (${s.kind}) on ${tf} - AsheSignal`,
+      `Entry: ${fmtUsd(s.entry.low)} - ${fmtUsd(s.entry.high)} (${s.entry.type})`,
+      ...s.takeProfits.map((t) => `${t.label}: ${fmtUsd(t.price)} (${t.rr}R)`),
+      ...s.stopLosses.map((t) => `${t.label}: ${fmtUsd(t.price)} (${fmtPct(t.pctFromEntry, 2)})`),
+      `R:R to TP2 ${s.riskRewardTp2}R - leverage ${s.leverage.recommended}x (safe ${s.leverage.conservative}x, max ${s.leverage.maxSafe}x) - confidence ${s.confidence}% - ${s.style}, hold ${s.holdingPeriod}`,
+      `Invalidated if: ${s.invalidation.join(" ")}`,
+      "Not financial advice.",
+    ];
+    try { await navigator.clipboard.writeText(lines.join("\n")); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+  };
   const riskHref = `/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: asset.symbol ?? "", tf, leverage: String(s.leverage.recommended) }).toString()}`;
   return (
     <Section
@@ -420,6 +433,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Link href={riskHref} className="btn inline-block text-sm">Size this trade →</Link>
         <Link href={`/alerts?${new URLSearchParams({ symbol: asset.symbol ?? "", id: asset.id ?? "", tf, price: String(s.takeProfits[0].price) }).toString()}`} className="btn-ghost">Set alert</Link>
+        <button className="btn-ghost" onClick={copy}>{copied ? "Copied" : "Copy"}</button>
         <button className="btn-ghost" onClick={save} disabled={saved === "saving" || saved === "saved"}>
           {saved === "saved" ? "Saved ✓" : saved === "saving" ? "Saving…" : "Save setup"}
         </button>

@@ -13,6 +13,7 @@ import AiBriefing from "@/components/AiBriefing";
 import WhalePanel from "@/components/WhalePanel";
 import TokenNotes from "@/components/TokenNotes";
 import Term from "@/components/Term";
+import RecentScans, { rememberScan } from "@/components/RecentScans";
 
 export default function ScannerPage() {
   return (
@@ -40,7 +41,10 @@ function Scanner() {
       const r = await fetch(`/api/scan?address=${encodeURIComponent(a.trim())}`);
       const j = await r.json();
       if (j.error) setErr(j.error);
-      else setRep(j);
+      else {
+        setRep(j);
+        if (j.token) rememberScan({ address: j.address, symbol: j.token.symbol, chain: j.chain?.id });
+      }
     } catch (e) {
       setErr(String(e));
     } finally {
@@ -72,6 +76,7 @@ function Scanner() {
         <input value={addr} onChange={(e) => setAddr(e.target.value)} placeholder="0x… or Solana mint address" className="num" />
         <button className="btn" disabled={loading}>{loading ? "Scanning…" : "Scan"}</button>
       </form>
+      <RecentScans />
       {err ? <p className="text-sm text-red">{err}</p> : null}
       {loading ? <div className="h-40 animate-pulse rounded-lg bg-bg-3" /> : null}
       {rep ? <Report r={rep} /> : null}

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { fmtUsd } from "@/lib/format";
 import AuthMenu from "./AuthMenu";
+import ThemePicker from "./ThemePicker";
 
 export const NAV_LINKS = [
   { href: "/", label: "Dashboard", primary: 1 },
@@ -37,6 +38,16 @@ export default function Nav() {
   const [more, setMore] = useState(false);
   const t = useRef<ReturnType<typeof setTimeout> | null>(null);
   const moreRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") { e.preventDefault(); searchRef.current?.focus(); }
+      if (e.key === "Escape") { setOpen(false); setMenu(false); setMore(false); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(() => {
     if (t.current) clearTimeout(t.current);
@@ -97,6 +108,7 @@ export default function Nav() {
                     {l.label}
                   </Link>
                 ))}
+                <div className="mt-1 border-t border-border px-2 pt-2 text-xs text-fg-3">Theme <ThemePicker compact /></div>
               </div>
             ) : null}
           </div>
@@ -104,6 +116,7 @@ export default function Nav() {
 
         <div className="nav-search">
           <input
+            ref={searchRef}
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -114,7 +127,7 @@ export default function Nav() {
             onKeyDown={(e) => {
               if (e.key === "Enter" && res?.isAddress) go(`/scanner?address=${encodeURIComponent(q.trim())}`);
             }}
-            placeholder="Search or paste address"
+            placeholder="Search or paste address  ( / )"
             aria-label="Search"
           />
           {open && res && (res.coins.length || res.pairs.length || res.isAddress) ? (
@@ -159,6 +172,7 @@ export default function Nav() {
               {l.label}
             </Link>
           ))}
+          <div className="col-span-2 flex items-center gap-2 pt-1 text-xs text-fg-3">Theme <ThemePicker compact /></div>
         </nav>
       ) : null}
     </header>

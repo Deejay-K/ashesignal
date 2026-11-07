@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CandlestickSeries,
   HistogramSeries,
@@ -16,6 +16,7 @@ import {
 } from "lightweight-charts";
 import type { Pattern } from "@/lib/ta/patterns";
 import type { Candle } from "@/lib/types";
+import { palette } from "@/lib/themes";
 import { bollinger, ema, sma } from "@/lib/ta/indicators";
 import type { TimeframeAnalysis } from "@/lib/ta/analysis";
 
@@ -29,9 +30,9 @@ export interface ChartOverlays {
   patterns?: boolean;
 }
 
-const MINT = "#36bd94";
-const RED = "#f0506e";
-const GRAY = "#6b7a89";
+let MINT = "#36bd94";
+let RED = "#f0506e";
+let GRAY = "#6b7a89";
 
 /** Default set of pattern ids drawn on the chart: live (non-candlestick) patterns, strongest first, max 4. */
 export function defaultVisiblePatterns(analysis?: TimeframeAnalysis | null): string[] {
@@ -68,39 +69,47 @@ export default function PriceChart({
     if (candles[0].time !== s.first || candles.length < s.count || candles.length > s.count + 1) return;
     const c = candles[candles.length - 1];
     s.candle.update({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close });
-    s.vol.update({ time: c.time as UTCTimestamp, value: c.volume, color: c.close >= c.open ? "rgba(54,189,148,0.35)" : "rgba(240,80,110,0.35)" });
+    s.vol.update({ time: c.time as UTCTimestamp, value: c.volume, color: c.close >= c.open ? MINT + "59" : RED + "59" });
     s.count = candles.length;
   }, [candles]);
 
   // Full rebuild only when the dataset, analysis or overlays actually change.
-  const rebuildKey = `${candles[0]?.time}|${analysis?.timeframe}|${analysis?.score}|${JSON.stringify(overlays)}|${(visiblePatterns ?? []).join(",")}|${height}`;
+  const [themeTick, setThemeTick] = useState(0);
+  useEffect(() => {
+    const on = () => setThemeTick((t) => t + 1);
+    window.addEventListener("theme-change", on);
+    return () => window.removeEventListener("theme-change", on);
+  }, []);
+  const rebuildKey = `${candles[0]?.time}|${analysis?.timeframe}|${analysis?.score}|${JSON.stringify(overlays)}|${(visiblePatterns ?? []).join(",")}|${height}|${themeTick}`;
   useEffect(() => {
     if (!ref.current || !candles.length) return;
     const el = ref.current;
+    const pal = palette();
+    MINT = pal.mint; RED = pal.red; GRAY = pal.fg3;
     const chart = createChart(el, {
       height,
-      layout: { background: { color: "transparent" }, textColor: "#9fb0c0", fontFamily: "ui-monospace, monospace", fontSize: 11 },
-      grid: { vertLines: { color: "#161e27" }, horzLines: { color: "#161e27" } },
-      rightPriceScale: { borderColor: "#1f2a35" },
-      timeScale: { borderColor: "#1f2a35", timeVisible: true, secondsVisible: false },
+      layout: { background: { color: "transparent" }, textColor: pal.fg2, fontFamily: "ui-monospace, monospace", fontSize: 11 },
+      grid: { vertLines: { color: pal.bg3 }, horzLines: { color: pal.bg3 } },
+      rightPriceScale: { borderColor: pal.border },
+      timeScale: { borderColor: pal.border, timeVisible: true, secondsVisible: false },
       crosshair: { mode: 0 },
       autoSize: true,
     });
     chartRef.current = chart;
 
     const candleSeries: ISeriesApi<"Candlestick"> = chart.addSeries(CandlestickSeries, {
-      upColor: "#36bd94",
-      downColor: "#f0506e",
+      upColor: pal.mint,
+      downColor: pal.red,
       borderVisible: false,
-      wickUpColor: "#36bd94",
-      wickDownColor: "#f0506e",
+      wickUpColor: pal.mint,
+      wickDownColor: pal.red,
       priceFormat: { type: "price", precision: precisionFor(candles[candles.length - 1].close), minMove: minMoveFor(candles[candles.length - 1].close) },
     });
     candleSeries.setData(candles.map((c) => ({ time: c.time as UTCTimestamp, open: c.open, high: c.high, low: c.low, close: c.close })));
 
     const vol = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol" });
     chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-    vol.setData(candles.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume, color: c.close >= c.open ? "rgba(54,189,148,0.35)" : "rgba(240,80,110,0.35)" })));
+    vol.setData(candles.map((c) => ({ time: c.time as UTCTimestamp, value: c.volume, color: c.close >= c.open ? pal.mint + "59" : pal.red + "59" })));
     seriesRef.current = { candle: candleSeries, vol, count: candles.length, first: candles[0].time };
 
     const closes = candles.map((c) => c.close);
@@ -108,26 +117,26 @@ export default function PriceChart({
       const s = chart.addSeries(LineSeries, { color, lineWidth: width, lineStyle: style, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
       s.setData(candles.map((c, i) => ({ time: c.time as UTCTimestamp, value: vals[i] })).filter((p) => Number.isFinite(p.value)));
     };
-    if (overlays.ema20) addLine(ema(closes, 20), "#5aa7ff");
-    if (overlays.ema50) addLine(ema(closes, 50), "#f2b544");
-    if (overlays.sma200 && candles.length >= 200) addLine(sma(closes, 200), "#ffffff", 1, LineStyle.Dotted);
+    if (overlays.ema20) addLine(ema(closes, 20), pal.blue);
+    if (overlays.ema50) addLine(ema(closes, 50), pal.amber);
+    if (overlays.sma200 && candles.length >= 200) addLine(sma(closes, 200), pal.fg, 1, LineStyle.Dotted);
     if (overlays.bollinger) {
       const bb = bollinger(closes);
-      addLine(bb.upper, "rgba(159,176,192,0.5)", 1, LineStyle.Dashed);
-      addLine(bb.lower, "rgba(159,176,192,0.5)", 1, LineStyle.Dashed);
+      addLine(bb.upper, pal.fg2 + "80", 1, LineStyle.Dashed);
+      addLine(bb.lower, pal.fg2 + "80", 1, LineStyle.Dashed);
     }
 
     if (analysis) {
       if (overlays.levels) {
         for (const l of analysis.levels) {
-          candleSeries.createPriceLine({ price: l.price, color: l.kind === "support" ? "rgba(54,189,148,0.6)" : "rgba(240,80,110,0.6)", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `${l.kind[0].toUpperCase()}${l.touches}` });
+          candleSeries.createPriceLine({ price: l.price, color: l.kind === "support" ? pal.mint + "99" : pal.red + "99", lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `${l.kind[0].toUpperCase()}${l.touches}` });
         }
       }
       if (overlays.setup && analysis.setup) {
         const s = analysis.setup;
-        candleSeries.createPriceLine({ price: s.entry.mid, color: "#ffffff", lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: `${s.side} entry` });
-        s.takeProfits.forEach((tp) => candleSeries.createPriceLine({ price: tp.price, color: "#36bd94", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: tp.label }));
-        s.stopLosses.forEach((sl) => candleSeries.createPriceLine({ price: sl.price, color: "#f0506e", lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: sl.label }));
+        candleSeries.createPriceLine({ price: s.entry.mid, color: pal.fg, lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: `${s.side} entry` });
+        s.takeProfits.forEach((tp) => candleSeries.createPriceLine({ price: tp.price, color: pal.mint, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: tp.label }));
+        s.stopLosses.forEach((sl) => candleSeries.createPriceLine({ price: sl.price, color: pal.red, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: sl.label }));
       }
       if (overlays.patterns) {
         const ids = new Set(visiblePatterns ?? defaultVisiblePatterns(analysis));
@@ -175,7 +184,7 @@ export default function PriceChart({
         }
       }
       for (const tl of analysis.trendlines) {
-        const s = chart.addSeries(LineSeries, { color: tl.kind === "support" ? "rgba(54,189,148,0.8)" : "rgba(240,80,110,0.8)", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        const s = chart.addSeries(LineSeries, { color: tl.kind === "support" ? pal.mint + "cc" : pal.red + "cc", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
         s.setData([
           { time: tl.from.time as UTCTimestamp, value: tl.from.price },
           { time: tl.to.time as UTCTimestamp, value: tl.to.price },

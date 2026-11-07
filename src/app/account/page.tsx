@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { Empty, Section } from "@/components/ui";
 import PushToggle from "@/components/PushToggle";
+import ThemePicker from "@/components/ThemePicker";
 
 export default function AccountPage() {
   const sb = supabaseBrowser();
@@ -24,13 +25,22 @@ export default function AccountPage() {
   }, [sb]);
 
   if (email === undefined) return <div className="h-32 animate-pulse rounded-lg bg-bg-3" />;
-  if (!sb) return <Empty>Accounts are not configured on this deployment (docs/SETUP.md step 3).</Empty>;
+  const themeSection = (
+    <Section title="Theme">
+      <ThemePicker />
+      <p className="mt-2 text-xs text-fg-3">Saved on this device; synced to your account when signed in.</p>
+    </Section>
+  );
+  if (!sb) return <div className="mx-auto max-w-2xl space-y-4"><Empty>Accounts are not configured on this deployment (docs/SETUP.md step 3).</Empty>{themeSection}</div>;
   if (!email)
     return (
-      <Section title="Not signed in">
-        <p className="text-sm text-fg-2">You are in <b>guest mode</b>. Watchlist and risk profile live in this browser only; setups and alerts are not saved.</p>
-        <Link href="/login" className="btn mt-3 inline-block text-sm">Sign in</Link>
-      </Section>
+      <div className="mx-auto max-w-2xl space-y-4">
+        <Section title="Not signed in">
+          <p className="text-sm text-fg-2">You are in <b>guest mode</b>. Watchlist and risk profile live in this browser only; setups and alerts are not saved.</p>
+          <Link href="/login" className="btn mt-3 inline-block text-sm">Sign in</Link>
+        </Section>
+        {themeSection}
+      </div>
     );
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -48,6 +58,7 @@ export default function AccountPage() {
         ))}
       </div>
       <p className="text-sm text-fg-2">New here? The <Link href="/glossary" className="link">glossary</Link> explains every label in the app.</p>
+      {themeSection}
       <Section title="Notifications">
         <PushToggle />
       </Section>
