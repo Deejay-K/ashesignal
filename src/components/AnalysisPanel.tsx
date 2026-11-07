@@ -7,6 +7,7 @@ import Link from "next/link";
 import PriceChart, { defaultVisiblePatterns, type ChartOverlays } from "./PriceChart";
 import type { Pattern } from "@/lib/ta/patterns";
 import TradeConditions from "./TradeConditions";
+import Backtest from "./Backtest";
 import Term from "./Term";
 import { Empty, OutlookBadge, QualityBadge, Section } from "./ui";
 import { fmtNum, fmtPct, fmtUsd, pctClass } from "@/lib/format";
@@ -179,6 +180,7 @@ export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asse
       </Section>
 
       {analysis ? <TimeframeReport a={analysis} asset={asset} /> : !loading ? <Empty>Not enough candle history on {tf} to analyze (need at least 60 candles).</Empty> : null}
+      {analysis ? <Backtest asset={asset} tf={tf} /> : null}
     </div>
   );
 }
@@ -434,6 +436,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
         <Link href={riskHref} className="btn inline-block text-sm">Size this trade →</Link>
         <Link href={`/alerts?${new URLSearchParams({ symbol: asset.symbol ?? "", id: asset.id ?? "", tf, price: String(s.takeProfits[0].price) }).toString()}`} className="btn-ghost">Set alert</Link>
         <button className="btn-ghost" onClick={copy}>{copied ? "Copied" : "Copy"}</button>
+        <a className="btn-ghost" target="_blank" rel="noreferrer" href={`/api/og?${new URLSearchParams({ symbol: asset.symbol ?? asset.id ?? "", tf, side: s.side, kind: s.kind, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1].price), rr: String(s.riskRewardTp2), lev: String(s.leverage.recommended), conf: String(s.confidence), style: s.style, theme: typeof document !== "undefined" ? document.documentElement.getAttribute("data-theme") ?? "foundry" : "foundry" }).toString()}`}>Share card</a>
         <button className="btn-ghost" onClick={save} disabled={saved === "saving" || saved === "saved"}>
           {saved === "saved" ? "Saved ✓" : saved === "saving" ? "Saving…" : "Save setup"}
         </button>

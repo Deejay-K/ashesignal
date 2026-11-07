@@ -323,3 +323,22 @@ create policy "whale events readable" on public.whale_events for select using (t
 
 alter table public.alerts drop constraint if exists alerts_type_check;
 alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','liquidity_change','new_listing','sentiment_zone','macro_event','whale_transfer'));
+
+-- ---------- Stage 15 additions (safe to re-run) ----------
+create table if not exists public.coin_metrics (
+  asset_key text not null,
+  symbol text not null,
+  name text,
+  timeframe text not null,
+  price numeric, market_cap numeric, volume_24h numeric, change_24h_pct numeric,
+  score int, outlook text, opportunity int,
+  rsi numeric, atr_pct numeric, vol_ratio numeric, vol_regime text, trend text,
+  macd_cross text, breakout text,
+  setup_side text, setup_kind text, setup_rr numeric, setup_confidence int, leverage numeric,
+  patterns text[],
+  updated_at timestamptz default now(),
+  primary key (asset_key, timeframe)
+);
+alter table public.coin_metrics enable row level security;
+drop policy if exists "metrics readable" on public.coin_metrics;
+create policy "metrics readable" on public.coin_metrics for select using (true);

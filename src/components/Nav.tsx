@@ -11,6 +11,7 @@ export const NAV_LINKS = [
   { href: "/", label: "Dashboard", primary: 1 },
   { href: "/discover", label: "Discover", primary: 1 },
   { href: "/scanner", label: "Scanner", primary: 1 },
+  { href: "/screener", label: "Screener", primary: 2 },
   { href: "/portfolio", label: "Portfolio", primary: 2 },
   { href: "/alerts", label: "Alerts", primary: 2 },
   { href: "/risk", label: "Risk", primary: 2 },

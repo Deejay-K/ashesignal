@@ -136,6 +136,10 @@ What you get: exchange balances inside your portfolio, FIFO realized P&L per ass
 
 Run `supabase/schema.sql` again (adds `whale_events` and the whale alert type). Nothing else to configure: the worker starts scanning tracked tokens (watchlists, whale alerts, trending pools, major ERC-20s) for large transfers automatically when Alchemy/Helius keys are present. Display currency lives on the Portfolio and Risk pages (rates from the ECB via frankfurter.app). Crypto-to-crypto trades are now priced in USD at the daily rate of the trade date.
 
+## 13. Stage 15 - screener, backtest, share cards
+
+Run `supabase/schema.sql` again (adds `coin_metrics`). The worker fills the screener within about an hour (10 coins every 5 minutes, rotating through the top 100). Backtests run on demand from any chart (needs 200+ candles on that timeframe). "Share card" on a setup opens a PNG you can save or drag into Discord/X.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).

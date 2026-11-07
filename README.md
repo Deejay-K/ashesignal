@@ -38,6 +38,9 @@ Push to a GitHub repo, import in Vercel, add env vars (optional), deploy. All pa
 | `/alerts` | 17 alert types (per-alert push/email choice) (incl. DEX liquidity change and new listings) (price, % move, RSI, MACD cross, pattern, breakout/breakdown, TP/SL, volume spike, Fear & Greed zone) with push, email and inbox |
 | `/portfolio` | Read-only wallet tracking across 6 EVM chains + Solana: holdings, prices, allocation, network split, transactions, value history, manual cost basis → unrealized P&L |
 | Exchange accounts (on `/portfolio`) | Read-only Kraken / Coinbase / Binance keys, encrypted at rest: balances, trade history, FIFO realized P&L and fees |
+| `/screener` | Top 100 coins with live engine metrics on 1h/4h/1d: presets (confirmed longs, oversold bounce, breakouts, squeezes...) and filters on score, RSI, volume, ATR, R:R |
+| Backtest (on every chart) | Replays the engine over the chart history: win rate, expectancy, profit factor, drawdown, equity curve, trade list |
+| Share card | Themed PNG card of any setup for Discord / X / stream overlays |
 | `/glossary` | Every label in the app explained (risk-on/off, score, confirmed/speculative/watch, TP/SL, R, leverage, pattern statuses, Fear & Greed zones, indicators, DEX terms, P&L). Labels across the app carry a small ? that links to the entry. |
 | `/performance` | The engine grading itself: every emitted signal on the top-30 coins logged and resolved against real price - win rate, TP/SL counts, MFE/MAE by timeframe, kind and side |
 

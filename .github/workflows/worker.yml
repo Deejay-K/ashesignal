@@ -24,3 +24,5 @@ jobs:
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/liquidity?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Whale scan (one batch of tokens per tick, rotates)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/whales?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Screener metrics (10 coins per tick, rotates)
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/screen?secret=${{ secrets.CRON_SECRET }}" || true
