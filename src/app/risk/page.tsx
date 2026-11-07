@@ -36,6 +36,8 @@ function Risk() {
       const saved = localStorage.getItem(KEY);
       if (saved) setP((x) => ({ ...x, ...JSON.parse(saved) }));
     } catch {}
+    const lev = Number(sp.get("leverage"));
+    if (lev >= 1) setP((x) => ({ ...x, leverage: lev }));
     const sb = supabaseBrowser();
     if (!sb) return;
     setAccount("loading");
@@ -74,7 +76,7 @@ function Risk() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold">Position sizing & risk calculator</h1>
-        <p className="text-sm text-fg-2">Size is derived from your risk budget ÷ stop distance. The calculator will never size above your limits. {symbol ? <span className="pill pill-mint ml-1">prefilled from {symbol} setup</span> : null}</p>
+        <p className="text-sm text-fg-2">Size is derived from your risk budget ÷ stop distance. The calculator will never size above your limits. {symbol ? <span className="pill pill-mint ml-1">prefilled from {symbol} setup{sp.get("leverage") ? ` at ${sp.get("leverage")}x recommended leverage` : ""}</span> : null}</p>
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <Section title={account === "synced" ? "Your capital (synced to your account)" : "Your capital (saved in this browser)"}>

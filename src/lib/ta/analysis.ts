@@ -20,6 +20,40 @@ export interface Reason {
   group: "trend" | "momentum" | "volume" | "volatility" | "structure" | "pattern";
 }
 
+export interface LeverageAdvice {
+  recommended: number; // x
+  conservative: number;
+  aggressive: number;
+  maxSafe: number; // liquidation stays >= 2.5x SL1 distance and >= 1.5x SL2 distance
+  liquidationPctAtRecommended: number; // % adverse move that liquidates at the recommended leverage
+  stopDistancePct: number; // entry -> SL1
+  rationale: string[];
+}
+
+/**
+ * Leverage from risk geometry. Liquidation distance for isolated-margin perps is roughly 100%/leverage
+ * (ignoring maintenance margin, so we keep a 2.5x cushion over SL1 and 1.5x over SL2). Setup quality and
+ * volatility then cap the number. 1x means spot or no leverage.
+ */
+export function adviseLeverage(i: { entry: number; sl1: number; sl2: number; kind: "confirmed" | "speculative" | "watch"; atrPct: number; regime: string; tf: Timeframe; confidence: number }): LeverageAdvice {
+  const d1 = Math.abs(i.entry - i.sl1) / i.entry * 100;
+  const d2 = Math.abs(i.entry - i.sl2) / i.entry * 100;
+  const rationale: string[] = [];
+  const maxSafe = Math.max(1, Math.floor(Math.min(100 / (2.5 * Math.max(d1, 0.05)), 100 / (1.5 * Math.max(d2, 0.05)), 50)));
+  rationale.push(`SL1 is ${d1.toFixed(2)}% from entry and SL2 ${d2.toFixed(2)}%; keeping liquidation at least 2.5x past SL1 and 1.5x past SL2 allows at most ${maxSafe}x.`);
+  let cap = i.kind === "confirmed" ? 10 : i.kind === "speculative" ? 5 : 1;
+  rationale.push(i.kind === "confirmed" ? "Confirmed setup: quality cap 10x." : i.kind === "speculative" ? "Speculative setup: quality cap 5x." : "Watch only: no leverage until the setup qualifies (1x / spot).");
+  if (i.regime === "expanded") { cap = Math.max(1, Math.floor(cap / 2)); rationale.push("Volatility is expanded: cap halved."); }
+  if (i.atrPct > 0.08) { cap = Math.min(cap, 2); rationale.push(`ATR is ${(i.atrPct * 100).toFixed(1)}% per candle: cap 2x.`); }
+  else if (i.atrPct > 0.04) { cap = Math.min(cap, 3); rationale.push(`ATR is ${(i.atrPct * 100).toFixed(1)}% per candle: cap 3x.`); }
+  if (i.tf === "1m" || i.tf === "5m") { cap = Math.min(cap, 5); rationale.push("Scalp timeframe: cap 5x (stops are tight; slippage matters more than leverage)."); }
+  if (i.confidence < 45) { cap = Math.min(cap, 2); rationale.push(`Confidence ${i.confidence}%: cap 2x.`); }
+  const recommended = Math.max(1, Math.min(maxSafe, cap));
+  const conservative = Math.max(1, Math.floor(recommended / 2));
+  const aggressive = Math.max(recommended, Math.min(maxSafe, recommended * 2));
+  return { recommended, conservative, aggressive, maxSafe, liquidationPctAtRecommended: round2(100 / recommended), stopDistancePct: round2(d1), rationale };
+}
+
 export interface Setup {
   side: "LONG" | "SHORT";
   /**
@@ -34,6 +68,7 @@ export interface Setup {
   takeProfits: { label: string; price: number; basis: string; rr: number; reliable: boolean }[];
   stopLosses: { label: string; price: number; basis: string; pctFromEntry: number; reliable: boolean }[];
   riskRewardTp2: number;
+  leverage: LeverageAdvice;
   confidence: number; // 0-100
   style: TradeStyle;
   holdingPeriod: string;
@@ -406,10 +441,11 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
   if (rr2 >= 2) confidence += 5;
   if (i.regime === "expanded") confidence -= 8;
   confidence = clamp(Math.round(confidence), 20, 90);
+  const leverage = adviseLeverage({ entry: entry.mid, sl1, sl2, kind, atrPct: i.atrPct, regime: i.regime, tf: i.tf, confidence });
 
   return {
     setup: {
-      side, kind, quality: { tradeable: kind !== "watch", issues }, entry, takeProfits, stopLosses, riskRewardTp2: rr2, confidence, style, holdingPeriod, holdingReason,
+      side, kind, quality: { tradeable: kind !== "watch", issues }, entry, takeProfits, stopLosses, riskRewardTp2: rr2, leverage, confidence, style, holdingPeriod, holdingReason,
       invalidation: invalid,
       reasons,
       exitEarlyIf: side === "LONG"

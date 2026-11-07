@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
     sl1: s.stopLosses[0]?.price ?? null,
     sl2: s.stopLosses[1]?.price ?? null,
     rr: s.riskRewardTp2,
+    leverage: s.leverage?.recommended ?? null,
     confidence: s.confidence,
     score: b.score ?? null,
     payload: s,

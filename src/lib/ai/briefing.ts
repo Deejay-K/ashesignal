@@ -85,7 +85,7 @@ function compact(a: MultiTfAnalysis) {
       reversalSigns: x.reversalSigns,
       scenarios: x.scenarios,
       setup: x.setup
-        ? { side: x.setup.side, kind: x.setup.kind, tradeable: x.setup.quality.tradeable, issues: x.setup.quality.issues, entry: x.setup.entry, takeProfits: x.setup.takeProfits.map((t) => ({ label: t.label, price: t.price, rr: t.rr, basis: t.basis })), stopLosses: x.setup.stopLosses.map((s) => ({ label: s.label, price: s.price, basis: s.basis })), riskRewardTp2: x.setup.riskRewardTp2, confidence: x.setup.confidence, style: x.setup.style, holdingPeriod: x.setup.holdingPeriod, invalidation: x.setup.invalidation, reasons: x.setup.reasons }
+        ? { side: x.setup.side, kind: x.setup.kind, tradeable: x.setup.quality.tradeable, issues: x.setup.quality.issues, entry: x.setup.entry, takeProfits: x.setup.takeProfits.map((t) => ({ label: t.label, price: t.price, rr: t.rr, basis: t.basis })), stopLosses: x.setup.stopLosses.map((s) => ({ label: s.label, price: s.price, basis: s.basis })), riskRewardTp2: x.setup.riskRewardTp2, leverage: { recommended: x.setup.leverage.recommended, conservative: x.setup.leverage.conservative, maxSafe: x.setup.leverage.maxSafe, liquidationPct: x.setup.leverage.liquidationPctAtRecommended }, confidence: x.setup.confidence, style: x.setup.style, holdingPeriod: x.setup.holdingPeriod, invalidation: x.setup.invalidation, reasons: x.setup.reasons }
         : { none: x.setupReason },
     };
   }

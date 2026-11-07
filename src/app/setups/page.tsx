@@ -9,7 +9,7 @@ import { Disclaimer, Empty, Section } from "@/components/ui";
 interface Row {
   id: string; asset_key: string; symbol: string; timeframe: string; side: "LONG" | "SHORT"; kind: string;
   entry_low: number; entry_high: number; tp1: number | null; tp2: number | null; tp3: number | null; sl1: number | null; sl2: number | null;
-  rr: number | null; confidence: number | null; score: number | null; status: string; created_at: string;
+  rr: number | null; leverage: number | null; confidence: number | null; score: number | null; status: string; created_at: string;
 }
 const STATUSES = ["open", "tp1", "tp2", "tp3", "sl", "closed", "expired"];
 
@@ -57,7 +57,7 @@ export default function SetupsPage() {
             {rows.length ? (
               <div className="overflow-x-auto">
                 <table>
-                  <thead><tr><th>Date</th><th>Asset</th><th>TF</th><th>Side</th><th className="text-right">Entry</th><th className="text-right">SL1</th><th className="text-right">TP1 / TP2 / TP3</th><th className="text-right">R:R</th><th>Status</th><th /></tr></thead>
+                  <thead><tr><th>Date</th><th>Asset</th><th>TF</th><th>Side</th><th className="text-right">Entry</th><th className="text-right">SL1</th><th className="text-right">TP1 / TP2 / TP3</th><th className="text-right">R:R</th><th className="text-right">Lev</th><th>Status</th><th /></tr></thead>
                   <tbody>
                     {rows.map((r) => (
                       <tr key={r.id}>
@@ -69,6 +69,7 @@ export default function SetupsPage() {
                         <td className="num text-right down">{fmtUsd(r.sl1)}</td>
                         <td className="num text-right up">{fmtUsd(r.tp1)} / {fmtUsd(r.tp2)} / {fmtUsd(r.tp3)}</td>
                         <td className="num text-right">{r.rr}R</td>
+                        <td className="num text-right">{r.leverage ? `${r.leverage}x` : "-"}</td>
                         <td>
                           <select value={r.status} onChange={async (e) => { await fetch("/api/me/setups", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: r.id, status: e.target.value }) }); load(); }}>
                             {STATUSES.map((s) => <option key={s}>{s}</option>)}

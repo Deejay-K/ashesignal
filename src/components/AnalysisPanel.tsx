@@ -387,7 +387,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
     const r = await fetch("/api/me/setups", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ setup: s, symbol: asset.symbol ?? asset.id ?? "?", timeframe: tf, score, assetKey: asset.id ? `cg:${asset.id}` : asset.pool ? `pool:${asset.network}:${asset.pool}` : `sym:${asset.symbol}` }) });
     setSaved(r.ok ? "saved" : "error");
   };
-  const riskHref = `/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: asset.symbol ?? "", tf }).toString()}`;
+  const riskHref = `/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: asset.symbol ?? "", tf, leverage: String(s.leverage.recommended) }).toString()}`;
   return (
     <Section
       title={<span className={s.side === "LONG" ? "up" : "down"}>{s.side} {s.kind === "watch" ? "levels" : "setup"} · {tf}</span>}
@@ -404,10 +404,12 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
         {s.takeProfits.map((t) => <Row key={t.label} k={t.label} v={<span className="up">{fmtUsd(t.price)} <span className="text-fg-3">({t.rr}R · {t.basis}{t.reliable ? "" : " · estimate"})</span></span>} />)}
         {s.stopLosses.map((t) => <Row key={t.label} k={t.label} v={<span className="down">{fmtUsd(t.price)} <span className="text-fg-3">({fmtPct(t.pctFromEntry, 2)} · {t.basis}{t.reliable ? "" : " · estimate"})</span></span>} />)}
         <Row k="R:R to TP2" v={<b>{s.riskRewardTp2}R</b>} />
+        <Row k="Leverage" v={<span><b className={s.leverage.recommended > 1 ? "up" : ""}>{s.leverage.recommended}x</b> <span className="text-fg-3">rec · {s.leverage.conservative}x safe · {s.leverage.aggressive}x max · liq at {s.leverage.liquidationPctAtRecommended}% vs stop {s.leverage.stopDistancePct}%</span></span>} />
         <Row k="Confidence" v={`${s.confidence}%`} />
         <Row k="Style" v={`${s.style} · hold ${s.holdingPeriod}`} />
       </div>
       <p className="mt-2 text-xs text-fg-3">{s.holdingReason}</p>
+      <Block title="Why this leverage" items={s.leverage.rationale} />
       <Block title="Reasons" items={s.reasons} />
       <Block title="Invalidated if" items={s.invalidation} tone="down" />
       <Block title="Exit early if" items={s.exitEarlyIf} />

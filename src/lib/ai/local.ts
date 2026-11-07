@@ -44,7 +44,7 @@ export function localBriefing(ctx: BriefingContext): Briefing {
 
   let entryExit: string;
   if (s && stf) {
-    entryExit = `${s.kind === "confirmed" ? "Confirmed" : "Speculative"} ${s.side} on ${stf}: ${s.entry.type} entry ${fmtUsd(s.entry.low)}-${fmtUsd(s.entry.high)}, stop ${fmtUsd(s.stopLosses[0].price)} (${s.stopLosses[0].basis}), targets ${s.takeProfits.map((t) => `${t.label} ${fmtUsd(t.price)} (${t.rr}R)`).join(", ")}. ${s.riskRewardTp2}R to TP2 at ${s.confidence}% confidence; ${s.style} style, expected hold ${s.holdingPeriod}. ${s.reasons.join(" ")}`;
+    entryExit = `${s.kind === "confirmed" ? "Confirmed" : "Speculative"} ${s.side} on ${stf}: ${s.entry.type} entry ${fmtUsd(s.entry.low)}-${fmtUsd(s.entry.high)}, stop ${fmtUsd(s.stopLosses[0].price)} (${s.stopLosses[0].basis}), targets ${s.takeProfits.map((t) => `${t.label} ${fmtUsd(t.price)} (${t.rr}R)`).join(", ")}. ${s.riskRewardTp2}R to TP2 at ${s.confidence}% confidence; ${s.style} style, expected hold ${s.holdingPeriod}. Recommended leverage ${s.leverage.recommended}x (safe ${s.leverage.conservative}x, max ${s.leverage.maxSafe}x): at ${s.leverage.recommended}x the liquidation distance is about ${s.leverage.liquidationPctAtRecommended}% against a ${s.leverage.stopDistancePct}% stop. ${s.reasons.join(" ")}`;
   } else {
     const w = watchTf?.[1].setup ?? null;
     const why = tfs.map(([tf, t]) => (t.setup?.quality.issues.length ? `${tf}: ${t.setup.quality.issues.join(" ")}` : "")).filter(Boolean).join(" ");

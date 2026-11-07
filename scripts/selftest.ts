@@ -47,6 +47,7 @@ if (aUp.setup) {
   check("SL below entry & ordered", s.stopLosses[0].price < s.entry.mid && s.stopLosses[1].price < s.stopLosses[0].price, s.stopLosses.map(t => t.price.toFixed(2)));
   check("R:R positive", s.riskRewardTp2 > 0, s.riskRewardTp2);
   check("invalidation present", s.invalidation.length > 0);
+  check("leverage advice present and sane", s.leverage.recommended >= 1 && s.leverage.recommended <= s.leverage.maxSafe && s.leverage.conservative <= s.leverage.recommended && s.leverage.aggressive >= s.leverage.recommended && s.leverage.liquidationPctAtRecommended > s.leverage.stopDistancePct * 2, s.leverage);
   console.log("  setup:", s.kind, s.side, "entry", s.entry.mid.toFixed(2), "sl1", s.stopLosses[0].price.toFixed(2), "tp2", s.takeProfits[1].price.toFixed(2), "rr", s.riskRewardTp2, "conf", s.confidence, s.style, s.holdingPeriod);
 } else console.log("  (no long setup):", aUp.setupReason);
 if (aDown.setup) {
