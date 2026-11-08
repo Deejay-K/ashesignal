@@ -9,7 +9,7 @@ import ThemePicker from "./ThemePicker";
 import VenuePicker from "./VenuePicker";
 import SubNav from "./SubNav";
 
-import { NAV_GROUPS, groupFor } from "@/lib/nav";
+import { NAV_GROUPS, NAV_ALL, groupFor } from "@/lib/nav";
 
 interface SearchRes {
   isAddress: boolean;
@@ -68,6 +68,15 @@ export default function Nav() {
     router.push(href);
   };
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
+  // Pages and quick actions that match the query, so the search box doubles as a command palette.
+  const ql = q.trim().toLowerCase();
+  const pageHits = ql.length >= 2 ? NAV_ALL.filter((p) => p.label.toLowerCase().includes(ql) || p.hint?.toLowerCase().includes(ql) || p.group.toLowerCase().includes(ql)).slice(0, 4) : [];
+  const quick = ql.length >= 2 ? [
+    { href: "/account", label: "Account and settings", hint: "exchange, theme, notifications, Telegram" },
+    { href: "/opportunities?cat=confirmed", label: "Confirmed trades", hint: "setups that passed every gate" },
+    { href: "/risk", label: "Size a trade", hint: "position size and risk" },
+  ].filter((a) => a.label.toLowerCase().includes(ql) || a.hint.includes(ql)).filter((a) => !pageHits.some((p) => p.href === a.href)).slice(0, 2) : [];
+  const hasHits = !!(pageHits.length || quick.length);
   const linkCls = (href: string) => `nav-link ${isActive(href) ? "nav-link-active" : ""}`;
 
   return (
@@ -113,17 +122,26 @@ export default function Nav() {
             onKeyDown={(e) => {
               if (e.key === "Enter" && res?.isAddress) go(`/scanner?address=${encodeURIComponent(q.trim())}`);
             }}
-            placeholder="Search or paste address  ( / )"
+            placeholder="Coin, page or address  ( / )"
             aria-label="Search"
           />
-          {open && res && (res.coins.length || res.pairs.length || res.isAddress) ? (
+          {open && ((res && (res.coins.length || res.pairs.length || res.isAddress)) || hasHits) ? (
             <div className="card nav-results">
-              {res.isAddress ? (
+              {hasHits ? <div className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-wider text-fg-3">Pages</div> : null}
+              {[...pageHits, ...quick].map((p) => (
+                <button key={p.href} className="nav-result" onMouseDown={() => go(p.href)}>
+                  <span className="h-5 w-5 rounded-full bg-bg-3 text-center text-[11px] leading-5 text-fg-3">→</span>
+                  <span className="font-medium">{p.label}</span>
+                  {p.hint ? <span className="truncate text-xs text-fg-3">{p.hint}</span> : null}
+                </button>
+              ))}
+              {res && res.coins.length && hasHits ? <div className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-wider text-fg-3">Coins</div> : null}
+              {res?.isAddress ? (
                 <button className="nav-result" onMouseDown={() => go(`/scanner?address=${encodeURIComponent(q.trim())}`)}>
                   Scan address <span className="num text-fg-3">{q.slice(0, 10)}...</span>
                 </button>
               ) : null}
-              {res.coins.map((c) => (
+              {(res?.coins ?? []).map((c) => (
                 <button key={c.id} className="nav-result" onMouseDown={() => go(`/token/${c.id}`)}>
                   {c.thumb ? <img src={c.thumb} alt="" className="h-5 w-5 rounded-full" /> : <span className="h-5 w-5 rounded-full bg-bg-3" />}
                   <span className="font-medium">{c.name}</span>
@@ -131,8 +149,8 @@ export default function Nav() {
                   {c.market_cap_rank ? <span className="ml-auto text-xs text-fg-3">#{c.market_cap_rank}</span> : null}
                 </button>
               ))}
-              {res.pairs.length ? <div className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-wider text-fg-3">DEX pairs</div> : null}
-              {res.pairs.map((p) => (
+              {res?.pairs.length ? <div className="px-3 pb-1 pt-2 text-[10px] uppercase tracking-wider text-fg-3">DEX pairs</div> : null}
+              {(res?.pairs ?? []).map((p) => (
                 <button key={p.pairAddress} className="nav-result" onMouseDown={() => go(`/scanner?address=${p.base.address}`)}>
                   <span className="font-medium">{p.base.symbol}/{p.quote}</span>
                   <span className="pill pill-gray">{p.chainId}</span>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { TELEGRAM_ENABLED, tgSend } from "@/lib/telegram";
-import { loadActor, handleCommand, handleCallback, handleStateReply, type ChatCtx } from "@/lib/telegram-bot";
+import { loadActor, handleCommand, handleCallback, handleStateReply, handleInline, type ChatCtx } from "@/lib/telegram-bot";
 import { ensureEngineConfig } from "@/lib/engine-config";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +21,11 @@ export async function POST(req: NextRequest) {
   const sb = supabaseAdmin();
 
   try {
+    // Inline mode: @AsheSignalBot SOL typed in any chat
+    if (update.inline_query?.id) {
+      if (sb) { await ensureEngineConfig(); await handleInline(sb, update.inline_query); }
+      return NextResponse.json({ ok: true });
+    }
     // Button taps
     const cb = update.callback_query;
     if (cb?.message?.chat?.id != null && typeof cb.data === "string") {

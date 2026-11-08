@@ -6,6 +6,8 @@ import { getWatchlist, toggleWatch, type WatchItem } from "@/lib/watchlist";
 import type { CoinRow } from "@/lib/types";
 import CoinTable from "@/components/CoinTable";
 import { Disclaimer, Empty, Section } from "@/components/ui";
+import ZoneBadge from "@/components/ZoneBadge";
+import ConfirmAlertButton from "@/components/ConfirmAlertButton";
 
 interface ListRow { id: string; name: string; items: (WatchItem & { rowId: string })[] }
 
@@ -38,13 +40,13 @@ export default function WatchlistPage() {
   }, []);
 
   const items: WatchItem[] = mode === "guest" ? guest : (lists.find((l) => l.id === active)?.items ?? []);
-  const [cats, setCats] = useState<Record<string, { cat: string; tf: string; side: string | null }[]>>({});
+  const [cats, setCats] = useState<Record<string, { cat: string; tf: string; side: string | null; entry: { low: number; high: number } | null; price: number | null }[]>>({});
   useEffect(() => {
     const ids = items.filter((i) => !i.address).map((i) => i.id);
     if (!ids.length) return setCoins([]);
     const load = () => {
       fetch(`/api/market/coins?ids=${ids.join(",")}`).then((r) => r.json()).then((d) => setCoins(d.coins ?? [])).catch(() => {});
-      fetch(`/api/opportunities?cat=all`).then((r) => r.json()).then((d) => { const m: Record<string, { cat: string; tf: string; side: string | null }[]> = {}; for (const o of d.items ?? []) { if (!ids.includes(String(o.assetKey).replace(/^cg:/, ""))) continue; const k = String(o.assetKey).replace(/^cg:/, ""); (m[k] ??= []).push({ cat: o.category, tf: o.timeframe, side: o.side }); } setCats(m); }).catch(() => {});
+      fetch(`/api/opportunities?cat=all`).then((r) => r.json()).then((d) => { const m: Record<string, { cat: string; tf: string; side: string | null; entry: { low: number; high: number } | null; price: number | null }[]> = {}; for (const o of d.items ?? []) { if (!ids.includes(String(o.assetKey).replace(/^cg:/, ""))) continue; const k = String(o.assetKey).replace(/^cg:/, ""); (m[k] ??= []).push({ cat: o.category, tf: o.timeframe, side: o.side, entry: o.detail?.setup?.entry ?? null, price: o.price ?? null }); } setCats(m); }).catch(() => {});
     };
     load();
     const t = setInterval(load, 60_000);
@@ -86,17 +88,25 @@ export default function WatchlistPage() {
         </div>
       ) : null}
 
-      {Object.keys(cats).length ? (
+      {items.filter((i) => !i.address).length ? (
         <Section title="Discovery status of your coins" right={<Link href="/opportunities" className="link text-xs">Trading Discovery</Link>}>
-          <ul className="flex flex-wrap gap-2 text-xs">
-            {Object.entries(cats).map(([id, list]) => (
-              <li key={id} className="flex flex-wrap items-center gap-1 rounded-lg border border-border bg-bg-2 px-2 py-1">
-                <Link href={`/token/${id}`} className="font-medium hover:text-mint">{coins.find((c) => c.id === id)?.symbol ?? id}</Link>
-                {list.map((x, i) => <span key={i} className={`pill ${x.cat === "confirmed" ? "pill-mint" : x.cat === "speculative" ? "pill-amber" : "pill-gray"}`}>{x.cat}{x.side ? ` ${x.side}` : ""} {x.tf}</span>)}
-              </li>
-            ))}
+          <ul className="space-y-1.5 text-xs">
+            {items.filter((i) => !i.address).map((i) => {
+              const list = cats[i.id] ?? [];
+              const best = list.find((x) => x.cat === "confirmed") ?? list[0];
+              return (
+                <li key={i.id} className="flex flex-wrap items-center gap-1.5 rounded-lg border border-border bg-bg-2 px-2 py-1">
+                  <Link href={`/token/${i.id}`} className="font-medium hover:text-mint">{i.symbol}</Link>
+                  {list.length ? list.map((x, k) => <span key={k} className={`pill ${x.cat === "confirmed" ? "pill-mint" : x.cat === "speculative" ? "pill-amber" : "pill-gray"}`}>{x.cat}{x.side ? ` ${x.side}` : ""} {x.tf}</span>) : <span className="text-fg-3">no active category</span>}
+                  {best?.entry && (best.cat === "confirmed" || best.cat === "watching") ? <ZoneBadge price={best.price} entry={best.entry} side={(best.side as "LONG" | "SHORT") ?? null} symbol={i.symbol} assetKey={`cg:${i.id}`} timeframe={best.tf} /> : null}
+                  <span className="ml-auto flex items-center gap-2">
+                    {best?.cat !== "confirmed" ? <ConfirmAlertButton symbol={i.symbol} coingeckoId={i.id} className="link text-[11px]" /> : <Link className="link text-[11px]" href="/opportunities?cat=confirmed">see the setup</Link>}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
-          <p className="mt-2 text-[11px] text-fg-3">Coins on your list that the engine currently grades as Confirmed, Watching or a Spot pick. Coins not shown have no active category right now.</p>
+          <p className="mt-2 text-[11px] text-fg-3">What the engine thinks of each starred coin right now, where price sits versus the entry zone, and a one-tap alert for the moment a coin turns Confirmed. The Telegram bot shows the same list with /watchlist.</p>
         </Section>
       ) : null}
       <Section title="Coins">

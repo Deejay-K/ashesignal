@@ -502,3 +502,11 @@ create table if not exists telegram_users (
 );
 alter table telegram_users enable row level security;
 alter table telegram_chats alter column venue drop not null;
+
+-- Stage 33: entry-zone alerts
+alter table public.alerts drop constraint if exists alerts_type_check;
+alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','sentiment_zone','liquidity_change','new_listing','macro_event','whale_transfer','new_confirmed','trade_update','spot_zone','entry_zone'));
+
+-- Stage 33.1: automatic Telegram signal per new Confirmed trade (opt-out per user and per group)
+alter table telegram_users add column if not exists broadcast boolean not null default true;
+alter table telegram_chats add column if not exists broadcast boolean not null default true;

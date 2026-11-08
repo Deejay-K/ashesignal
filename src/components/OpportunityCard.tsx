@@ -7,6 +7,7 @@ import { fmtPct, fmtUsd, pctClass, timeAgo } from "@/lib/format";
 import type { Opportunity } from "@/lib/market/opportunities";
 import Term from "@/components/Term";
 import TakeTradeDialog from "@/components/TakeTradeDialog";
+import ZoneBadge from "@/components/ZoneBadge";
 import CalibrationBadge from "@/components/CalibrationBadge";
 import { currentVenue } from "@/lib/venue-pref";
 import { VENUE_META, isVenueId, tradeLink } from "@/lib/venues";
@@ -89,6 +90,7 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
       </header>
 
       {o.side === "SHORT" && !VENUE_META[currentVenue()].canShort ? <div className="mx-3 mb-2 rounded border border-amber/40 bg-amber-dim px-2 py-1 text-[11px] text-amber">{VENUE_META[currentVenue()].label} is spot only: this SHORT cannot be opened there. If you hold {o.symbol}, treat it as a sell / reduce signal.</div> : null}
+      {s && (o.category === "confirmed" || o.category === "watching") ? <div className="px-3 pb-1"><ZoneBadge price={o.price} entry={s.entry} side={s.side} symbol={o.symbol} assetKey={o.assetKey} timeframe={o.timeframe} /></div> : null}
       {/* summary line */}
       <div className="px-3 pb-2 text-xs text-fg-2">
         {o.category === "confirmed" && d?.qualifies?.[0] ? d.qualifies[0] : null}

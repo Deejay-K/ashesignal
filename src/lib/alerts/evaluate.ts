@@ -153,6 +153,15 @@ export async function evaluateAlerts(sb: SupabaseClient) {
         case "tp":
           if (p >= target && (prev == null || prev < target)) msg = { title: `${a.symbol} ${a.type === "tp" ? "hit take-profit" : "above"} ${fmtUsd(target)}`, body: `Price ${fmtUsd(p)} on ${tf}.` };
           break;
+        case "entry_zone": {
+          // Fires once when price moves into the planned entry zone (from either side), then re-arms after it leaves.
+          const lo = Number(a.params.low), hi = Number(a.params.high);
+          const inside = p >= lo && p <= hi;
+          const wasInside = a.state.inside === true;
+          if (inside && !wasInside && prev != null) msg = { title: `${a.symbol} entered the entry zone`, body: `Price ${fmtUsd(p)} is inside ${fmtUsd(lo)} to ${fmtUsd(hi)} (${a.params.side ?? "planned"} setup, ${tf}). Check the setup is still valid before placing the order.` };
+          newState.inside = inside;
+          break;
+        }
         case "price_below":
         case "sl":
           if (p <= target && (prev == null || prev > target)) msg = { title: `${a.symbol} ${a.type === "sl" ? "hit stop-loss" : "below"} ${fmtUsd(target)}`, body: `Price ${fmtUsd(p)} on ${tf}.` };

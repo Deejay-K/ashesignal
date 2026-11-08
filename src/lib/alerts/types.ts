@@ -21,5 +21,6 @@ export const ALERT_TYPES = [
   { type: "new_confirmed", label: "New Confirmed Trade appears (global, filtered)", params: [] },
   { type: "trade_update", label: "Journal trade reaches a target or stop (automatic)", params: [] },
   { type: "spot_zone", label: "Spot pick enters its accumulation zone (per coin)", params: [] },
+  { type: "entry_zone", label: "Price enters a setup's entry zone (set from a card)", params: ["low", "high"] },
 ] as const;
 export type AlertType = (typeof ALERT_TYPES)[number]["type"];

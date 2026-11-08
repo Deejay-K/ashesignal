@@ -7,13 +7,16 @@ import { answer } from "./ai/assistant";
 import { globalConditions, summarize } from "./market/conditions";
 import { marketRegime } from "./market/regime";
 import { analyzeAsset } from "./market/analyze";
-import { search as cgSearch, getMarkets } from "./providers/coingecko";
+import { search as cgSearch, getMarketsByIds } from "./providers/coingecko";
 import { getFearGreed } from "./providers/feargreed";
 import { liveTaCategories, liveSpeculative, liveSpot } from "./market/live-opportunities";
 import { sizePosition } from "./risk/position";
 import { portfolioHeat } from "./risk/heat";
 import { venueListings, venuesFor, VENUE_IDS, VENUE_META, isVenueId, type VenueId } from "./venues";
 import { fmtUsd, fmtNum } from "./format";
+import { zoneStatus, preTradeChecks, accountForChecks } from "./trade-check";
+import { buildWeeklyReview } from "./review";
+import { digestShared, buildDigest } from "./digest";
 import { safe } from "./fetch";
 import type { Timeframe } from "./types";
 import type { Opportunity } from "./market/opportunities";
@@ -28,8 +31,10 @@ const MENU: Keyboard = [
   [{ text: "✅ Confirmed trades", callback_data: "cat:confirmed" }, { text: "👀 Watching", callback_data: "cat:watching" }],
   [{ text: "⚠️ Speculative", callback_data: "cat:speculative" }, { text: "🏦 Spot picks", callback_data: "cat:spot" }],
   [{ text: "🌡 Today", callback_data: "today" }, { text: "📊 Screener", callback_data: "screener:score" }],
+  [{ text: "🏆 Top 3 for me", callback_data: "top" }, { text: "⭐ Watchlist", callback_data: "watchlist" }],
   [{ text: "👤 My trades", callback_data: "me" }, { text: "🔔 Alerts", callback_data: "alerts" }],
-  [{ text: "⚙️ Exchange", callback_data: "exchange" }, { text: "❓ Help", callback_data: "help" }],
+  [{ text: "📅 Weekly review", callback_data: "review" }, { text: "☀️ Digest now", callback_data: "digest" }],
+  [{ text: "⚙️ Settings", callback_data: "settings" }, { text: "❓ Help", callback_data: "help" }],
 ];
 
 /**
@@ -74,6 +79,14 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/journal": return journal(c);
     case "/take": return takeStart(c, arg);
     case "/exchange": return exchange(c, arg);
+    case "/watch": case "/star": return watchAdd(c, arg);
+    case "/unwatch": return watchRemove(c, arg);
+    case "/watchlist": return watchlist(c);
+    case "/top": return top(c);
+    case "/review": return review(c);
+    case "/digest": return digestNow(c);
+    case "/settings": return settings(c);
+    case "/signals": return signals(c, arg);
     case "/guide": return tgSend(c.chatId, `<b>How to place a trade on ${esc(VENUE_META[c.venue].label)}</b>\nShort version: limit order inside the entry zone, stop loss attached, take-profits in parts (30/30/40), stop to break-even after TP1. The full click-by-click guide with your numbers opens from any setup card.${VENUE_META[c.venue].canShort ? "" : `\n\n${esc(VENUE_META[c.venue].label)} is spot only: SHORT setups cannot be opened there.`}`, { html: true, keyboard: [[{ text: "Open the trade guide", url: link(`/guide?venue=${c.venue}`) ?? "https://t.me" }]] });
     case "/cancel": await setState(c, null); return tgSend(c.chatId, "Cancelled.");
     default: return freeText(c, fullText);
@@ -98,6 +111,15 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "take": return takeStart(c, a, (b as Timeframe) || "4h", d === "paper");
     case "alerttp": return alertFromSetup(c, a, (b as Timeframe) || "4h");
     case "confirmalert": return alertConfirm(c, a);
+    case "zonealert": return alertZone(c, a, (b as Timeframe) || "4h");
+    case "watch": return a === "rm" ? watchRemove(c, b) : watchAdd(c, a);
+    case "watchlist": return watchlist(c);
+    case "top": return top(c);
+    case "review": return review(c);
+    case "digest": return digestNow(c);
+    case "settings": return a ? settingsSet(c, a, b) : settings(c);
+    case "signals": return signals(c, a ?? "");
+    case "takesave": return takeFinish(c, a === "yes");
     case "size": return size(c, `${a} ${b}`);
     default: return sendMenu(c);
   }
@@ -130,7 +152,14 @@ async function help(c: ChatCtx) {
     "/alerts - your rules and inbox (linked)",
     "/me, /journal - your trades, heat, record (linked)",
     "/take SOL - record a trade you placed (linked), guided",
+    "/top - the 3 best confirmed setups for your exchange right now",
+    "/watch SOL, /unwatch SOL, /watchlist - your starred coins with status and zone",
+    "/review - this week's review (linked)",
+    "/digest - today's digest now (linked)",
+    "/settings - exchange, digest on/off and hour, link status",
+    "/signals on|off - automatic message for every new confirmed trade (per person; in a group, for the group)",
     "/exchange coinbase - your exchange (each person has their own, also in groups)",
+    "Type @AsheSignalBot SOL in any chat to share a setup card inline.",
     "/guide - how to place a trade",
     "Or ask anything in plain words.",
     "",
@@ -280,10 +309,13 @@ async function setupCard(c: ChatCtx, id: string, tf: Timeframe, known?: { id: st
     if (s.kind !== "confirmed" && s.quality.confirmGaps.length) body += `\n<b>Missing for Confirmed:</b> ${esc(s.quality.confirmGaps[0])}`;
     if (s.kind === "watch" && s.quality.issues.length) body += `\n<b>Why only watch:</b> ${esc(s.quality.issues[0])}`;
     if (s.invalidation?.length) body += `\n<b>Invalidated if:</b> ${esc(s.invalidation[0])}`;
+    const z = zoneStatus(t.price, s.entry, s.side);
+    if (z.state !== "unknown") body += `\n<b>${z.state === "in" ? "🟢" : z.tone === "down" ? "🔴" : "🟡"} Now:</b> ${esc(z.label)}. ${esc(z.advice)}`;
     if (s.side === "SHORT" && !VENUE_META[c.venue].canShort) body += `\n\n${esc(VENUE_META[c.venue].label)} is spot only: treat this SHORT as a sell/reduce signal if you hold ${esc(cn.symbol)}.`;
     kb.push([{ text: "📋 Copy setup", callback_data: `copy:${cn.id}:${tf}` }, { text: "📐 Size it", callback_data: `size:${s.entry.mid}:${s.stopLosses[0].price}` }]);
     kb.push([{ text: "✍️ I took it", callback_data: `take:${cn.id}:${tf}:real` }, { text: "🧪 Paper trade", callback_data: `take:${cn.id}:${tf}:paper` }]);
-    kb.push([{ text: "🔔 Alert at TP1", callback_data: `alerttp:${cn.id}:${tf}` }, ...(s.kind !== "confirmed" ? [{ text: "🔔 When it confirms", callback_data: `confirmalert:${cn.id}` }] : [])]);
+    kb.push([{ text: "🔔 Alert at TP1/SL", callback_data: `alerttp:${cn.id}:${tf}` }, { text: "🔔 Entering zone", callback_data: `zonealert:${cn.id}:${tf}` }]);
+    kb.push([...(s.kind !== "confirmed" ? [{ text: "🔔 When it confirms", callback_data: `confirmalert:${cn.id}` }] : []), { text: "⭐ Watch", callback_data: `watch:${cn.id}` }]);
     const guide = link(`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: cn.symbol, leverage: String(s.leverage.recommended), venue: c.venue })}`);
     kb.push([{ text: "📖 How to place it", url: guide ?? "https://t.me" }, { text: "📈 Chart", url: link(`/token/${cn.id}?tf=${tf}`) ?? "https://t.me" }]);
     // share-card image when the site URL is known
@@ -291,7 +323,7 @@ async function setupCard(c: ChatCtx, id: string, tf: Timeframe, known?: { id: st
     if (og) { const ok = await tgPhoto(c.chatId, og, head + body, kb); if (ok) return true; }
   } else {
     body += `\n\nNo tradeable setup on ${tf}.`;
-    kb.push([{ text: "📈 Chart", url: link(`/token/${cn.id}?tf=${tf}`) ?? "https://t.me" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${cn.id}` }]);
+    kb.push([{ text: "📈 Chart", url: link(`/token/${cn.id}?tf=${tf}`) ?? "https://t.me" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${cn.id}` }, { text: "⭐ Watch", callback_data: `watch:${cn.id}` }]);
   }
   kb.push([{ text: "Menu", callback_data: "menu" }]);
   return tgSend(c.chatId, head + body, { html: true, keyboard: kb });
@@ -377,7 +409,7 @@ async function alertsList(c: ChatCtx) {
 }
 
 async function createAlert(c: ChatCtx, row: Record<string, unknown>) {
-  const { error } = await c.sb.from("alerts").insert({ user_id: c.userId, channels: ["push", "email"], cooldown_minutes: 60, timeframe: "1h", params: {}, ...row });
+  const { error } = await c.sb.from("alerts").insert({ user_id: c.userId, channels: ["push", "email", "telegram"], cooldown_minutes: 60, timeframe: "1h", params: {}, ...row });
   return !error;
 }
 
@@ -400,6 +432,15 @@ async function alertFromSetup(c: ChatCtx, id: string, tf: Timeframe) {
   const okTp = await createAlert(c, { asset_key: `cg:${cn.id}`, symbol: cn.symbol, type: s.side === "LONG" ? "price_above" : "price_below", params: { price: s.takeProfits[0].price }, asset_ref: { symbol: cn.symbol, id: cn.id }, timeframe: tf });
   const okSl = await createAlert(c, { asset_key: `cg:${cn.id}`, symbol: cn.symbol, type: s.side === "LONG" ? "price_below" : "price_above", params: { price: s.stopLosses[0].price }, asset_ref: { symbol: cn.symbol, id: cn.id }, timeframe: tf });
   return tgSend(c.chatId, okTp && okSl ? `🔔 Two alerts set for ${esc(cn.symbol)}: TP1 ${fmtUsd(s.takeProfits[0].price)} and SL1 ${fmtUsd(s.stopLosses[0].price)}.` : "Could not save the alerts.", { html: true });
+}
+async function alertZone(c: ChatCtx, id: string, tf: Timeframe) {
+  if (!c.userId) return needLink(c);
+  const cn = await resolveCoin(id); if (!cn) return tgSend(c.chatId, "Coin not found.");
+  const a = await safe(analyzeAsset({ symbol: cn.symbol, coingeckoId: cn.id, venue: c.venue }, [tf]));
+  const t = a.ok ? a.data.timeframes[tf] : null; const s = t && !("unavailable" in t) ? t.setup : null;
+  if (!s) return tgSend(c.chatId, "No entry zone to watch.");
+  const ok = await createAlert(c, { asset_key: `cg:${cn.id}`, symbol: cn.symbol, type: "entry_zone", params: { low: s.entry.low, high: s.entry.high, side: s.side }, asset_ref: { symbol: cn.symbol, id: cn.id }, timeframe: tf, channels: ["push", "email", "telegram"] });
+  return tgSend(c.chatId, ok ? `🔔 I will tell you when ${esc(cn.symbol)} comes into the entry zone ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}.` : "Could not save the alert.", { html: true });
 }
 async function alertConfirm(c: ChatCtx, id: string) {
   if (!c.userId) return needLink(c);
@@ -439,22 +480,209 @@ async function takeStep(c: ChatCtx, text: string): Promise<boolean> {
   }
   if (st.step === "size") {
     const usd = num(text); if (!usd) { await tgSend(c.chatId, "Send the size in USD as a number."); return true; }
+    st.usd = usd; st.step = "confirm"; await setState(c, st);
+    await tgTyping(c.chatId);
     const units = usd / st.fill;
-    const sl = st.setup.stopLosses[0]?.price;
+    const sl = st.setup.stopLosses[0]?.price ?? null;
     const riskUsd = sl ? Math.abs(st.fill - sl) * units : null;
-    const row = { user_id: c.userId, asset_key: `cg:${st.coin.id}`, symbol: st.coin.symbol, timeframe: st.tf, side: st.setup.side, kind: st.setup.kind, entry_low: st.setup.entry.low, entry_high: st.setup.entry.high, tp1: st.setup.takeProfits[0]?.price ?? null, tp2: st.setup.takeProfits[1]?.price ?? null, tp3: st.setup.takeProfits[2]?.price ?? null, sl1: sl ?? null, sl2: st.setup.stopLosses[1]?.price ?? null, rr: st.setup.rr ?? null, leverage: st.setup.leverage?.recommended ?? null, confidence: st.setup.confidence ?? null, payload: st.setup, taken: true, paper: !!st.paper, taken_at: new Date().toISOString(), exchange: st.paper ? "paper" : c.venue, fill_price: st.fill, size_units: units, size_usd: usd, risk_usd: riskUsd, notes: "Recorded via Telegram" };
-    const { error } = await c.sb.from("saved_setups").insert(row);
-    await setState(c, null);
-    if (error) { await tgSend(c.chatId, `Could not save: ${esc(error.message)}`, { html: true }); return true; }
-    await tgSend(c.chatId, `${st.paper ? "🧪 Paper trade" : "✅ Trade"} recorded: ${esc(st.coin.symbol)} ${st.setup.side} ${esc(st.tf)}, fill ${fmtUsd(st.fill)}, ${fmtNum(units, 4)} units (${fmtUsd(usd)})${riskUsd != null ? `, ${fmtUsd(riskUsd)} at risk if the stop hits` : ""}.\nI will message you when it reaches a target or the stop.`, { html: true, keyboard: [[{ text: "My trades", callback_data: "me" }, { text: "Journal", url: link("/setups") ?? "https://t.me" }]] });
+    const account = c.userId ? await accountForChecks(c.sb, c.userId) : null;
+    const pre = await safe(preTradeChecks({ symbol: st.coin.symbol, side: st.setup.side, kind: st.setup.kind, price: st.price ?? st.fill, entry: st.setup.entry, stop: sl, venue: c.venue, riskUsd, account }));
+    const icon = (l: string) => (l === "ok" ? "✅" : l === "warn" ? "⚠️" : l === "fail" ? "⛔" : "▫️");
+    const checks = pre.ok ? pre.data.checks.map((k) => `${icon(k.level)} <b>${esc(k.label)}.</b> ${esc(k.detail)}`).join("\n") : "Checklist unavailable right now.";
+    const verdict = pre.ok ? (pre.data.verdict === "go" ? "🟢 GO" : pre.data.verdict === "careful" ? "🟡 CAREFUL" : "🔴 WAIT") : "";
+    await tgSend(c.chatId, `<b>Pre-trade check ${verdict}</b>\n${checks}\n\n${esc(st.coin.symbol)} ${st.setup.side}: fill ${fmtUsd(st.fill)}, ${fmtNum(units, 4)} units (${fmtUsd(usd)})${riskUsd != null ? `, <b>${fmtUsd(riskUsd)}</b> at risk if the stop hits` : ""}.\n${st.paper ? "Record this paper trade?" : "Did you place it? Record it in the journal?"}`, { html: true, keyboard: [[{ text: st.paper ? "🧪 Record paper trade" : "✅ Yes, I placed it", callback_data: "takesave:yes" }, { text: "✖ Cancel", callback_data: "takesave:no" }]] });
     return true;
   }
   return false;
 }
 
+async function takeFinish(c: ChatCtx, yes: boolean) {
+  const st = c.state;
+  if (!st?.flow || st.step !== "confirm") return tgSend(c.chatId, "Nothing to record. Start with /take SOL or the ✍️ button.");
+  if (!yes) { await setState(c, null); return tgSend(c.chatId, "Cancelled, nothing recorded."); }
+  const usd = Number(st.usd);
+  const units = usd / st.fill;
+  const sl = st.setup.stopLosses[0]?.price;
+  const riskUsd = sl ? Math.abs(st.fill - sl) * units : null;
+  const row = { user_id: c.userId, asset_key: `cg:${st.coin.id}`, symbol: st.coin.symbol, timeframe: st.tf, side: st.setup.side, kind: st.setup.kind, entry_low: st.setup.entry.low, entry_high: st.setup.entry.high, tp1: st.setup.takeProfits[0]?.price ?? null, tp2: st.setup.takeProfits[1]?.price ?? null, tp3: st.setup.takeProfits[2]?.price ?? null, sl1: sl ?? null, sl2: st.setup.stopLosses[1]?.price ?? null, rr: st.setup.rr ?? null, leverage: st.setup.leverage?.recommended ?? null, confidence: st.setup.confidence ?? null, payload: st.setup, taken: true, paper: !!st.paper, taken_at: new Date().toISOString(), exchange: st.paper ? "paper" : c.venue, fill_price: st.fill, size_units: units, size_usd: usd, risk_usd: riskUsd, notes: "Recorded via Telegram" };
+  const { error } = await c.sb.from("saved_setups").insert(row);
+  await setState(c, null);
+  if (error) return tgSend(c.chatId, `Could not save: ${esc(error.message)}`, { html: true });
+  return tgSend(c.chatId, `${st.paper ? "🧪 Paper trade" : "✅ Trade"} recorded: ${esc(st.coin.symbol)} ${st.setup.side} ${esc(st.tf)}, fill ${fmtUsd(st.fill)}, ${fmtNum(units, 4)} units (${fmtUsd(usd)})${riskUsd != null ? `, ${fmtUsd(riskUsd)} at risk if the stop hits` : ""}.\nI will message you when it reaches a target or the stop.`, { html: true, keyboard: [[{ text: "My trades", callback_data: "me" }, { text: "Journal", url: link("/setups") ?? "https://t.me" }]] });
+}
+
+// ---------- watchlist ----------
+
+async function watchlistId(c: ChatCtx): Promise<string | null> {
+  const { data: wl } = await c.sb.from("watchlists").select("id").eq("user_id", c.userId).order("position").limit(1).maybeSingle();
+  if (wl?.id) return wl.id;
+  const { data: created } = await c.sb.from("watchlists").insert({ user_id: c.userId, name: "Favorites" }).select("id").single();
+  return created?.id ?? null;
+}
+async function watchAdd(c: ChatCtx, arg: string) {
+  if (!c.userId) return needLink(c);
+  const cn = await resolveCoin(arg.split(/\s+/)[0] ?? ""); if (!cn) return tgSend(c.chatId, "Which coin? /watch SOL");
+  const wid = await watchlistId(c); if (!wid) return tgSend(c.chatId, "Could not open your watchlist.");
+  const { error } = await c.sb.from("watchlist_items").upsert({ watchlist_id: wid, user_id: c.userId, coingecko_id: cn.id, chain: null, address: null, symbol: cn.symbol, name: cn.name }, { onConflict: "watchlist_id,coingecko_id,chain,address", ignoreDuplicates: true });
+  if (error) return tgSend(c.chatId, `Could not save: ${esc(error.message)}`, { html: true });
+  return tgSend(c.chatId, `${who(c)}⭐ ${esc(cn.symbol)} added to your watchlist (synced with the website).`, { html: true, keyboard: [[{ text: "Watchlist", callback_data: "watchlist" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${cn.id}` }]] });
+}
+async function watchRemove(c: ChatCtx, arg: string) {
+  if (!c.userId) return needLink(c);
+  const cn = await resolveCoin(arg.split(/\s+/)[0] ?? ""); if (!cn) return tgSend(c.chatId, "Which coin? /unwatch SOL");
+  await c.sb.from("watchlist_items").delete().eq("user_id", c.userId).eq("coingecko_id", cn.id);
+  return tgSend(c.chatId, `${who(c)}${esc(cn.symbol)} removed from your watchlist.`, { html: true, keyboard: [[{ text: "Watchlist", callback_data: "watchlist" }]] });
+}
+async function watchlist(c: ChatCtx) {
+  if (!c.userId) return needLink(c);
+  await tgTyping(c.chatId);
+  const { data } = await c.sb.from("watchlist_items").select("coingecko_id, symbol, name").eq("user_id", c.userId).not("coingecko_id", "is", null).order("created_at", { ascending: false }).limit(20);
+  if (!data?.length) return tgSend(c.chatId, "Your watchlist is empty. Add with /watch SOL or ⭐ on any coin card.", { keyboard: [[{ text: "Confirmed trades", callback_data: "cat:confirmed" }]] });
+  const ids = data.map((d) => d.coingecko_id as string);
+  const [{ data: rows }, mk] = await Promise.all([
+    c.sb.from("coin_metrics").select("asset_key, timeframe, category, price, detail, outlook, score").in("asset_key", ids.map((i) => `cg:${i}`)).in("timeframe", ["4h", "1d"]),
+    safe(getMarketsByIds(ids)),
+  ]);
+  const price = new Map<string, { price: number; chg: number | null }>();
+  if (mk.ok) for (const m of mk.data as any[]) price.set(m.id, { price: m.current_price ?? m.price, chg: m.price_change_percentage_24h ?? m.change24h ?? null });
+  const lines = data.map((d) => {
+    const mine = (rows ?? []).filter((r) => r.asset_key === `cg:${d.coingecko_id}`);
+    const best = mine.find((r) => r.category === "confirmed") ?? mine.find((r) => r.category === "watching") ?? mine.find((r) => r.timeframe === "4h") ?? mine[0];
+    const p = price.get(d.coingecko_id as string);
+    const px = p?.price ?? best?.price ?? null;
+    let line = `<b>${esc(d.symbol)}</b> ${px ? fmtUsd(px) : ""}${p?.chg != null ? ` (${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%)` : ""}`;
+    if (best?.category === "confirmed" || best?.category === "watching") {
+      const st = best.detail?.setup; const z = st ? zoneStatus(px, st.entry, st.side) : null;
+      line += ` · ${best.category === "confirmed" ? "✅" : "👀"} ${esc(best.category)} ${st ? `${st.side} ` : ""}${esc(best.timeframe)}${z && z.state !== "unknown" ? ` · ${z.state === "in" ? "🟢 in zone" : esc(z.label)}` : ""}`;
+    } else if (best) line += ` · ${esc(best.outlook ?? "")} ${best.score > 0 ? "+" : ""}${best.score ?? ""} · no setup`;
+    else line += " · not screened yet";
+    return line;
+  });
+  const kb: Keyboard = [];
+  for (let k = 0; k < Math.min(data.length, 9); k += 3) kb.push(data.slice(k, k + 3).map((d) => ({ text: d.symbol, callback_data: `setup:${d.coingecko_id}:4h` })));
+  kb.push([{ text: "Open watchlist", url: link("/watchlist") ?? "https://t.me" }, { text: "Menu", callback_data: "menu" }]);
+  return tgSend(c.chatId, `${who(c)}<b>⭐ Watchlist</b> (${data.length})\n${lines.join("\n")}\n\nTap a coin for its card. /unwatch SYM removes one.`, { html: true, keyboard: kb });
+}
+
+// ---------- top, review, digest, settings ----------
+
+async function top(c: ChatCtx) {
+  await tgTyping(c.chatId);
+  const items = (await loadCategory(c, "confirmed")).slice(0, 3);
+  const vm = VENUE_META[c.venue];
+  if (!items.length) { const w = (await loadCategory(c, "watching")).slice(0, 3); return tgSend(c.chatId, `${who(c)}<b>🏆 Top for ${esc(vm.label)}</b>\nNo confirmed setup you can place right now${vm.canShort ? "" : " (longs only)"}. Closest to confirming:\n${w.map((i) => { const st = (i.detail as any)?.setup; const need = (i.detail as any)?.watch?.[0]?.needs; return `• <b>${esc(i.symbol)}</b> ${st?.side ?? ""} ${esc(i.timeframe ?? "")}${need ? `: needs ${esc(need)}` : ""}`; }).join("\n") || "nothing close."}`, { html: true, keyboard: [[{ text: "Watching", callback_data: "cat:watching" }, { text: "Menu", callback_data: "menu" }]] }); }
+  const lines = items.map((i, n) => { const st = (i.detail as any)?.setup; const z = zoneStatus(i.price, st?.entry, st?.side); return `${["🥇", "🥈", "🥉"][n]} <b>${esc(i.symbol)}</b> ${st.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} ${esc(i.timeframe)} · conf ${st.confidence}% · ${st.rr}R\n   entry ${fmtUsd(st.entry.low)} to ${fmtUsd(st.entry.high)} · SL ${fmtUsd(st.stopLosses[0]?.price)} · TP1 ${fmtUsd(st.takeProfits[0]?.price)}${z.state !== "unknown" ? `\n   ${z.state === "in" ? "🟢 price in zone" : `${z.tone === "down" ? "🔴" : "🟡"} ${esc(z.label)}`}` : ""}${(i.detail as any)?.qualifies?.[0] ? `\n   ${esc((i.detail as any).qualifies[0])}` : ""}`; });
+  return tgSend(c.chatId, `${who(c)}<b>🏆 Top ${items.length} confirmed for ${esc(vm.label)}</b>\nRanked by confidence. Confirmed is a gate, not a promise: size by the stop.\n\n${lines.join("\n\n")}`, { html: true, keyboard: [items.map((i) => ({ text: i.symbol, callback_data: `setup:${i.assetKey.replace(/^cg:/, "")}:${i.timeframe ?? "4h"}` })), [{ text: "All confirmed", callback_data: "cat:confirmed" }, { text: "Menu", callback_data: "menu" }]] });
+}
+
+async function review(c: ChatCtx) {
+  if (!c.userId) return needLink(c);
+  await tgTyping(c.chatId);
+  const now = new Date();
+  const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - ((now.getUTCDay() + 6) % 7)));
+  const to = new Date(monday.getTime() + 7 * 86_400_000);
+  const [{ data: journal }, { data: prof }, sig, hist] = await Promise.all([
+    c.sb.from("saved_setups").select("*").eq("user_id", c.userId).eq("taken", true).gte("created_at", new Date(monday.getTime() - 60 * 86_400_000).toISOString()),
+    c.sb.from("profiles").select("trading_balance, risk_pct").eq("id", c.userId).maybeSingle(),
+    c.sb.from("signal_log").select("kind, outcome, emitted_at, side, timeframe").gte("emitted_at", monday.toISOString()).lt("emitted_at", to.toISOString()).limit(2000),
+    c.sb.from("category_history").select("category, prev_category, changed_at").gte("changed_at", monday.toISOString()).lt("changed_at", to.toISOString()).limit(5000),
+  ]);
+  const r = buildWeeklyReview({ journal: (journal ?? []) as never, signals: (sig.data ?? []) as never, history: (hist.data ?? []) as never, tradingBalance: prof?.trading_balance ? Number(prof.trading_balance) : null, riskPct: prof?.risk_pct ? Number(prof.risk_pct) : null, from: monday, to });
+  const j = r.journal;
+  const body = [
+    `${who(c)}<b>📅 Weekly review</b> (${monday.toISOString().slice(0, 10)} to today)`,
+    `You: ${j.taken} taken, ${j.closed} closed, ${j.winRate != null ? `${j.winRate}% winners` : "no closed trades"}, ${j.pnlUsd >= 0 ? "+" : ""}${fmtUsd(j.pnlUsd)}${j.avgR != null ? `, avg ${j.avgR}R` : ""}${j.open ? `, ${j.open} open` : ""}`,
+    j.bestR ? `Best ${esc(j.bestR.symbol)} ${j.bestR.r > 0 ? "+" : ""}${j.bestR.r}R${j.worstR ? ` · worst ${esc(j.worstR.symbol)} ${j.worstR.r}R` : ""}` : "",
+    j.streak ? esc(j.streak) : "",
+    `Engine: ${r.engine.confirmedNew} new confirmed, ${r.engine.confirmedLost} lost, ${r.engine.resolved}/${r.engine.signals} signals resolved${r.engine.winRate != null ? ` (${r.engine.winRate}% TP1)` : ""}`,
+    j.flags.length ? `\n<b>Flags</b>\n${j.flags.slice(0, 4).map((f) => `⚠️ ${esc(f)}`).join("\n")}` : "",
+    r.lessons.length ? `\n<b>Lessons</b>\n${r.lessons.slice(0, 3).map((l) => `• ${esc(l)}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n");
+  return tgSend(c.chatId, body, { html: true, keyboard: [[{ text: "Full review", url: link("/review") ?? "https://t.me" }, { text: "Journal", callback_data: "me" }]] });
+}
+
+async function digestNow(c: ChatCtx) {
+  if (!c.userId) return needLink(c);
+  await tgTyping(c.chatId);
+  const { data: p } = await c.sb.from("profiles").select("preferences, digest_enabled, digest_hour").eq("id", c.userId).maybeSingle();
+  const shared = await digestShared(c.sb);
+  const d = await buildDigest(c.sb, c.userId, c.venue ?? p?.preferences?.venue, shared);
+  return tgSend(c.chatId, `${who(c)}<b>☀️ ${esc(d.title)}</b>\n\n${esc(d.body)}${p?.digest_enabled ? "" : "\n\nThe automatic daily digest is off. Turn it on in /settings."}`, { html: true, keyboard: [[{ text: "Confirmed trades", callback_data: "cat:confirmed" }, { text: "Settings", callback_data: "settings" }]] });
+}
+
+async function settings(c: ChatCtx) {
+  const vm = VENUE_META[c.venue];
+  let digest = "";
+  let kb: Keyboard = [[{ text: "⚙️ Change exchange", callback_data: "exchange" }]];
+  if (c.userId) {
+    const { data: p } = await c.sb.from("profiles").select("digest_enabled, digest_hour, email").eq("id", c.userId).maybeSingle();
+    const h = Number(p?.digest_hour ?? 13);
+    digest = `\nDaily digest: <b>${p?.digest_enabled ? `on, ${String(h).padStart(2, "0")}:00 UTC` : "off"}</b>\nAccount: ${esc(p?.email ?? "linked")}`;
+    kb = [[{ text: p?.digest_enabled ? "🔕 Digest off" : "🔔 Digest on", callback_data: `settings:digest:${p?.digest_enabled ? "0" : "1"}` }, { text: "⏰ Hour -1", callback_data: `settings:hour:${(h + 23) % 24}` }, { text: "⏰ Hour +1", callback_data: `settings:hour:${(h + 1) % 24}` }], [{ text: "⚙️ Change exchange", callback_data: "exchange" }, { text: "🔓 Unlink", callback_data: "settings:unlink" }]];
+  } else kb.push([{ text: "Open Account page to link", url: link("/account") ?? "https://t.me" }]);
+  const { data: su } = await c.sb.from(c.isGroup ? "telegram_chats" : "telegram_users").select("broadcast").eq(c.isGroup ? "chat_id" : "tg_user_id", c.isGroup ? c.chatId : c.tgUserId).maybeSingle();
+  const sigOn = su?.broadcast !== false;
+  kb.unshift([{ text: sigOn ? "📣 Confirmed signals: ON (tap to mute)" : "📣 Confirmed signals: OFF (tap to enable)", callback_data: `signals:${sigOn ? "off" : "on"}` }]);
+  kb.push([{ text: "Full settings on the website", url: link("/account") ?? "https://t.me" }, { text: "Menu", callback_data: "menu" }]);
+  return tgSend(c.chatId, `${who(c)}<b>⚙️ Settings</b>\nExchange: <b>${esc(vm.label)}</b>${vm.canShort ? "" : " (spot only)"}${digest}${c.userId ? "" : "\nNot linked: /link CODE from the Account page."}\n\nAlerts, digest and weekly review are delivered here in Telegram${c.isGroup ? " (in your private chat with me)" : ""} as well as push and email per your website settings.`, { html: true, keyboard: kb });
+}
+/** Automatic confirmed-trade messages. In a private chat it is the user's switch; in a group it is the group's. */
+async function signals(c: ChatCtx, arg: string) {
+  const table = c.isGroup ? "telegram_chats" : "telegram_users";
+  const keyCol = c.isGroup ? "chat_id" : "tg_user_id";
+  const keyVal = c.isGroup ? c.chatId : c.tgUserId;
+  const want = /^(on|yes|1|start)$/i.test(arg) ? true : /^(off|no|0|stop|mute)$/i.test(arg) ? false : null;
+  if (want != null) {
+    if (c.isGroup) await c.sb.from("telegram_chats").upsert({ chat_id: c.chatId, broadcast: want, updated_at: new Date().toISOString() });
+    else await c.sb.from("telegram_users").upsert({ tg_user_id: c.tgUserId, user_id: c.userId, venue: c.venue, broadcast: want, updated_at: new Date().toISOString() });
+  }
+  const { data } = await c.sb.from(table).select("broadcast").eq(keyCol, keyVal).maybeSingle();
+  const on = data?.broadcast !== false;
+  const scope = c.isGroup ? "this group" : "you";
+  return tgSend(c.chatId, `${who(c)}<b>📣 Confirmed-trade signals for ${scope}: ${on ? "ON" : "OFF"}</b>\n${on ? `Every time the engine confirms a new trade${c.isGroup ? "" : ` tradeable on ${esc(VENUE_META[c.venue].label)}`}, one message arrives here with the share card, the full copy-trade block and the action buttons.` : "No automatic messages. Commands and alerts still work."}`, { html: true, keyboard: [[{ text: on ? "🔕 Turn off" : "🔔 Turn on", callback_data: `signals:${on ? "off" : "on"}` }, { text: "Settings", callback_data: "settings" }]] });
+}
+async function settingsSet(c: ChatCtx, key: string, val?: string) {
+  if (key === "unlink") return unlink(c);
+  if (!c.userId) return needLink(c);
+  if (key === "digest") await c.sb.from("profiles").update({ digest_enabled: val === "1" }).eq("id", c.userId);
+  if (key === "hour") await c.sb.from("profiles").update({ digest_hour: Math.max(0, Math.min(23, Number(val) || 0)) }).eq("id", c.userId);
+  return settings(c);
+}
+
+// ---------- inline mode ----------
+
+/** `@AsheSignalBot SOL` typed in any chat: returns setup summaries the user can drop into the conversation. */
+export async function handleInline(sb: SupabaseClient, q: { id: string; query: string; from?: { id: number } }) {
+  const text = q.query.trim();
+  const results: any[] = [];
+  if (text.length >= 2) {
+    const actor = q.from ? await loadActor(sb, String(q.from.id), String(q.from.id)) : null;
+    const venue = actor?.venue ?? "binance";
+    const cn = await resolveCoin(text.split(/\s+/)[0]);
+    if (cn) {
+      const a = await safe(analyzeAsset({ symbol: cn.symbol, coingeckoId: cn.id, venue }, ["4h", "1d"]));
+      if (a.ok) for (const tf of ["4h", "1d"] as Timeframe[]) {
+        const t = a.data.timeframes[tf]; if (!t || "unavailable" in t) continue;
+        const s = t.setup;
+        const title = s ? `${cn.symbol} ${s.side} ${tf} · ${s.kind} · conf ${s.confidence}%` : `${cn.symbol} ${tf} · ${t.outlook} · no setup`;
+        const body = s ? `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> (${esc(s.kind)}, conf ${s.confidence}%, ${s.riskRewardTp2}R)\nPrice ${fmtUsd(t.price)}\nEntry ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}\n${s.takeProfits.slice(0, 3).map((x) => `${x.label} ${fmtUsd(x.price)}`).join(" · ")}\n${s.stopLosses.map((x) => `${x.label} ${fmtUsd(x.price)}`).join(" · ")}\n${esc(a.data.consensus.summary)}\n<i>AsheSignal. Manual trading only. Not financial advice.</i>` : `<b>${esc(cn.symbol)} ${tf}</b>: ${esc(t.outlook)} (score ${t.score > 0 ? "+" : ""}${t.score}), RSI ${t.momentum.rsi.toFixed(0)}, price ${fmtUsd(t.price)}.\n${esc(a.data.consensus.summary)}\n<i>AsheSignal. Not financial advice.</i>`;
+        results.push({ type: "article", id: `${cn.id}-${tf}`, title, description: s ? `Entry ${fmtUsd(s.entry.low)}-${fmtUsd(s.entry.high)}, SL ${fmtUsd(s.stopLosses[0].price)}, TP1 ${fmtUsd(s.takeProfits[0].price)}` : a.data.consensus.summary.slice(0, 80), input_message_content: { message_text: body, parse_mode: "HTML" }, reply_markup: link("/") ? { inline_keyboard: [[{ text: `Open ${cn.symbol} on AsheSignal`, url: link(`/token/${cn.id}?tf=${tf}`)! }]] } : undefined });
+      }
+    }
+  }
+  const { tgAnswerInline } = await import("./telegram");
+  return tgAnswerInline(q.id, results, text.length < 2 ? "Type a coin, e.g. SOL" : results.length ? undefined : "No data for that coin");
+}
+
 // ---------- free text ----------
 
 async function freeText(c: ChatCtx, text: string) {
+  // A bare ticker ("SOL", "$btc", "link 1d") opens the coin card directly.
+  const m = text.trim().match(/^\$?([a-z0-9]{2,10})(?:\s+(1h|4h|1d))?$/i);
+  if (m && !/^(hi|hey|yo|ok|yes|no|thanks|thank|help|menu|start|today|trades)$/i.test(m[1])) {
+    const cn = await resolveCoin(m[1]);
+    if (cn && cn.symbol.toUpperCase() === m[1].toUpperCase()) return setupCard(c, cn.id, (m[2] as Timeframe) || "4h", cn);
+  }
   await tgTyping(c.chatId);
   try {
     const a = await answer({ question: text, venue: c.venue, userId: c.userId, sb: c.userId ? c.sb : null, adminSb: c.sb });

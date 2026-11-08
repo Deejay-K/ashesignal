@@ -44,7 +44,14 @@ export async function tgAnswerCallback(id: string, text?: string) { await call("
 export async function tgTyping(chatId: string) { await call("sendChatAction", { chat_id: chatId, action: "typing" }); }
 
 export async function tgSetWebhook(url: string, secret: string) {
-  return call("setWebhook", { url, secret_token: secret, allowed_updates: ["message", "callback_query"], drop_pending_updates: true });
+  return call("setWebhook", { url, secret_token: secret, allowed_updates: ["message", "callback_query", "inline_query"], drop_pending_updates: true });
+}
+export async function tgAnswerInline(inlineQueryId: string, results: unknown[], switchPmText?: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN; if (!token) return false;
+  const body: Record<string, unknown> = { inline_query_id: inlineQueryId, results: results.slice(0, 10), cache_time: 60, is_personal: true };
+  if (switchPmText) { body.button = { text: switchPmText, start_parameter: "inline" }; }
+  const r = await fetch(`https://api.telegram.org/bot${token}/answerInlineQuery`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+  return !!r?.ok;
 }
 export async function tgMe() { return call<{ username: string }>("getMe", {}); }
 
@@ -61,6 +68,7 @@ export const COMMANDS = [
   { command: "watching", description: "Setups that are close but not confirmed" },
   { command: "spec", description: "Speculative opportunities (high risk)" },
   { command: "spot", description: "Long-term spot picks and their zones" },
+  { command: "top", description: "The 3 best confirmed setups for your exchange" },
   { command: "today", description: "Trade conditions, regime, Fear & Greed" },
   { command: "coin", description: "Analysis of a coin, e.g. /coin SOL 4h" },
   { command: "screener", description: "Top coins by score, RSI, volume" },
@@ -70,7 +78,13 @@ export const COMMANDS = [
   { command: "me", description: "Open trades, heat, recent record" },
   { command: "journal", description: "Recent trades and stats" },
   { command: "take", description: "Record a trade: /take SOL" },
-  { command: "exchange", description: "Set exchange for this chat: /exchange coinbase" },
+  { command: "watchlist", description: "Your starred coins with status and entry zone" },
+  { command: "watch", description: "Star a coin: /watch SOL (unstar: /unwatch)" },
+  { command: "review", description: "Your weekly review" },
+  { command: "digest", description: "Today's digest, now" },
+  { command: "settings", description: "Exchange, digest, signals, link status" },
+  { command: "signals", description: "Automatic confirmed-trade messages: /signals on|off" },
+  { command: "exchange", description: "Your exchange: /exchange coinbase" },
   { command: "guide", description: "How to place a trade on your exchange" },
   { command: "link", description: "Connect this chat to your account" },
   { command: "help", description: "All commands" },
@@ -80,7 +94,7 @@ export const COMMANDS = [
 export async function tgRegisterCommands() {
   const [cmds, groupCmds, desc, short] = await Promise.all([
     call("setMyCommands", { commands: COMMANDS, scope: { type: "default" } }),
-    call("setMyCommands", { commands: COMMANDS.filter((c) => !["link", "me", "journal", "take", "alerts", "alert"].includes(c.command)), scope: { type: "all_group_chats" } }),
+    call("setMyCommands", { commands: COMMANDS.filter((c) => !["link", "me", "journal", "take", "alerts", "alert", "review", "digest", "watch"].includes(c.command)), scope: { type: "all_group_chats" } }),
     call("setMyDescription", { description: "AsheSignal in Telegram: trade conditions, confirmed setups with entry, targets and stop, coin analysis, spot picks, position sizing, alerts and your trading journal. Everything the website shows, with buttons. Manual trading only. Not financial advice." }),
     call("setMyShortDescription", { short_description: "Crypto setups, conditions, analysis and journal from AsheSignal. Manual trading only." }),
   ]);

@@ -78,10 +78,11 @@ function Alerts() {
                   </div>
                 </div>
               ) : null}
+              {form.type === "entry_zone" ? <p className="rounded-lg border border-border bg-bg-2 p-2 text-fg-2">Set this from a Confirmed or Watching card ("tell me when it enters the zone") so the zone is filled in automatically. Fires once when price comes into the zone, and re-arms after it leaves.</p> : null}
               {form.type === "spot_zone" ? <p className="rounded-lg border border-border bg-bg-2 p-2 text-fg-2">Enter the coin above. Fires when its price enters the accumulation zone computed on the Spot Investments card (the coin must currently be a Spot pick).</p> : null}
               {form.type === "trade_update" ? <p className="rounded-lg border border-border bg-bg-2 p-2 text-fg-2">Created automatically for every trade you record in the journal: you are notified when it reaches TP1, TP2, TP3 or the stop. Nothing to configure.</p> : null}
               {form.type === "new_listing" ? <label>Chain filter (optional)<input value={form.chain} onChange={(e) => setForm({ ...form, chain: e.target.value })} placeholder="solana, base, ethereum… blank = all" /></label> : null}
-              {form.type !== "sentiment_zone" && form.type !== "new_listing" && form.type !== "macro_event" && form.type !== "whale_transfer" && form.type !== "liquidity_change" && form.type !== "new_confirmed" && form.type !== "trade_update" && form.type !== "spot_zone" ? (
+              {form.type !== "sentiment_zone" && form.type !== "new_listing" && form.type !== "macro_event" && form.type !== "whale_transfer" && form.type !== "liquidity_change" && form.type !== "new_confirmed" && form.type !== "trade_update" && form.type !== "spot_zone" && form.type !== "entry_zone" ? (
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     <label>Ticker<input value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} placeholder="BTC" required /></label>

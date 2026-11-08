@@ -6,6 +6,7 @@ import { fmtUsd } from "@/lib/format";
 import { currentVenue } from "@/lib/venue-pref";
 import { VENUE_IDS, VENUE_META, type VenueId } from "@/lib/venues";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import PreTradeChecklist from "@/components/PreTradeChecklist";
 
 /** Minimal setup shape the dialog needs (works for engine Setup and discovery detail.setup). */
 export interface TakeSetup {
@@ -102,6 +103,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
               <label>Leverage used<input className="num" disabled value={`${setup.leverage?.recommended ?? 1}x recommended`} /></label>
               <label className="col-span-2">Notes (why you took it, how you feel)<input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="optional" /></label>
             </div>
+            {!paper ? <PreTradeChecklist symbol={symbol} side={setup.side} kind={setup.kind} price={f || null} entry={needsLevels ? null : setup.entry} stop={sl ?? null} risk={riskUsd} venue={venue} /> : null}
             {riskUsd != null ? <p className="num text-xs text-fg-2">If the stop hits you lose about <b className="down">{fmtUsd(riskUsd)}</b>; TP2 would pay about <b className="up">{fmtUsd(riskUsd * (rr ?? 0))}</b> ({rr}R).</p> : <p className="text-xs text-fg-3">Enter a size to see the money at risk.</p>}
             {heat ? <div className={`rounded border px-2 py-1 text-xs ${heat.level === "stop" ? "border-red/50 bg-red/10 text-red" : heat.level === "caution" ? "border-amber/40 bg-amber-dim text-amber" : "border-border bg-bg-2 text-fg-2"}`}><b>{heat.level === "stop" ? "Over your risk limits with this trade." : heat.level === "caution" ? "Heads up." : "Within limits."}</b> {heat.messages.join(" ")}</div> : null}
             {err ? <p className="text-xs text-red">{err}</p> : null}

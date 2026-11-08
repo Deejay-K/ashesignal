@@ -266,3 +266,36 @@ What the bot does now, in private chats and groups:
 Groups: the bot answers commands, mentions, replies and button taps only. For plain-text questions in a group, disable privacy mode in @BotFather (`/setprivacy` > Disable) and re-add the bot to the group. Account-bound commands (`/me`, `/journal`, `/take`, `/alerts`) are hidden from the group command menu; link in a private chat.
 
 The bot never places orders, never asks for keys, and labels every setup as not financial advice.
+
+## 27. Stage 33 - pre-trade checklist, entry-zone alerts, watchlist status, bot inline mode
+
+Run `supabase/schema.sql` again (adds the `entry_zone` alert type). Re-open `/api/telegram/setup?secret=...` once to register the new commands and inline mode. Then in @BotFather send `/setinline`, pick AsheSignalBot and give a placeholder such as `coin, e.g. SOL`; that turns on `@AsheSignalBot SOL` in any chat.
+
+Website:
+- **Entry-zone status** on every Confirmed and Watching card: "price in the entry zone", "2.1% above the zone" (do not chase), or "below the zone" (check the stop), with a one-click "tell me when it enters the zone" alert.
+- **Pre-trade checklist** inside "I took this trade": confirmed or not, listed on your exchange, regime allows the side, price vs zone, stop distance and whether it is already hit, high-impact news within 2 h, portfolio heat after this trade. Verdict GO / CAREFUL / WAIT with each check explained. It never blocks recording.
+- **Watchlist**: every starred coin shows its current category, side, timeframe, zone status and a one-tap "alert when it confirms".
+- **Search is a command palette**: type a page name ("journal", "risk", "settings") in the search box, or `/` from anywhere.
+- `GET /api/pretrade?symbol=SOL&side=LONG&kind=confirmed&price=&entryLow=&entryHigh=&stop=&risk=&venue=` returns the checklist as JSON (signed-in users get the heat check too).
+
+Telegram bot:
+- `/top`: the 3 best confirmed setups for your exchange, ranked by confidence, with zone status; when there are none it shows what is closest to confirming and what it needs.
+- `/watch SOL`, `/unwatch SOL`, `/watchlist` (synced with the website watchlist) with price, 24 h change, category and zone status. ⭐ Watch button on every coin card.
+- Coin cards show "Now: price in the entry zone" and have "🔔 Entering zone" (fires when price comes into the zone) next to "Alert at TP1/SL".
+- The guided `/take` flow now runs the pre-trade checklist and asks you to confirm before anything is recorded.
+- `/review` (this week's review), `/digest` (today's digest now), `/settings` (exchange, digest on/off and hour with buttons, unlink).
+- Inline mode: type `@AsheSignalBot SOL` in any chat, pick the 4h or 1d result, and the setup summary is posted with a link. Settings used are the typing user's.
+- A bare ticker message ("SOL", "$btc 1d") opens the coin card directly.
+- Alerts created from the bot are delivered to Telegram as well as push and email.
+
+## 28. Stage 33.1 - automatic Telegram message for every new Confirmed trade
+
+Run `supabase/schema.sql` again (adds `broadcast` to `telegram_users` and `telegram_chats`), then re-open `/api/telegram/setup?secret=...` once for the new `/signals` command.
+
+Every time the screener worker moves a coin into Confirmed Trades, the bot sends **one message per trade** to every Telegram user who has started the bot and to every group it is in: the share card image, the full copy-trade block (pair on your exchange, entry zone, TP1-3, SL1-2, R:R, confidence, leverage, sizing rule, order plan; long-press to copy) and buttons: I took it, Paper, Size, TP1/SL alerts, Entering zone, Watch, How to place it, Open on exchange, Full card, Website.
+
+- Per user it is filtered by their exchange: coins not listed there are not sent, and spot-only exchanges (Coinbase) never receive SHORTs. Groups receive everything with the list of exchanges.
+- `/signals off` mutes it (per person in private chat, per group in a group); `/signals on` re-enables. Also a toggle in `/settings`. Default is on.
+- Capped per worker run (60 messages; 20 when `all=1`) so a full re-screen cannot flood a chat.
+- Test the format without waiting: `https://<your-url>/api/telegram/test-signal?secret=<CRON_SECRET>&symbol=SOL&tf=4h` (add `&chat=<your chat id>` to send only to yourself). It uses the coin's live setup and is labelled TEST.
+- The worker's JSON now reports `promoted` and `telegram: { sent, recipients, skipped }`.
