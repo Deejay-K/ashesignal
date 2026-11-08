@@ -9,6 +9,7 @@ import PushToggle from "@/components/PushToggle";
 import ThemePicker from "@/components/ThemePicker";
 import VenuePicker from "@/components/VenuePicker";
 import ExchangePanel from "@/components/ExchangePanel";
+import RiskLimits from "@/components/RiskLimits";
 
 export default function AccountPage() {
   const sb = supabaseBrowser();
@@ -73,6 +74,9 @@ export default function AccountPage() {
         <ExchangePanel />
       </Section>
       {themeSection}
+      <Section title="Risk limits (portfolio heat)">
+        <RiskLimits />
+      </Section>
       <Section title="Notifications">
         <PushToggle />
       </Section>

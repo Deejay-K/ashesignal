@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { VENUE_IDS, VENUE_META } from "@/lib/venues";
 import { ALERT_TYPES } from "@/lib/alerts/types";
 import { TIMEFRAMES } from "@/lib/types";
 import { Disclaimer, Empty, Section } from "@/components/ui";
@@ -20,7 +21,7 @@ function Alerts() {
   const [state, setState] = useState<"loading" | "guest" | "disabled" | "ok">("loading");
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [events, setEvents] = useState<EventRow[]>([]);
-  const [form, setForm] = useState({ symbol: sp.get("symbol") ?? "", id: sp.get("id") ?? "", address: sp.get("address") ?? "", type: sp.get("address") ? "liquidity_change" : "price_above", timeframe: sp.get("tf") ?? "1h", price: sp.get("price") ?? "", pct: sp.get("address") ? "30" : "5", bars: "24", rsi: "70", ratio: "2", zone: "Extreme Fear", chain: "", cooldown: "60", usd: "100000", push: true, email: false });
+  const [form, setForm] = useState({ side: "", venue: "", ctf: "", minConf: "", symbol: sp.get("symbol") ?? "", id: sp.get("id") ?? (sp.get("asset")?.startsWith("cg:") ? sp.get("asset")!.slice(3) : ""), address: sp.get("address") ?? "", type: sp.get("type") ?? (sp.get("address") ? "liquidity_change" : "price_above"), timeframe: sp.get("tf") ?? "1h", price: sp.get("price") ?? "", pct: sp.get("address") ? "30" : "5", bars: "24", rsi: "70", ratio: "2", zone: "Extreme Fear", chain: "", cooldown: "60", usd: "100000", push: true, email: false });
   const [err, setErr] = useState<string | null>(null);
 
   const load = async () => {
@@ -44,8 +45,9 @@ function Alerts() {
     for (const p of def.params) params[p] = p === "zone" ? form.zone : Number(form[p as keyof typeof form]);
     if (form.type === "new_listing" && form.chain) params.chain = form.chain;
     if (form.type === "whale_transfer") params.usd = Number(form.usd);
+    if (form.type === "new_confirmed") { if (form.side) params.side = form.side; if (form.venue) params.venue = form.venue; if (form.ctf) params.tf = form.ctf; if (form.minConf) params.minConf = Number(form.minConf); }
     const channels = [form.push ? "push" : "", form.email ? "email" : ""].filter(Boolean);
-    const r = await fetch("/api/me/alerts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ symbol: form.symbol || (form.type === "new_listing" ? "LISTINGS" : form.type === "macro_event" ? "MACRO" : form.type === "whale_transfer" ? "WHALE" : "MARKET"), assetKey: form.address ? `addr:${form.address}` : form.id ? `cg:${form.id}` : `sym:${form.symbol.toUpperCase()}`, assetRef: { symbol: form.symbol.toUpperCase(), id: form.id || undefined, address: form.address || undefined }, type: form.type, timeframe: form.timeframe, params, channels, cooldownMinutes: Number(form.type === "new_listing" ? Math.max(60, Number(form.cooldown)) : form.cooldown) }) });
+    const r = await fetch("/api/me/alerts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ symbol: form.symbol || (form.type === "new_listing" ? "LISTINGS" : form.type === "macro_event" ? "MACRO" : form.type === "new_confirmed" ? "CONFIRMED" : form.type === "trade_update" ? "JOURNAL" : form.type === "whale_transfer" ? "WHALE" : "MARKET"), assetKey: form.address ? `addr:${form.address}` : form.id ? `cg:${form.id}` : `sym:${form.symbol.toUpperCase()}`, assetRef: { symbol: form.symbol.toUpperCase(), id: form.id || undefined, address: form.address || undefined }, type: form.type, timeframe: form.timeframe, params, channels, cooldownMinutes: Number(form.type === "new_listing" ? Math.max(60, Number(form.cooldown)) : form.cooldown) }) });
     if (!r.ok) return setErr((await r.json()).error);
     load();
   };
@@ -65,8 +67,21 @@ function Alerts() {
               <label>Type<select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{ALERT_TYPES.map((t) => <option key={t.type} value={t.type}>{t.label}</option>)}</select></label>
               {form.type === "whale_transfer" ? <><label>Token contract address<input className="num" required value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="0x... or Solana mint" /></label><label>Minimum transfer $<input type="number" value={form.usd} onChange={(e) => setForm({ ...form, usd: e.target.value })} /></label></> : null}
               {form.type === "liquidity_change" ? <label>Token contract address<input className="num" required value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="0x… or Solana mint" /></label> : null}
+              {form.type === "new_confirmed" ? (
+                <div className="space-y-2 rounded-lg border border-mint/40 bg-mint-dim p-2">
+                  <p className="text-fg-2">Fires when a coin enters Confirmed Trades. Leave filters empty for everything, or narrow it to what you can actually trade.</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label>Direction<select value={form.side} onChange={(e) => setForm({ ...form, side: e.target.value })}><option value="">Both</option><option value="LONG">Longs only</option><option value="SHORT">Shorts only</option></select></label>
+                    <label>Listed on<select value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })}><option value="">Any exchange</option>{VENUE_IDS.map((v) => <option key={v} value={v}>{VENUE_META[v].label}{!VENUE_META[v].canShort ? " (longs only)" : ""}</option>)}</select></label>
+                    <label>Timeframe<select value={form.ctf} onChange={(e) => setForm({ ...form, ctf: e.target.value })}><option value="">Any</option>{["1h", "4h", "1d"].map((t) => <option key={t}>{t}</option>)}</select></label>
+                    <label>Min confidence<input type="number" placeholder="e.g. 70" value={form.minConf} onChange={(e) => setForm({ ...form, minConf: e.target.value })} /></label>
+                  </div>
+                </div>
+              ) : null}
+              {form.type === "spot_zone" ? <p className="rounded-lg border border-border bg-bg-2 p-2 text-fg-2">Enter the coin above. Fires when its price enters the accumulation zone computed on the Spot Investments card (the coin must currently be a Spot pick).</p> : null}
+              {form.type === "trade_update" ? <p className="rounded-lg border border-border bg-bg-2 p-2 text-fg-2">Created automatically for every trade you record in the journal: you are notified when it reaches TP1, TP2, TP3 or the stop. Nothing to configure.</p> : null}
               {form.type === "new_listing" ? <label>Chain filter (optional)<input value={form.chain} onChange={(e) => setForm({ ...form, chain: e.target.value })} placeholder="solana, base, ethereum… blank = all" /></label> : null}
-              {form.type !== "sentiment_zone" && form.type !== "new_listing" && form.type !== "macro_event" && form.type !== "whale_transfer" && form.type !== "liquidity_change" ? (
+              {form.type !== "sentiment_zone" && form.type !== "new_listing" && form.type !== "macro_event" && form.type !== "whale_transfer" && form.type !== "liquidity_change" && form.type !== "new_confirmed" && form.type !== "trade_update" && form.type !== "spot_zone" ? (
                 <>
                   <div className="grid grid-cols-2 gap-2">
                     <label>Ticker<input value={form.symbol} onChange={(e) => setForm({ ...form, symbol: e.target.value })} placeholder="BTC" required /></label>

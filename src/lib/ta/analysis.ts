@@ -109,7 +109,11 @@ export interface TimeframeAnalysis {
 /** Candle counts per timeframe considered "enough" for robust analysis. */
 const MIN_CANDLES = 60;
 
-export function analyzeTimeframe(tf: Timeframe, candles: Candle[]): TimeframeAnalysis | null {
+/** Confirmation gate thresholds. Defaults are the production rules; the Engine Lab varies them. */
+export interface GateOptions { band?: number; volMin?: number; stretchMax?: number; tp1Min?: number; tp2Min?: number }
+export const DEFAULT_GATES: Required<GateOptions> = { band: 35, volMin: 0.8, stretchMax: 2.5, tp1Min: 1, tp2Min: 1.5 };
+
+export function analyzeTimeframe(tf: Timeframe, candles: Candle[], gates?: GateOptions): TimeframeAnalysis | null {
   if (candles.length < MIN_CANDLES) return null;
   const closes = candles.map((c) => c.close);
   const vols = candles.map((c) => c.volume);
@@ -276,7 +280,7 @@ export function analyzeTimeframe(tf: Timeframe, candles: Candle[]): TimeframeAna
   };
 
   /* ---- setup ---- */
-  const { setup, setupReason } = buildSetup({ tf, price, score, dir, atrNow, atrPct, levels, swingHigh, swingLow, rsiNow, volRatio, breakout, confirmedPatterns: confirmedP, completed, forming, ema20, ema50, regime });
+  const { setup, setupReason } = buildSetup({ tf, price, score, dir, atrNow, atrPct, levels, swingHigh, swingLow, rsiNow, volRatio, breakout, confirmedPatterns: confirmedP, completed, forming, ema20, ema50, regime, gates: { ...DEFAULT_GATES, ...(gates ?? {}) } });
 
   const opportunityScore = clamp(Math.round(Math.abs(score) * 0.6 + (setup && setup.kind !== "watch" ? setup.confidence * 0.4 : 0)), 0, 100);
 
@@ -316,6 +320,7 @@ interface SetupInput {
   tf: Timeframe; price: number; score: number; dir: "up" | "down" | "sideways"; atrNow: number; atrPct: number;
   levels: Level[]; swingHigh: number; swingLow: number; rsiNow: number; volRatio: number;
   breakout: TimeframeAnalysis["breakout"]; confirmedPatterns: Pattern[]; completed: Pattern[]; forming: Pattern[]; ema20: number; ema50: number; regime: string;
+  gates: Required<GateOptions>;
 }
 
 function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string } {
@@ -335,11 +340,11 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
   // A completed pattern (target already reached) is NOT a trigger: entering there is chasing the move.
   const confirmGaps: string[] = [];
   const trigger = (side === "LONG" && i.breakout.type === "breakout") || (side === "SHORT" && i.breakout.type === "breakdown") || i.confirmedPatterns.some((p) => (side === "LONG" ? p.bias === "bullish" : p.bias === "bearish"));
-  if (abs < 35) confirmGaps.push(`Score ${i.score > 0 ? "+" : ""}${i.score} is inside the ±35 confirmation band.`);
+  if (abs < i.gates.band) confirmGaps.push(`Score ${i.score > 0 ? "+" : ""}${i.score} is inside the ±${i.gates.band} confirmation band.`);
   if (!trigger) confirmGaps.push(side === "LONG" ? "No bullish trigger yet: needs a close above resistance or a confirmed bullish pattern." : "No bearish trigger yet: needs a close below support or a confirmed bearish pattern.");
-  if (i.volRatio < 0.8) confirmGaps.push(`Volume ${i.volRatio.toFixed(2)}x average: a confirmation needs at least 0.8x.`);
+  if (i.volRatio < i.gates.volMin) confirmGaps.push(`Volume ${i.volRatio.toFixed(2)}x average: a confirmation needs at least ${i.gates.volMin}x.`);
   const stretch = Math.abs(i.price - i.ema20) / Math.max(i.atrNow, 1e-12);
-  if (stretch > 2.5) confirmGaps.push(`Price is ${stretch.toFixed(1)} ATR from the 20 EMA: overextended, wait for a pullback instead of chasing.`);
+  if (stretch > i.gates.stretchMax) confirmGaps.push(`Price is ${stretch.toFixed(1)} ATR from the 20 EMA: overextended, wait for a pullback instead of chasing.`);
   if (side === "LONG" && i.rsiNow > 78) confirmGaps.push(`RSI ${i.rsiNow.toFixed(0)} is extreme for a new long.`);
   if (side === "SHORT" && i.rsiNow < 22) confirmGaps.push(`RSI ${i.rsiNow.toFixed(0)} is extreme for a new short.`);
   if (i.regime === "expanded") confirmGaps.push("Volatility regime is expanded (Bollinger width in its top 15%): stops get hit by noise; wait for it to settle.");
@@ -439,8 +444,8 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
   }
   const rr2 = takeProfits[1].rr;
   if (takeProfits[0].rr < 0.8) issues.push(`TP1 pays only ${takeProfits[0].rr}R against the structural stop: reward does not justify the risk until price pulls back or the stop can tighten.`);
-  if (kind === "confirmed" && takeProfits[0].rr < 1) { confirmGaps.push(`TP1 pays ${takeProfits[0].rr}R: a confirmation needs at least 1R to the first target.`); kind = "speculative"; }
-  if (kind === "confirmed" && rr2 < 1.5) { confirmGaps.push(`TP2 pays ${rr2}R: a confirmation needs at least 1.5R to the second target.`); kind = "speculative"; }
+  if (kind === "confirmed" && takeProfits[0].rr < i.gates.tp1Min) { confirmGaps.push(`TP1 pays ${takeProfits[0].rr}R: a confirmation needs at least ${i.gates.tp1Min}R to the first target.`); kind = "speculative"; }
+  if (kind === "confirmed" && rr2 < i.gates.tp2Min) { confirmGaps.push(`TP2 pays ${rr2}R: a confirmation needs at least ${i.gates.tp2Min}R to the second target.`); kind = "speculative"; }
   if (kind === "confirmed" && !sl1Reliable) { confirmGaps.push("No structural level for the stop (ATR stop only): confirmations need a level-based stop."); kind = "speculative"; }
   if (issues.length) kind = "watch";
 

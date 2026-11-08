@@ -11,6 +11,7 @@ import { liquidityChanges } from "@/lib/market/liquidity";
 import { detectNewListings, type NewListing } from "@/lib/market/listings";
 import { globalConditions } from "@/lib/market/conditions";
 import { fmtUsd } from "@/lib/format";
+import { venueListings, VENUE_META, isVenueId } from "@/lib/venues";
 
 import { type AlertType } from "./types";
 
@@ -49,7 +50,7 @@ export async function evaluateAlerts(sb: SupabaseClient) {
     evaluated++;
     if (a.last_fired_at && Date.now() - new Date(a.last_fired_at).getTime() < (a.cooldown_minutes ?? 60) * 60_000) continue;
     const tf = (a.timeframe ?? "1h") as Timeframe;
-    let msg: { title: string; body: string } | null = null;
+    let msg: { title: string; body: string; url?: string } | null = null;
     const newState: Record<string, unknown> = { ...a.state };
 
     if (a.type === "whale_transfer") {
@@ -64,6 +65,44 @@ export async function evaluateAlerts(sb: SupabaseClient) {
           newState.lastWhaleAt = data[0].occurred_at;
         }
       }
+    } else if (a.type === "new_confirmed") {
+      // Global: fires once per coin/timeframe entering Confirmed since the last check, filtered by the rule's params
+      // (side LONG/SHORT, venue listing, timeframe, minConf). State keeps the last seen history id so nothing repeats.
+      const since = Number(a.state.lastConfirmedId ?? 0);
+      const { data: hist } = await sb.from("category_history").select("id, asset_key, symbol, timeframe, reason, snapshot, changed_at").eq("category", "confirmed").gt("id", since).order("id", { ascending: true }).limit(50);
+      if (hist?.length) {
+        newState.lastConfirmedId = hist[hist.length - 1].id;
+        if (since > 0) { // the first run only seeds the watermark
+          const wantSide = a.params.side ? String(a.params.side) : null;
+          const wantTf = a.params.tf ? String(a.params.tf) : null;
+          const minConf = Number(a.params.minConf ?? 0);
+          const venue = a.params.venue ? String(a.params.venue) : null;
+          const listings = venue ? await venueListings() : null;
+          const hits = hist.filter((h) => {
+            const snap = (h.snapshot ?? {}) as { side?: string; kind?: string; confidence?: number };
+            if (wantSide && snap.side !== wantSide) return false;
+            if (wantTf && h.timeframe !== wantTf) return false;
+            if (minConf && (snap.confidence ?? 0) < minConf) return false;
+            if (venue && listings && !listings[venue as keyof typeof listings]?.has(String(h.symbol).toUpperCase())) return false;
+            if (venue && isVenueId(venue) && !VENUE_META[venue].canShort && snap.side === "SHORT") return false;
+            return true;
+          });
+          if (hits.length) msg = { title: `${hits.length} new Confirmed trade${hits.length > 1 ? "s" : ""}: ${hits.slice(0, 4).map((h) => `${h.symbol} ${((h.snapshot ?? {}) as { side?: string }).side ?? ""} ${h.timeframe}`).join(", ")}${hits.length > 4 ? "…" : ""}`, body: hits.slice(0, 4).map((h) => `${h.symbol} ${h.timeframe}: ${String(h.reason ?? "").slice(0, 120)}`).join("\n"), url: "/opportunities?cat=confirmed" };
+        }
+      }
+    } else if (a.type === "spot_zone") {
+      // Per coin: fires when price is inside the Spot pick's accumulation zone (re-arms after leaving it)
+      const { data: pick } = await sb.from("spot_picks").select("price, detail").eq("asset_key", a.asset_key).maybeSingle();
+      const zone = pick?.detail?.analysis?.accumulation as { low: number; high: number } | undefined;
+      const price = Number(pick?.price);
+      if (zone && price) {
+        const inside = price >= zone.low && price <= zone.high;
+        const was = !!a.state.inZone;
+        newState.inZone = inside;
+        if (inside && !was) msg = { title: `${a.symbol} is in its accumulation zone (${fmtUsd(zone.low)} - ${fmtUsd(zone.high)})`, body: `Price ${fmtUsd(price)}. Spot plan: buy in parts through the zone, never all at once. See the Spot Investments card for profit-taking zones and scenarios.`, url: "/opportunities?cat=spot" };
+      }
+    } else if (a.type === "trade_update") {
+      // handled by the resolver (it knows the real status change); nothing to evaluate here
     } else if (a.type === "macro_event") {
       const g = await globalConditions();
       const soon = g.events.filter((e) => e.impact === "High" && Date.parse(e.time) - Date.now() > 0 && Date.parse(e.time) - Date.now() <= 2 * 3_600_000);
@@ -171,7 +210,7 @@ export async function evaluateAlerts(sb: SupabaseClient) {
     if (msg) {
       fired++;
       patch.last_fired_at = new Date().toISOString();
-      const url = a.asset_key.startsWith("cg:") ? `/token/${a.asset_key.slice(3)}` : "/alerts";
+      const url = msg.url ?? (a.asset_key.startsWith("cg:") ? `/token/${a.asset_key.slice(3)}` : "/alerts");
       await deliver(sb, { userId: a.user_id, alertId: a.id, symbol: a.symbol, title: msg.title, body: msg.body, url, channels: (a as unknown as { channels?: string[] }).channels });
     }
     await sb.from("alerts").update(patch).eq("id", a.id);

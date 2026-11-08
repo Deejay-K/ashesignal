@@ -11,6 +11,7 @@ import type { Pattern } from "@/lib/ta/patterns";
 import TradeConditions from "./TradeConditions";
 import Backtest from "./Backtest";
 import Term from "./Term";
+import TakeTradeDialog from "./TakeTradeDialog";
 import { Empty, OutlookBadge, QualityBadge, Section } from "./ui";
 import { fmtNum, fmtPct, fmtUsd, pctClass } from "@/lib/format";
 import { TIMEFRAMES, type Candle, type Timeframe } from "@/lib/types";
@@ -394,6 +395,7 @@ function PatternToggles({ a, visible, onToggle, onAll }: { a: TimeframeAnalysis;
 
 export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery; tf: Timeframe; score?: number }) {
   const [saved, setSaved] = useState<"idle" | "saving" | "saved" | "guest" | "error">("idle");
+  const [taking, setTaking] = useState(false);
   const save = async () => {
     setSaved("saving");
     const sb = supabaseBrowser();
@@ -458,6 +460,8 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
         <button className="btn-ghost" onClick={save} disabled={saved === "saving" || saved === "saved"}>
           {saved === "saved" ? "Saved ✓" : saved === "saving" ? "Saving…" : "Save setup"}
         </button>
+        {s.kind !== "watch" ? <button className="btn-ghost" onClick={() => setTaking(true)} title="Record the trade you placed on your exchange in the journal">I took this trade</button> : null}
+        {taking ? <TakeTradeDialog setup={s} symbol={asset.symbol ?? asset.id ?? ""} timeframe={tf} assetKey={asset.id ? `cg:${asset.id}` : undefined} score={score} onClose={() => setTaking(false)} /> : null}
         {saved === "guest" ? <Link href="/login" className="text-xs text-amber">Sign in to save setups</Link> : null}
         {saved === "error" ? <span className="text-xs text-red">Save failed</span> : null}
       </div>

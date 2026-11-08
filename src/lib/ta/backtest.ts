@@ -4,7 +4,11 @@
 // Fills are at the entry mid; it assumes the entry zone was reached within `entryWindow` candles.
 
 import type { Candle, Timeframe } from "@/lib/types";
-import { analyzeTimeframe } from "./analysis";
+import { analyzeTimeframe, type GateOptions } from "./analysis";
+import { resample } from "./resample";
+
+const TF_MS: Record<string, number> = { "1m": 60e3, "5m": 300e3, "15m": 900e3, "30m": 1800e3, "1h": 3600e3, "2h": 7200e3, "4h": 14400e3, "12h": 43200e3, "1d": 86400e3, "1w": 604800e3 };
+const NEXT_TF: Record<string, Timeframe> = { "15m": "1h", "30m": "4h", "1h": "4h", "4h": "1d", "1d": "1w" };
 
 export interface BacktestTrade {
   time: number; side: "LONG" | "SHORT"; kind: string; entry: number; sl1: number; tp1: number; tp2: number; tp3: number;
@@ -17,7 +21,16 @@ export interface BacktestResult {
   note: string;
 }
 
-export function backtest(tf: Timeframe, candles: Candle[], opts: { step?: number; minHistory?: number; maxHold?: number; entryWindow?: number; partial?: boolean } = {}): BacktestResult {
+export interface BacktestOpts { step?: number; minHistory?: number; maxHold?: number; entryWindow?: number; partial?: boolean; gates?: GateOptions; onlyConfirmed?: boolean; htfFilter?: boolean }
+
+export function backtest(tf: Timeframe, candles: Candle[], opts: BacktestOpts = {}): BacktestResult {
+  const htfTf = NEXT_TF[tf];
+  const htfOk = (i: number, side: "LONG" | "SHORT") => {
+    if (!opts.htfFilter || !htfTf || !TF_MS[htfTf]) return true;
+    const h = analyzeTimeframe(htfTf, resample(candles.slice(0, i + 1), TF_MS[htfTf]));
+    if (!h) return true;
+    return !(side === "LONG" ? h.trend.direction === "down" || h.score <= -15 : h.trend.direction === "up" || h.score >= 15);
+  };
   const step = opts.step ?? Math.max(3, Math.round(candles.length / 90));
   const minHistory = opts.minHistory ?? 120;
   const maxHold = opts.maxHold ?? 60;
@@ -26,9 +39,11 @@ export function backtest(tf: Timeframe, candles: Candle[], opts: { step?: number
   let lastExitIdx = -1;
   for (let i = minHistory; i < candles.length - 2; i += step) {
     if (i <= lastExitIdx) continue; // one position at a time
-    const a = analyzeTimeframe(tf, candles.slice(0, i + 1));
+    const a = analyzeTimeframe(tf, candles.slice(0, i + 1), opts.gates);
     const s = a?.setup;
     if (!s || s.kind === "watch") continue;
+    if (opts.onlyConfirmed && s.kind !== "confirmed") continue;
+    if (!htfOk(i, s.side)) continue;
     const dir = s.side === "LONG" ? 1 : -1;
     // fill: entry zone touched within the window
     let fillIdx = -1;

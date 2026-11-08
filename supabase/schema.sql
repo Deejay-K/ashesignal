@@ -402,3 +402,45 @@ alter table public.exchange_accounts add constraint exchange_accounts_exchange_c
 alter table public.coin_metrics add column if not exists bt_n int;             -- engine record on this chart (walk-forward backtest)
 alter table public.coin_metrics add column if not exists bt_winrate numeric;
 alter table public.coin_metrics add column if not exists bt_expectancy numeric;
+
+-- ---------- Stage 20: trade journal, discovery alerts, engine versioning ----------
+alter table public.saved_setups add column if not exists taken boolean default false;
+alter table public.saved_setups add column if not exists taken_at timestamptz;
+alter table public.saved_setups add column if not exists exchange text;
+alter table public.saved_setups add column if not exists fill_price numeric;
+alter table public.saved_setups add column if not exists size_units numeric;
+alter table public.saved_setups add column if not exists size_usd numeric;
+alter table public.saved_setups add column if not exists risk_usd numeric;
+alter table public.saved_setups add column if not exists exit_price numeric;
+alter table public.saved_setups add column if not exists exit_at timestamptz;
+alter table public.saved_setups add column if not exists exit_reason text;      -- tp1 | tp2 | tp3 | sl | manual | invalidated
+alter table public.saved_setups add column if not exists realized_usd numeric;
+alter table public.saved_setups add column if not exists realized_r numeric;
+alter table public.saved_setups add column if not exists fees_usd numeric;
+alter table public.saved_setups add column if not exists notes text;
+alter table public.saved_setups add column if not exists notified_status text;  -- last status the user was notified about
+
+alter table public.signal_log add column if not exists engine_version int default 1;   -- 2 = stage 19 gates
+alter table public.signal_log add column if not exists htf_aligned boolean;
+alter table public.signal_log add column if not exists venue text;
+
+-- new alert types: new_confirmed (global, filtered), trade_update (per taken setup; created automatically)
+alter table public.alerts drop constraint if exists alerts_type_check;
+alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','sentiment_zone','liquidity_change','new_listing','macro_event','whale_transfer','new_confirmed','trade_update','spot_zone'));
+
+-- ---------- Stage 21: daily digest ----------
+alter table public.profiles add column if not exists digest_enabled boolean default false;
+alter table public.profiles add column if not exists digest_hour int default 13;        -- UTC hour (13 = 8 am Toronto in winter)
+alter table public.profiles add column if not exists digest_last_sent date;
+
+-- ---------- Stage 23: engine lab ----------
+create table if not exists public.engine_lab (
+  asset_key text not null, symbol text, timeframe text not null, variant text not null,
+  candles int, signals int, filled int, wins int, losses int, expired int,
+  win_rate numeric, expectancy_r numeric, profit_factor numeric, max_dd_r numeric,
+  updated_at timestamptz default now(),
+  primary key (asset_key, timeframe, variant)
+);
+alter table public.engine_lab enable row level security;
+drop policy if exists "lab readable" on public.engine_lab;
+create policy "lab readable" on public.engine_lab for select using (true);

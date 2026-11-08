@@ -168,6 +168,35 @@ Nothing to configure. `/guide` gives click-by-click steps to place a setup on th
 
 Run `supabase/schema.sql` again (adds the engine-record columns on `coin_metrics`). Nothing else to configure. Confirmed now means all of: score beyond ±35, a trigger in the trade direction (a level break or a confirmed pattern; a completed pattern no longer counts), volume at least 0.8x average, not overextended (within 2.5 ATR of the 20 EMA, RSI not extreme), volatility not in the expanded regime, a level-based stop, TP1 at least 1R and TP2 at least 1.5R, the next-higher timeframe not against the trade, and the engine's own walk-forward record on that chart at least 50% winners with positive expectancy (once 8+ signals exist). Confirmed rows older than 10 minutes are re-checked against live candles every time the discovery page loads and demoted the moment they stop qualifying. Expect far fewer Confirmed cards and a much longer Watching list, which now says exactly which gate each one is missing.
 
+## 18. Stage 20 - trade journal and discovery alerts
+
+Run `supabase/schema.sql` again (journal columns on `saved_setups`, engine-version columns on `signal_log`, two new alert types). Nothing else to configure.
+
+- **Journal** (`/setups`, "Journal" in the menu): press **I took this trade** on a setup card or a Confirmed discovery card after placing it on your exchange, enter fill, size, exchange and fees. The worker resolves it against 15-minute candles and notifies you (push/email/inbox) when TP1, TP2, TP3 or the stop is reached; **Close at my exit** records your real exit price and computes P&L in dollars and R. Stats: win rate, realized P&L, average R, money at risk, edge check.
+- **New Confirmed Trade alert** (`/alerts`, type "New Confirmed Trade appears"): optional filters for direction, exchange listing (Coinbase implies longs only), timeframe and minimum confidence. The first worker run only seeds the watermark; later entries notify.
+- **Performance** now splits the engine's record by engine version (before/after the Stage 19 gates), by higher-timeframe agreement, and kind x version, so the effect of the stricter rules is measurable as data accumulates.
+- The Coinbase step in the trade guide now describes the attached TP/SL bracket in Advanced Trade.
+
+## 19. Stage 21 - exchange fill matching, daily digest
+
+Run `supabase/schema.sql` again (digest columns on `profiles`). The GitHub worker gains the hourly `/api/cron/digest` call; pull the new `worker.yml`.
+
+- **Match exchange fills** (Journal page): reads recent trades from your connected read-only exchange keys and proposes the real fill price, size, fees and exit for each open journal trade; you apply or skip each suggestion. Works for Coinbase, Kraken, Binance, OKX and Bybit connections.
+- **Daily digest** (Account page > Notifications): one message a day at the hour you pick, with the trade-conditions verdict, the Confirmed trades placeable on your active exchange (longs only on Coinbase), your open journal trades and anything that lost confirmation. Test it once with `/api/cron/digest?secret=<CRON_SECRET>&force=1`.
+- **Watchlist** shows the live discovery category of each coin on your list.
+
+## 20. Stage 22 - portfolio heat, onboarding, spot zone alerts
+
+Run `supabase/schema.sql` again (adds the `spot_zone` alert type). Nothing else to configure.
+
+- **Portfolio heat**: total money at risk across open journal trades as a % of the trading balance, open-trade count and a correlation warning (several altcoin longs = one market bet). Shown on the Journal; the "I took this trade" dialog previews the heat the new trade would create. Limits (default 3% total, 3 trades) live on the Account page.
+- **Getting started** checklist on the dashboard for new users: exchange, balance and risk, sign in, one alert, digest, first journal trade. Each step is detected automatically; dismissable.
+- **Spot zone alert** ("Alert me in the zone" on Spot cards): fires when the coin's price enters its accumulation zone; re-arms after leaving it.
+
+## 21. Stage 23 - Engine Lab
+
+Run `supabase/schema.sql` again (adds `engine_lab`); the pushed `worker.yml` adds the lab call. `/lab` (More menu) shows, per rule variant, pooled trades, win rate, expectancy and profit factor across the top 40 coins on 1h/4h/1d, with "better" / "worse" tags against the production rules, verdict sentences once 30+ trades exist, and the charts where the engine works best and worst. Variants live in `src/lib/ta/lab.ts`; the production thresholds in `DEFAULT_GATES` (`src/lib/ta/analysis.ts`). Change a threshold only after the lab shows it earns its place.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).

@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const sb = supabaseAdmin();
   if (!sb) return NextResponse.json({ error: "not configured", groups: [] }, { status: 501 });
   const asset = req.nextUrl.searchParams.get("asset");
-  let q = sb.from("signal_log").select("timeframe, kind, side, outcome, outcome_at, max_favorable_pct, max_adverse_pct, emitted_at, symbol, entry, tp1, sl1, asset_key").order("emitted_at", { ascending: false }).limit(5000);
+  let q = sb.from("signal_log").select("timeframe, kind, side, outcome, outcome_at, max_favorable_pct, max_adverse_pct, emitted_at, symbol, entry, tp1, sl1, asset_key, engine_version, htf_aligned, venue").order("emitted_at", { ascending: false }).limit(5000);
   if (asset) q = q.eq("asset_key", asset);
   const { data, error } = await q;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -37,6 +37,9 @@ export async function GET(req: NextRequest) {
     byTimeframe: groupBy((r) => r.timeframe),
     byKind: groupBy((r) => r.kind),
     bySide: groupBy((r) => r.side),
+    byEngine: groupBy((r) => ((r as { engine_version?: number }).engine_version ?? 1) >= 2 ? "v2 gates (stage 19+)" : "v1 (before stage 19)"),
+    byHtf: groupBy((r) => { const h = (r as { htf_aligned?: boolean | null }).htf_aligned; return h == null ? "no higher-tf data" : h ? "higher tf agrees" : "against higher tf"; }),
+    byKindEngine: groupBy((r) => `${r.kind} · ${((r as { engine_version?: number }).engine_version ?? 1) >= 2 ? "v2" : "v1"}`),
     recent: rows.slice(0, 50),
   });
 }

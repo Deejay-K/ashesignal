@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cronAuthorized, supabaseAdmin } from "@/lib/supabase/admin";
 import { getMarkets } from "@/lib/providers/coingecko";
-import { getKlines, getTradingSymbols } from "@/lib/providers/binance";
+import { getOhlcv } from "@/lib/market/ohlcv";
 import { analyzeTimeframe } from "@/lib/ta/analysis";
 import { safe } from "@/lib/fetch";
 import type { Timeframe } from "@/lib/types";
@@ -27,14 +27,9 @@ export async function GET(req: Request) {
   if (!sb) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 501 });
   const top = await safe(getMarkets(1, 60, false));
   if (!top.ok) return NextResponse.json({ error: top.error }, { status: 502 });
-  let syms: Set<string>;
-  try {
-    syms = await getTradingSymbols();
-  } catch (e) {
-    return NextResponse.json({ error: "binance unreachable: " + (e as Error).message }, { status: 502 });
-  }
   const url = new URL(req.url);
-  const allCoins = top.data.filter((c) => syms.has(`${c.symbol}USDT`)).slice(0, 30);
+  const EXCL = /^(USDT|USDC|DAI|FDUSD|TUSD|PYUSD|USDE|USDS|WBTC|WETH|STETH|WSTETH|CBBTC|RETH|WEETH|WBETH|XAUT|PAXG|USD1|RLUSD)$/i;
+  const allCoins = top.data.filter((c) => !EXCL.test(c.symbol)).slice(0, 30); // exchange-independent: candles from whichever CEX lists the coin
   const BATCH = 8;
   const batches = Math.ceil(allCoins.length / BATCH);
   const batchParam = url.searchParams.get("batch");
@@ -46,17 +41,20 @@ export async function GET(req: Request) {
   const rows: Record<string, unknown>[] = [];
   await Promise.all(
     coins.map(async (c) => {
-      const ks = await Promise.all(TFS.map((tf) => safe(getKlines(`${c.symbol}USDT`, tf, 300))));
+      const ks = await Promise.all(TFS.map((tf) => safe(getOhlcv({ symbol: c.symbol, coingeckoId: c.id }, tf, 300))));
+      const analyses = ks.map((k, i) => (k.ok && k.data.quality === "verified" && k.data.candles.length ? analyzeTimeframe(TFS[i], k.data.candles) : null));
       ks.forEach((k, i) => {
-        if (!k.ok) return;
+        if (!k.ok || k.data.quality !== "verified") return;
         const tf = TFS[i];
-        const a = analyzeTimeframe(tf, k.data);
+        const a = analyses[i];
         if (!a?.setup || a.setup.kind === "watch") return;
+        const htf = analyses[i + 1];
+        const htfAligned = htf ? !(a.setup.side === "LONG" ? htf.trend.direction === "down" || htf.score <= -15 : htf.trend.direction === "up" || htf.score >= 15) : null;
         const key = `cg:${c.id}|${tf}|${a.setup.side}`;
         if (openSet.has(key)) return;
         openSet.add(key);
         const s = a.setup;
-        rows.push({ asset_key: `cg:${c.id}`, symbol: c.symbol, timeframe: tf, side: s.side, kind: s.kind, entry: s.entry.mid, tp1: s.takeProfits[0]?.price, tp2: s.takeProfits[1]?.price, tp3: s.takeProfits[2]?.price, sl1: s.stopLosses[0]?.price, score: a.score, confidence: s.confidence });
+        rows.push({ engine_version: 2, htf_aligned: htfAligned, venue: k.data.source, asset_key: `cg:${c.id}`, symbol: c.symbol, timeframe: tf, side: s.side, kind: s.kind, entry: s.entry.mid, tp1: s.takeProfits[0]?.price, tp2: s.takeProfits[1]?.price, tp3: s.takeProfits[2]?.price, sl1: s.stopLosses[0]?.price, score: a.score, confidence: s.confidence });
       });
     }),
   );

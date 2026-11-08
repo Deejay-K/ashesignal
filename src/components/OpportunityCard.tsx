@@ -6,6 +6,7 @@ import { RiskBadge } from "@/components/ui";
 import { fmtPct, fmtUsd, pctClass, timeAgo } from "@/lib/format";
 import type { Opportunity } from "@/lib/market/opportunities";
 import Term from "@/components/Term";
+import TakeTradeDialog from "@/components/TakeTradeDialog";
 import { currentVenue } from "@/lib/venue-pref";
 import { VENUE_META, isVenueId, tradeLink } from "@/lib/venues";
 
@@ -63,6 +64,7 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [hist, setHist] = useState<any[] | null>(null);
+  const [taking, setTaking] = useState(false);
   const copy = async () => { try { await navigator.clipboard.writeText(copyTradeText(o)); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} };
   const loadHist = async () => { if (hist) { setHist(null); return; } const r = await fetch(`/api/opportunities/history?asset=${encodeURIComponent(o.assetKey)}`); setHist((await r.json()).rows ?? []); };
   const tone = o.category === "confirmed" ? "opp-card-green" : o.category === "speculative" ? "opp-card-amber" : o.category === "spot" ? "opp-card-violet" : "opp-card-blue";
@@ -103,9 +105,12 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
         {o.category !== "speculative" && o.venues?.length ? <a className="btn-ghost" target="_blank" rel="noreferrer" href={tradeLink(o.venues[0], o.symbol)} title={o.venues[0] === currentVenue() ? "Opens the spot pair on your active exchange in a new tab. You place the order yourself." : `Not listed on your active exchange; opens on ${VENUE_META[o.venues[0]].label} instead.`}>Open on {VENUE_META[o.venues[0]].label} ↗</a> : null}
         {s ? <Link className="btn-ghost" href={`/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, tf: o.timeframe ?? "", leverage: String(s.leverage?.recommended ?? 1) })}`}>Size it</Link> : null}
         {s ? <Link className="btn-ghost" href={`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0]?.price ?? ""), stop2: String(s.stopLosses[1]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, leverage: String(s.leverage?.recommended ?? 1), venue: o.venues?.[0] ?? currentVenue() })}`}>How to place it</Link> : null}
+        {s && o.category === "confirmed" ? <button className="btn-ghost" onClick={() => setTaking(true)}>I took this trade</button> : null}
+        {o.category === "spot" ? <Link className="btn-ghost" href={`/alerts?symbol=${encodeURIComponent(o.symbol)}&asset=${encodeURIComponent(o.assetKey)}&type=spot_zone`}>Alert me in the zone</Link> : null}
         <button className="btn-ghost" onClick={loadHist}>{hist ? "Hide history" : "History"}</button>
         <span className="ml-auto text-fg-3">in category {timeAgo(Date.parse(o.firstSeen))} · updated {timeAgo(Date.parse(o.updatedAt))}</span>
       </footer>
+      {taking && s ? <TakeTradeDialog setup={{ side: s.side, kind: s.kind, entry: s.entry, takeProfits: s.takeProfits, stopLosses: s.stopLosses, rr: s.rr, confidence: s.confidence, leverage: s.leverage }} symbol={o.symbol} timeframe={o.timeframe ?? "4h"} assetKey={o.assetKey} score={d?.score ?? null} onClose={() => setTaking(false)} /> : null}
       {hist ? (
         <div className="border-t border-border px-3 py-2 text-xs">
           {!hist.length ? <span className="text-fg-3">No category changes recorded yet.</span> : (

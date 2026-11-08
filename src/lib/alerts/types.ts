@@ -18,5 +18,8 @@ export const ALERT_TYPES = [
   { type: "new_listing", label: "New token listings (global)", params: [] },
   { type: "macro_event", label: "High-impact macro event within 2 h (global)", params: [] },
   { type: "whale_transfer", label: "Whale transfer on a DEX token (>= $ amount)", params: ["usd"] },
+  { type: "new_confirmed", label: "New Confirmed Trade appears (global, filtered)", params: [] },
+  { type: "trade_update", label: "Journal trade reaches a target or stop (automatic)", params: [] },
+  { type: "spot_zone", label: "Spot pick enters its accumulation zone (per coin)", params: [] },
 ] as const;
 export type AlertType = (typeof ALERT_TYPES)[number]["type"];

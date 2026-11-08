@@ -5,6 +5,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOhlcv, type AssetRef } from "@/lib/market/ohlcv";
 import type { Candle } from "@/lib/types";
+import { deliver } from "./notify";
+import { fmtUsd } from "@/lib/format";
 
 export function assetRefFromKey(key: string, symbol: string): AssetRef {
   if (key.startsWith("cg:")) return { symbol, coingeckoId: key.slice(3) };
@@ -99,6 +101,19 @@ export async function resolveTable(sb: SupabaseClient, table: "saved_setups" | "
       patch.outcome = res.status; // provisional; finalised when tp3/sl/expiry hits
     }
     if (done) resolved++;
+    // Journal trades: tell the user when the status moves (TP1/TP2/TP3 reached, stop hit, expired), once per status.
+    if (isSaved && row.taken && patch.status && patch.status !== row.status && patch.status !== row.notified_status) {
+      const st = String(patch.status);
+      const units = Number(row.size_units ?? 0);
+      const fill = Number(row.fill_price ?? entry);
+      const lvl = st === "sl" ? Number(row.sl1) : st.startsWith("tp") ? Number(row[st as "tp1" | "tp2" | "tp3"]) : null;
+      const dir = row.side === "LONG" ? 1 : -1;
+      const pnl = lvl != null && units > 0 ? (lvl - fill) * dir * units : null;
+      const title = st === "sl" ? `${row.symbol} ${row.side}: stop reached at ${fmtUsd(lvl)}` : st === "expired" ? `${row.symbol} ${row.side}: no target or stop within 30 days` : `${row.symbol} ${row.side}: ${st.toUpperCase()} reached at ${fmtUsd(lvl)}`;
+      const body = `${st === "sl" ? "Your exchange stop should have closed the position." : st.startsWith("tp") ? `Take the ${st === "tp1" ? "first 30%" : st === "tp2" ? "next 30%" : "rest"} if it has not filled, ${st === "tp1" ? "and move the stop to break-even at " + fmtUsd(fill) : "and trail the stop"}.` : "Consider closing or re-evaluating."}${pnl != null ? ` Estimated ${pnl >= 0 ? "profit" : "loss"} on this leg: ${fmtUsd(Math.abs(pnl))}.` : ""} Record your real exit in the journal.`;
+      await deliver(sb, { userId: row.user_id, alertId: null, symbol: row.symbol, title, body, url: "/setups" });
+      patch.notified_status = st;
+    }
     await sb.from(table).update(patch).eq("id", row.id);
   }
   return { checked, resolved };

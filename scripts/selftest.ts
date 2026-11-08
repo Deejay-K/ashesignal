@@ -1,5 +1,6 @@
 // Engine self-test on synthetic candles (no network). Run: npx tsx scripts/selftest.ts
 import { analyzeTimeframe } from "../src/lib/ta/analysis";
+import { backtest } from "../src/lib/ta/backtest";
 import { detectPatterns } from "../src/lib/ta/patterns";
 import { categorize, detailSnapshot } from "../src/lib/market/categorize";
 import { sizePosition } from "../src/lib/risk/position";
@@ -173,6 +174,23 @@ import { resolveAgainst } from "../src/lib/alerts/resolve";
   c4("trade links are https", VENUE_IDS.every((v) => tradeLink(v, "ETH").startsWith("https://")) && VENUE_META.coinbase.instrument("ETH", "USD") === "ETH-USD");
   console.log(f4 ? `\n${f4} VENUE FAILED` : "VENUE PASS");
   if (f4) process.exit(1);
+}
+
+// ---- Stage 23: gate parameters ----
+{
+  let f5 = 0;
+  const c5 = (n: string, ok: boolean, info?: unknown) => { console.log(`${ok ? "PASS" : "FAIL"} ${n}`, info ?? ""); if (!ok) f5++; };
+  const strict = analyzeTimeframe("1h", rangeBreakout(1, 30, 1, 0.009, 0.008), { band: 95 })!;
+  c5("band 95 makes the breakout speculative", strict.setup?.kind === "speculative" && strict.setup.quality.confirmGaps.some((g) => g.includes("±95")));
+  const loose = analyzeTimeframe("1h", up, { band: 5, volMin: 0, stretchMax: 99, tp1Min: 0, tp2Min: 0 })!;
+  c5("loose gates never add band/volume/stretch/target gaps", !loose.setup || !loose.setup.quality.confirmGaps.some((g) => /band|Volume|ATR from|TP1 pays|TP2 pays/.test(g)));
+  const b1 = backtest("1h", rangeBreakout(2, 60, 2, 0.012, 0.01), { step: 5, minHistory: 120, onlyConfirmed: true });
+  const b2 = backtest("1h", rangeBreakout(2, 60, 2, 0.012, 0.01), { step: 5, minHistory: 120, onlyConfirmed: false });
+  c5("confirmed-only backtest takes no more trades than all-tradeable", b1.signals <= b2.signals, [b1.signals, b2.signals]);
+  const b3 = backtest("1h", rangeBreakout(2, 60, 2, 0.012, 0.01), { step: 5, minHistory: 120, onlyConfirmed: true, htfFilter: true });
+  c5("HTF filter runs and never adds trades", b3.signals <= b1.signals, [b3.signals, b1.signals]);
+  console.log(f5 ? `\n${f5} LAB FAILED` : "LAB PASS");
+  if (f5) process.exit(1);
 }
 
 // ---- Formatting rule: no em/en dashes anywhere in the project ----

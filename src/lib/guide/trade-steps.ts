@@ -105,10 +105,10 @@ const UI: Record<VenueId, {
     leverageWhere: "Not applicable on spot; stay at",
     limitName: "Limit",
     sizeField: "Amount (toggle between coin and USD with the small switch)",
-    spotTpSl: ["Coinbase Advanced has no OCO: after your buy fills, place a 'Stop limit' sell order for the stop (Stop price = your stop, Limit price about 0.3% below it) for the full amount.", "Place the take-profits as separate limit sells at each target with the partial amounts.", "When a target fills, edit the stop order to the remaining amount; when the stop fills, cancel the remaining limit sells."],
+    spotTpSl: ["In the Coinbase Advanced order form (Limit tab) tick the 'TP/SL' checkbox under the amount. Two rows appear: 'Take profit' and 'Stop loss', each with a price and a % field and an estimated P&L.", "Enter the stop price in 'Stop loss' and one target in 'Take profit'. This bracket is attached to the buy: it is placed automatically when the buy fills and whichever side hits first cancels the other. The stop executes as a market sell when triggered.", "The bracket exits the whole position at one target. For the 30/30/40 plan, either put TP2 in the bracket and take everything there, or leave 'Take profit' empty and place three separate limit sells after the fill (then reduce the stop as each fills)."],
     perpTpSl: ["Where perpetuals are available, the order form has TP/SL fields; set them with the prices below."],
     shortOnSpot: null,
-    oco: false,
+    oco: true,
     notes: ["Coinbase spot cannot short. A SHORT setup on Coinbase means: if you hold the coin, this is a signal to reduce or exit, not a trade to open."],
   },
 };

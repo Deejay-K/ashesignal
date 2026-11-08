@@ -6,7 +6,7 @@ import { fmtUsd, timeAgo } from "@/lib/format";
 import Term from "@/components/Term";
 
 interface G { key: string; total: number; open: number; tp1: number; tp2: number; tp3: number; sl: number; expired: number; avgMfe: number; avgMae: number; winRate: number | null }
-interface Res { total: number; byTimeframe: G[]; byKind: G[]; bySide: G[]; recent: { symbol: string; timeframe: string; side: string; kind: string; entry: number; tp1: number; sl1: number; outcome: string | null; outcome_at: string | null; emitted_at: string; max_favorable_pct: number | null; max_adverse_pct: number | null }[]; error?: string }
+interface Res { total: number; byTimeframe: G[]; byKind: G[]; bySide: G[]; byEngine?: G[]; byHtf?: G[]; byKindEngine?: G[]; recent: { symbol: string; timeframe: string; side: string; kind: string; entry: number; tp1: number; sl1: number; outcome: string | null; outcome_at: string | null; emitted_at: string; max_favorable_pct: number | null; max_adverse_pct: number | null }[]; error?: string }
 
 export default function PerformancePage() {
   const [d, setD] = useState<Res | null>(null);
@@ -24,6 +24,9 @@ export default function PerformancePage() {
           <div className="grid gap-4 lg:grid-cols-3">
             <Group title="By timeframe" g={d.byTimeframe} />
             <Group title="By signal kind" g={d.byKind} />
+            {d.byEngine?.length ? <Group title="Engine version (stricter gates from Stage 19)" g={d.byEngine} /> : null}
+            {d.byHtf?.length ? <Group title="Higher-timeframe agreement" g={d.byHtf} /> : null}
+            {d.byKindEngine?.length ? <Group title="Kind x engine version" g={d.byKindEngine} /> : null}
             <Group title="By side" g={d.bySide} />
           </div>
           <Section title={`Recent signals (${d.total} logged)`}>

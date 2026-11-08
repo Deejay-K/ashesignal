@@ -13,6 +13,7 @@ import MarketBriefing from "@/components/MarketBriefing";
 import TradeConditions from "@/components/TradeConditions";
 import Term from "@/components/Term";
 import Welcome from "@/components/Welcome";
+import GettingStarted from "@/components/GettingStarted";
 import { cookies } from "next/headers";
 import { VENUE_COOKIE } from "@/lib/venue-pref";
 import { DEFAULT_VENUE, VENUE_META, isVenueId, type VenueId } from "@/lib/venues";
@@ -33,6 +34,7 @@ export default async function Dashboard() {
   return (
     <div className="space-y-4">
       <Welcome />
+      <GettingStarted />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
         <StatCard label="Total market cap" value={fmtUsd(ov?.totalMarketCapUsd.value, { compact: true })} sub={<span className={pctClass(ov?.marketCapChange24hPct.value)}>{fmtPct(ov?.marketCapChange24hPct.value)} 24h</span>} />
         <StatCard label="24h volume" value={fmtUsd(ov?.totalVolume24hUsd.value, { compact: true })} sub="all exchanges · CoinGecko" />
