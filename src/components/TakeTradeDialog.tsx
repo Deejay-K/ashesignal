@@ -33,6 +33,10 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
   const [units, setUnits] = useState("");
   const [fees, setFees] = useState("");
   const [notes, setNotes] = useState("");
+  const needsLevels = !setup.stopLosses.length;
+  const [myStop, setMyStop] = useState("");
+  const [myTp1, setMyTp1] = useState("");
+  const [myTp2, setMyTp2] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [guest, setGuest] = useState(false);
@@ -41,7 +45,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
   // keep units and dollars in sync whichever one is typed
   const onUsd = (v: string) => { setSizeUsd(v); if (f > 0) setUnits(num(v) > 0 ? String(+(num(v) / f).toFixed(6)) : ""); };
   const onUnits = (v: string) => { setUnits(v); if (f > 0) setSizeUsd(num(v) > 0 ? String(+(num(v) * f).toFixed(2)) : ""); };
-  const sl = setup.stopLosses[0]?.price;
+  const sl = needsLevels ? (num(myStop) || undefined) : setup.stopLosses[0]?.price;
   const riskUsd = f > 0 && u > 0 && sl ? Math.abs(f - sl) * u : null;
   const rr = setup.riskRewardTp2 ?? setup.rr;
   const [heat, setHeat] = useState<{ level: string; messages: string[] } | null>(null);
@@ -54,7 +58,8 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
   const save = async () => {
     setBusy(true); setErr(null);
     try {
-      const r = await fetch("/api/me/setups", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ setup: { ...setup, riskRewardTp2: rr ?? 0 }, symbol, timeframe, assetKey, score, taken: true, exchange: venue, fillPrice: f || null, sizeUnits: u || null, sizeUsd: su || null, riskUsd, feesUsd: num(fees) || null, notes }) });
+      const effective = needsLevels ? { ...setup, stopLosses: sl ? [{ price: sl }] : [], takeProfits: [num(myTp1), num(myTp2)].filter((x) => x > 0).map((price) => ({ price })), entry: { low: f, high: f, mid: f } } : setup;
+      const r = await fetch("/api/me/setups", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ setup: { ...effective, riskRewardTp2: rr ?? 0 }, symbol, timeframe, assetKey, score, taken: true, exchange: venue, fillPrice: f || null, sizeUnits: u || null, sizeUsd: su || null, riskUsd, feesUsd: num(fees) || null, notes }) });
       if (r.status === 401) { setGuest(true); setBusy(false); return; }
       if (!r.ok) throw new Error((await r.json()).error ?? "save failed");
       onSaved?.();
@@ -69,7 +74,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="font-semibold">I took this trade</div>
-            <div className="text-xs text-fg-3">{symbol} {setup.side} · {timeframe} · stop {fmtUsd(sl)} · TP1 {fmtUsd(setup.takeProfits[0]?.price)}</div>
+            <div className="text-xs text-fg-3">{symbol} {setup.side} · {timeframe}{sl ? ` · stop ${fmtUsd(sl)}` : ""}{setup.takeProfits[0] ? ` · TP1 ${fmtUsd(setup.takeProfits[0].price)}` : ""}</div>
           </div>
           <button className="btn-ghost text-xs" onClick={onClose}>Close</button>
         </div>
@@ -78,6 +83,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
         ) : (
           <>
             {setup.kind === "spot" ? <p className="rounded border border-border bg-bg-2 px-2 py-1 text-xs text-fg-2"><b>Spot purchase.</b> The "stop" here is 15% under the accumulation zone, a review level rather than an order; targets are the profit-taking zones. Status updates come as price reaches them.</p> : null}
+            {needsLevels ? <p className="rounded border border-amber/40 bg-amber-dim px-2 py-1 text-xs text-amber"><b>No engine levels for this token</b> (too new, too thin, or no setup). Enter the stop you placed; without a stop the journal cannot measure risk or tell you when you are out.</p> : null}
             {setup.kind !== "confirmed" && setup.kind !== "spot" ? <p className="rounded border border-amber/40 bg-amber-dim px-2 py-1 text-xs text-amber"><b>Not a confirmed setup</b> ({setup.kind}). You can record it, and you should if you placed it, but the journal and the weekly review will count it as a non-confirmed trade.</p> : null}
             <p className="text-xs text-fg-2">Enter what you actually did on the exchange. The journal then tracks it against live price, tells you when TP or SL is reached, and computes your real P&L. Nothing is sent to the exchange.</p>
             <div className="grid grid-cols-2 gap-2 text-xs text-fg-3">
@@ -85,6 +91,11 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
               <label>Fill price<input inputMode="decimal" className="num" value={fill} onChange={(e) => setFill(e.target.value)} /></label>
               <label>Size (USD)<input inputMode="decimal" className="num" placeholder="e.g. 50" value={sizeUsd} onChange={(e) => onUsd(e.target.value)} /></label>
               <label>Size (units)<input inputMode="decimal" className="num" value={units} onChange={(e) => onUnits(e.target.value)} /></label>
+              {needsLevels ? <>
+                <label>Your stop loss (required)<input inputMode="decimal" className="num" placeholder="price where you are wrong" value={myStop} onChange={(e) => setMyStop(e.target.value)} /></label>
+                <label>Your target (optional)<input inputMode="decimal" className="num" placeholder="TP1 price" value={myTp1} onChange={(e) => setMyTp1(e.target.value)} /></label>
+                <label>Second target (optional)<input inputMode="decimal" className="num" placeholder="TP2 price" value={myTp2} onChange={(e) => setMyTp2(e.target.value)} /></label>
+              </> : null}
               <label>Fees paid (USD, optional)<input inputMode="decimal" className="num" placeholder="0.03" value={fees} onChange={(e) => setFees(e.target.value)} /></label>
               <label>Leverage used<input className="num" disabled value={`${setup.leverage?.recommended ?? 1}x recommended`} /></label>
               <label className="col-span-2">Notes (why you took it, how you feel)<input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="optional" /></label>
@@ -93,7 +104,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
             {heat ? <div className={`rounded border px-2 py-1 text-xs ${heat.level === "stop" ? "border-red/50 bg-red/10 text-red" : heat.level === "caution" ? "border-amber/40 bg-amber-dim text-amber" : "border-border bg-bg-2 text-fg-2"}`}><b>{heat.level === "stop" ? "Over your risk limits with this trade." : heat.level === "caution" ? "Heads up." : "Within limits."}</b> {heat.messages.join(" ")}</div> : null}
             {err ? <p className="text-xs text-red">{err}</p> : null}
             <div className="flex flex-wrap gap-2">
-              <button className="btn text-sm" disabled={busy || !(f > 0)} onClick={save}>{busy ? "Saving…" : "Record in journal"}</button>
+              <button className="btn text-sm" disabled={busy || !(f > 0) || (needsLevels && !(num(myStop) > 0))} onClick={save}>{busy ? "Saving…" : "Record in journal"}</button>
               <Link className="btn-ghost text-sm" href={`/guide?${new URLSearchParams({ side: setup.side, entry: String(setup.entry.mid), stop: String(sl ?? ""), tp1: String(setup.takeProfits[0]?.price ?? ""), tp2: String(setup.takeProfits[1]?.price ?? ""), tp3: String(setup.takeProfits[2]?.price ?? ""), symbol, leverage: String(setup.leverage?.recommended ?? 1), venue })}`}>How to place it</Link>
             </div>
           </>
