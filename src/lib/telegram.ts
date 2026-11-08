@@ -30,3 +30,24 @@ export function linkCode(): string {
   for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
 }
+
+/** Register the "/" command menu and the bot description shown before Start. */
+export async function tgRegisterCommands() {
+  const commands = [
+    { command: "trades", description: "Confirmed trades you can place on your exchange" },
+    { command: "today", description: "Trade conditions and market regime" },
+    { command: "coin", description: "What the engine says about a coin, e.g. /coin SOL" },
+    { command: "me", description: "Your open trades, heat and recent record (linked)" },
+    { command: "link", description: "Connect this chat to your AsheSignal account" },
+    { command: "unlink", description: "Disconnect this chat" },
+    { command: "help", description: "All commands" },
+  ];
+  const post = (method: string, body: unknown) => fetch(`${API()}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" }).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) }));
+  const [cmds, groupCmds, desc, short] = await Promise.all([
+    post("setMyCommands", { commands, scope: { type: "default" } }),
+    post("setMyCommands", { commands: commands.filter((c) => c.command !== "link" && c.command !== "unlink" && c.command !== "me"), scope: { type: "all_group_chats" } }),
+    post("setMyDescription", { description: "AsheSignal: crypto trade conditions, confirmed setups, coin analysis and your trading journal, from the AsheSignal engine. Manual trading only. Not financial advice." }),
+    post("setMyShortDescription", { short_description: "Crypto setups, conditions and journal from AsheSignal. Manual trading only." }),
+  ]);
+  return { commands: cmds, groupCommands: groupCmds, description: desc, shortDescription: short };
+}

@@ -26,8 +26,15 @@ export async function POST(req: NextRequest) {
   const update = await req.json().catch(() => null);
   const msg = update?.message;
   const chatId = msg?.chat?.id != null ? String(msg.chat.id) : null;
-  const text: string = (msg?.text ?? "").trim();
+  let text: string = (msg?.text ?? "").trim();
   if (!chatId || !text) return NextResponse.json({ ok: true });
+  const isGroup = msg.chat?.type === "group" || msg.chat?.type === "supergroup";
+  if (isGroup && !text.startsWith("/")) {
+    // In groups only react when addressed (mention or reply to the bot), so the bot does not answer every message.
+    const mentioned = /@\w*bot\b/i.test(text) || msg.reply_to_message?.from?.is_bot;
+    if (!mentioned) return NextResponse.json({ ok: true });
+    text = text.replace(/@\w+/g, "").trim();
+  }
   const sb = supabaseAdmin();
   if (!sb) { await tgSend(chatId, "This deployment has no database configured."); return NextResponse.json({ ok: true }); }
   await ensureEngineConfig();
