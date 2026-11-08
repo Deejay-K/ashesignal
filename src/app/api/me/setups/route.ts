@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
     payload: s,
     // journal fields (optional): "I took this trade"
     taken: !!b.taken,
+    paper: !!b.paper,
     taken_at: b.taken ? new Date().toISOString() : null,
     exchange: b.exchange ?? null,
     fill_price: num(b.fillPrice),

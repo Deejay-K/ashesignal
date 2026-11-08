@@ -7,6 +7,7 @@ import { fmtPct, fmtUsd, pctClass, timeAgo } from "@/lib/format";
 import type { Opportunity } from "@/lib/market/opportunities";
 import Term from "@/components/Term";
 import TakeTradeDialog from "@/components/TakeTradeDialog";
+import CalibrationBadge from "@/components/CalibrationBadge";
 import { currentVenue } from "@/lib/venue-pref";
 import { VENUE_META, isVenueId, tradeLink } from "@/lib/venues";
 
@@ -82,7 +83,7 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
           {o.side ? <span className={`pill ${o.side === "LONG" ? "pill-mint" : "pill-red"}`}>{o.side}</span> : <span className={`pill ${o.bias === "bullish" ? "pill-mint" : o.bias === "bearish" ? "pill-red" : "pill-gray"}`}>{o.bias}</span>}
           {o.timeframe ? <span className="pill pill-gray">{o.timeframe}</span> : null}
           <RiskBadge level={o.risk} />
-          {o.confidence != null ? <span className="pill pill-gray num">{o.category === "spot" ? "score" : "conf"} {o.confidence}</span> : null}
+          {o.confidence != null ? (o.category === "spot" || o.category === "speculative" ? <span className="pill pill-gray num">{o.category === "spot" ? "score" : "conf"} {o.confidence}</span> : <CalibrationBadge confidence={o.confidence} kind={o.category === "confirmed" ? "confirmed" : "speculative"} />) : null}
           {o.rr != null ? <span className="pill pill-gray num">{o.rr}R</span> : null}
         </div>
       </header>

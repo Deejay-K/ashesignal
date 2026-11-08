@@ -78,8 +78,10 @@ export async function evaluateAlerts(sb: SupabaseClient) {
           const minConf = Number(a.params.minConf ?? 0);
           const venue = a.params.venue ? String(a.params.venue) : null;
           const listings = venue ? await venueListings() : null;
+          const onlyAsset = a.asset_key?.startsWith("cg:") ? a.asset_key : null; // per-coin variant from the token page
           const hits = hist.filter((h) => {
             const snap = (h.snapshot ?? {}) as { side?: string; kind?: string; confidence?: number };
+            if (onlyAsset && h.asset_key !== onlyAsset) return false;
             if (wantSide && snap.side !== wantSide) return false;
             if (wantTf && h.timeframe !== wantTf) return false;
             if (minConf && (snap.confidence ?? 0) < minConf) return false;

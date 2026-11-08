@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const { data: auth } = await sb.auth.getUser();
   if (!auth.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const [{ data: open }, { data: prof }] = await Promise.all([
-    sb.from("saved_setups").select("symbol, side, risk_usd, timeframe").eq("user_id", auth.user.id).eq("taken", true).is("exit_price", null).eq("status", "open"),
+    sb.from("saved_setups").select("symbol, side, risk_usd, timeframe").eq("user_id", auth.user.id).eq("taken", true).eq("paper", false).is("exit_price", null).eq("status", "open"),
     sb.from("profiles").select("trading_balance, preferences").eq("id", auth.user.id).maybeSingle(),
   ]);
   const trades: OpenTrade[] = (open ?? []).map((t) => ({ symbol: t.symbol, side: t.side, riskUsd: t.risk_usd == null ? null : Number(t.risk_usd), timeframe: t.timeframe }));

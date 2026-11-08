@@ -217,6 +217,15 @@ No schema change. The header now has five hubs (Home, Trade, Portfolio, Alerts, 
 
 **Ask AsheSignal** (the floating "Ask" button on every page) answers questions grounded in the engine: a coin ("what does the engine say about SOL"), today's trades on your exchange, your journal and heat (signed in), position sizing, spot picks, market regime, how to place an order. With `AI_API_KEY` set the prose comes from your model over a context the engine assembled (numbers are never invented by the model); without it the built-in writer answers from templates. 20 questions per 10 minutes per address. It never tells you to buy or sell.
 
+## 25. Stage 32 - Telegram bot, paper trading, calibration
+
+Run `supabase/schema.sql` again (Telegram columns on `profiles`, `paper` on `saved_setups`).
+
+- **Telegram bot** (free): in Telegram open @BotFather, send `/newbot`, pick a name and a username, copy the token. Vercel env: `TELEGRAM_BOT_TOKEN=<token>` (optional `TELEGRAM_WEBHOOK_SECRET`, defaults to CRON_SECRET). Redeploy, then open `https://<your-url>/api/telegram/setup?secret=<CRON_SECRET>` once (registers the webhook; the answer shows the bot's username). On the Account page the Telegram section shows `/link CODE`; send that to the bot. From then on alerts, digest and weekly review arrive in Telegram, and the bot answers `/trades`, `/today`, `/me`, `/coin SOL` or plain questions with the same grounded assistant as the in-app Ask.
+- **Paper trading**: tick "Paper trade" in the "I took this trade" dialog. Paper trades get their own Journal tab and stats, are graded identically, and are excluded from portfolio heat and the weekly review's real-money numbers.
+- **Confidence calibration**: `/api/calibration` buckets resolved signals by confidence band; the Performance page shows the table and cards show "conf 71 · 58% hit" once a band has 5+ resolved signals.
+- **Tell me when it confirms** on any setup card creates a per-coin Confirmed alert.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).

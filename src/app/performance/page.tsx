@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Calibration from "@/components/CalibrationTable";
 import { Disclaimer, Empty, Section } from "@/components/ui";
 import { fmtUsd, timeAgo } from "@/lib/format";
 import Term from "@/components/Term";
@@ -23,6 +24,7 @@ export default function PerformancePage() {
         <>
           <div className="grid gap-4 lg:grid-cols-3">
             <Group title="By timeframe" g={d.byTimeframe} />
+            <Calibration />
             <Group title="By signal kind" g={d.byKind} />
             {d.byEngine?.length ? <Group title="Engine version (stricter gates from Stage 19)" g={d.byEngine} /> : null}
             {d.byHtf?.length ? <Group title="Higher-timeframe agreement" g={d.byHtf} /> : null}

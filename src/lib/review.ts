@@ -21,8 +21,9 @@ export interface WeeklyReview {
 
 export function buildWeeklyReview(opts: { journal: JournalRow[]; signals: SignalRow[]; history: HistoryRow[]; tradingBalance: number | null; riskPct: number | null; from: Date; to: Date }): WeeklyReview {
   const inWeek = (iso: string | null) => !!iso && Date.parse(iso) >= opts.from.getTime() && Date.parse(iso) < opts.to.getTime();
-  const taken = opts.journal.filter((t) => inWeek(t.taken_at ?? t.created_at));
-  const closed = opts.journal.filter((t) => t.realized_r != null && inWeek(t.exit_at));
+  const real = opts.journal.filter((t) => !(t as { paper?: boolean }).paper);
+  const taken = real.filter((t) => inWeek(t.taken_at ?? t.created_at));
+  const closed = real.filter((t) => t.realized_r != null && inWeek(t.exit_at));
   const wins = closed.filter((t) => (t.realized_r ?? 0) > 0).length;
   const losses = closed.filter((t) => (t.realized_r ?? 0) < 0).length;
   const pnl = closed.reduce((s, t) => s + (t.realized_usd ?? 0), 0);
@@ -30,7 +31,8 @@ export function buildWeeklyReview(opts: { journal: JournalRow[]; signals: Signal
   const sorted = [...closed].sort((a, b) => (b.realized_r ?? 0) - (a.realized_r ?? 0));
   const best = sorted[0] ? { symbol: sorted[0].symbol, r: sorted[0].realized_r ?? 0 } : null;
   const worst = sorted.length ? { symbol: sorted[sorted.length - 1].symbol, r: sorted[sorted.length - 1].realized_r ?? 0 } : null;
-  const open = opts.journal.filter((t) => t.realized_r == null && t.status === "open").length;
+  const open = real.filter((t) => t.realized_r == null && t.status === "open").length;
+  const paperCount = opts.journal.filter((t) => (t as { paper?: boolean }).paper && inWeek(t.taken_at ?? t.created_at)).length;
 
   // mistakes the data can see
   const flags: string[] = [];
@@ -64,6 +66,7 @@ export function buildWeeklyReview(opts: { journal: JournalRow[]; signals: Signal
   const lessons: string[] = [];
   if (closed.length >= 3 && avgR != null) lessons.push(avgR > 0 ? `Positive expectancy this week (${avgR}R per trade). Keep the same size; the goal is more weeks like this, not bigger ones.` : `Negative expectancy this week (${avgR}R per trade). Look at the flags above before the next trade; the fix is usually in exits, not entries.`);
   if (closed.length && wins + losses && wins / (wins + losses) >= 0.6 && (avgR ?? 0) < 0.3) lessons.push("High win rate but low R: winners are being cut short or stops are too wide relative to targets.");
+  if (paperCount) lessons.push(`${paperCount} paper trade${paperCount > 1 ? "s" : ""} this week (not counted above). Paper results count when they match what you would really do, size included.`);
   if (!taken.length) lessons.push("No trades this week. If conditions were poor, that is a win. If setups were there and you hesitated, pick one next week and size it at half your normal risk.");
   if (eng.confirmedNew && taken.length === 0) lessons.push(`The engine produced ${eng.confirmedNew} new Confirmed entries you did not take. Review a few on the History feed to calibrate trust either way.`);
 

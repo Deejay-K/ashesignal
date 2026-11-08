@@ -69,7 +69,7 @@ function Alerts() {
               {form.type === "liquidity_change" ? <label>Token contract address<input className="num" required value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="0x… or Solana mint" /></label> : null}
               {form.type === "new_confirmed" ? (
                 <div className="space-y-2 rounded-lg border border-mint/40 bg-mint-dim p-2">
-                  <p className="text-fg-2">Fires when a coin enters Confirmed Trades. Leave filters empty for everything, or narrow it to what you can actually trade.</p>
+                  <p className="text-fg-2">Fires when a coin enters Confirmed Trades. Leave filters empty for everything, or narrow it to what you can actually trade.{form.symbol ? ` Because a coin is selected (${form.symbol.toUpperCase()}), it fires only for that coin.` : ""}</p>
                   <div className="grid grid-cols-2 gap-2">
                     <label>Direction<select value={form.side} onChange={(e) => setForm({ ...form, side: e.target.value })}><option value="">Both</option><option value="LONG">Longs only</option><option value="SHORT">Shorts only</option></select></label>
                     <label>Listed on<select value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })}><option value="">Any exchange</option>{VENUE_IDS.map((v) => <option key={v} value={v}>{VENUE_META[v].label}{!VENUE_META[v].canShort ? " (longs only)" : ""}</option>)}</select></label>

@@ -1,6 +1,7 @@
 // Notification delivery: Web Push (VAPID) + email (Resend). Both optional.
 
 import * as webpush from "web-push";
+import { tgSend } from "@/lib/telegram";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface Notification {
@@ -17,14 +18,15 @@ export interface Notification {
 export const PUSH_ENABLED = Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
 export const EMAIL_ENABLED = Boolean(process.env.RESEND_API_KEY);
 
-export async function deliver(sb: SupabaseClient, n: Notification): Promise<{ push: number; email: boolean; discord: boolean }> {
+export async function deliver(sb: SupabaseClient, n: Notification): Promise<{ push: number; email: boolean; discord: boolean; telegram: boolean }> {
   // always log it so the in-app bell can show it
   await sb.from("alert_events").insert({ user_id: n.userId, alert_id: n.alertId ?? null, symbol: n.symbol, title: n.title, body: n.body, url: n.url ?? null });
 
-  const { data: profile } = await sb.from("profiles").select("email, notify_email, notify_push, discord_webhook").eq("id", n.userId).maybeSingle();
+  const { data: profile } = await sb.from("profiles").select("email, notify_email, notify_push, discord_webhook, telegram_chat_id").eq("id", n.userId).maybeSingle();
   let push = 0;
   let email = false;
   let discord = false;
+  let telegram = false;
 
   const wantPush = n.channels ? n.channels.includes("push") : true;
   const wantEmail = n.channels ? n.channels.includes("email") : !!profile?.notify_email;
@@ -66,5 +68,8 @@ export async function deliver(sb: SupabaseClient, n: Notification): Promise<{ pu
       if (res.status === 404 || res.status === 401) await sb.from("profiles").update({ discord_webhook: null }).eq("id", n.userId); // webhook deleted on Discord's side
     } catch (e) { console.warn("discord failed", (e as Error).message); }
   }
-  return { push, email, discord };
+  if (profile?.telegram_chat_id) {
+    telegram = await tgSend(String(profile.telegram_chat_id), `${n.title}\n\n${n.body}`, n.url && process.env.NEXT_PUBLIC_SITE_URL ? { url: `${process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "")}${n.url}` } : {});
+  }
+  return { push, email, discord, telegram };
 }

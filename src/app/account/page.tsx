@@ -11,6 +11,7 @@ import VenuePicker from "@/components/VenuePicker";
 import ExchangePanel from "@/components/ExchangePanel";
 import RiskLimits from "@/components/RiskLimits";
 import DiscordSettings from "@/components/DiscordSettings";
+import TelegramSettings from "@/components/TelegramSettings";
 
 export default function AccountPage() {
   const sb = supabaseBrowser();
@@ -80,6 +81,9 @@ export default function AccountPage() {
       </Section>
       <Section title="Notifications">
         <PushToggle />
+      </Section>
+      <Section title="Telegram bot">
+        <TelegramSettings />
       </Section>
       <Section title="Discord">
         <DiscordSettings />

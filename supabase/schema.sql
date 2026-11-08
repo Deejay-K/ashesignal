@@ -470,3 +470,9 @@ create policy "config history readable" on public.engine_config_history for sele
 
 -- ---------- Stage 28: Discord delivery ----------
 alter table public.profiles add column if not exists discord_webhook text;
+
+-- ---------- Stage 32: Telegram, paper trading ----------
+alter table public.profiles add column if not exists telegram_chat_id text;
+alter table public.profiles add column if not exists telegram_link_code text;
+alter table public.saved_setups add column if not exists paper boolean default false;
+create index if not exists profiles_telegram_chat on public.profiles(telegram_chat_id);

@@ -33,6 +33,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
   const [units, setUnits] = useState("");
   const [fees, setFees] = useState("");
   const [notes, setNotes] = useState("");
+  const [paper, setPaper] = useState(false);
   const needsLevels = !setup.stopLosses.length;
   const [myStop, setMyStop] = useState("");
   const [myTp1, setMyTp1] = useState("");
@@ -59,7 +60,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
     setBusy(true); setErr(null);
     try {
       const effective = needsLevels ? { ...setup, stopLosses: sl ? [{ price: sl }] : [], takeProfits: [num(myTp1), num(myTp2)].filter((x) => x > 0).map((price) => ({ price })), entry: { low: f, high: f, mid: f } } : setup;
-      const r = await fetch("/api/me/setups", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ setup: { ...effective, riskRewardTp2: rr ?? 0 }, symbol, timeframe, assetKey, score, taken: true, exchange: venue, fillPrice: f || null, sizeUnits: u || null, sizeUsd: su || null, riskUsd, feesUsd: num(fees) || null, notes }) });
+      const r = await fetch("/api/me/setups", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ setup: { ...effective, riskRewardTp2: rr ?? 0 }, symbol, timeframe, assetKey, score, taken: true, paper, exchange: paper ? "paper" : venue, fillPrice: f || null, sizeUnits: u || null, sizeUsd: su || null, riskUsd, feesUsd: num(fees) || null, notes }) });
       if (r.status === 401) { setGuest(true); setBusy(false); return; }
       if (!r.ok) throw new Error((await r.json()).error ?? "save failed");
       onSaved?.();
@@ -73,7 +74,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
       <div className="card w-full max-w-md space-y-3 p-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="font-semibold">I took this trade</div>
+            <div className="font-semibold">{paper ? "Paper trade" : "I took this trade"}</div>
             <div className="text-xs text-fg-3">{symbol} {setup.side} · {timeframe}{sl ? ` · stop ${fmtUsd(sl)}` : ""}{setup.takeProfits[0] ? ` · TP1 ${fmtUsd(setup.takeProfits[0].price)}` : ""}</div>
           </div>
           <button className="btn-ghost text-xs" onClick={onClose}>Close</button>
@@ -85,7 +86,8 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
             {setup.kind === "spot" ? <p className="rounded border border-border bg-bg-2 px-2 py-1 text-xs text-fg-2"><b>Spot purchase.</b> The "stop" here is 15% under the accumulation zone, a review level rather than an order; targets are the profit-taking zones. Status updates come as price reaches them.</p> : null}
             {needsLevels ? <p className="rounded border border-amber/40 bg-amber-dim px-2 py-1 text-xs text-amber"><b>No engine levels for this token</b> (too new, too thin, or no setup). Enter the stop you placed; without a stop the journal cannot measure risk or tell you when you are out.</p> : null}
             {setup.kind !== "confirmed" && setup.kind !== "spot" ? <p className="rounded border border-amber/40 bg-amber-dim px-2 py-1 text-xs text-amber"><b>Not a confirmed setup</b> ({setup.kind}). You can record it, and you should if you placed it, but the journal and the weekly review will count it as a non-confirmed trade.</p> : null}
-            <p className="text-xs text-fg-2">Enter what you actually did on the exchange. The journal then tracks it against live price, tells you when TP or SL is reached, and computes your real P&L. Nothing is sent to the exchange.</p>
+            <label className="flex items-center gap-2 rounded-lg border border-border bg-bg-2 px-2 py-1.5 text-xs"><input type="checkbox" className="w-auto" checked={paper} onChange={(e) => setPaper(e.target.checked)} /> <span><b>Paper trade</b> (practice, no real money). Tracked and graded exactly like a real trade, kept in its own stats.</span></label>
+            <p className="text-xs text-fg-2">Enter what you {paper ? "would do" : "actually did"} on the exchange. The journal then tracks it against live price, tells you when TP or SL is reached, and computes your real P&L. Nothing is sent to the exchange.</p>
             <div className="grid grid-cols-2 gap-2 text-xs text-fg-3">
               <label>Exchange<select value={venue} onChange={(e) => setVenue(e.target.value as VenueId)}>{VENUE_IDS.map((v) => <option key={v} value={v}>{VENUE_META[v].label}</option>)}</select></label>
               <label>Fill price<input inputMode="decimal" className="num" value={fill} onChange={(e) => setFill(e.target.value)} /></label>
@@ -104,7 +106,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
             {heat ? <div className={`rounded border px-2 py-1 text-xs ${heat.level === "stop" ? "border-red/50 bg-red/10 text-red" : heat.level === "caution" ? "border-amber/40 bg-amber-dim text-amber" : "border-border bg-bg-2 text-fg-2"}`}><b>{heat.level === "stop" ? "Over your risk limits with this trade." : heat.level === "caution" ? "Heads up." : "Within limits."}</b> {heat.messages.join(" ")}</div> : null}
             {err ? <p className="text-xs text-red">{err}</p> : null}
             <div className="flex flex-wrap gap-2">
-              <button className="btn text-sm" disabled={busy || !(f > 0) || (needsLevels && !(num(myStop) > 0))} onClick={save}>{busy ? "Saving…" : "Record in journal"}</button>
+              <button className="btn text-sm" disabled={busy || !(f > 0) || (needsLevels && !(num(myStop) > 0))} onClick={save}>{busy ? "Saving…" : paper ? "Record paper trade" : "Record in journal"}</button>
               <Link className="btn-ghost text-sm" href={`/guide?${new URLSearchParams({ side: setup.side, entry: String(setup.entry.mid), stop: String(sl ?? ""), tp1: String(setup.takeProfits[0]?.price ?? ""), tp2: String(setup.takeProfits[1]?.price ?? ""), tp3: String(setup.takeProfits[2]?.price ?? ""), symbol, leverage: String(setup.leverage?.recommended ?? 1), venue })}`}>How to place it</Link>
             </div>
           </>

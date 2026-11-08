@@ -10,6 +10,7 @@ import { VENUE_META, isVenueId } from "@/lib/venues";
 interface Suggestion { setupId: string; symbol: string; side: "LONG" | "SHORT"; exchange: string; kind: "fill" | "exit"; price: number; units: number; usd: number; fees: number; fills: number; from: string; to: string; note: string }
 
 interface Row {
+  paper?: boolean;
   id: string; asset_key: string; symbol: string; timeframe: string; side: "LONG" | "SHORT"; kind: string;
   entry_low: number; entry_high: number; tp1: number | null; tp2: number | null; tp3: number | null; sl1: number | null; sl2: number | null;
   rr: number | null; leverage: number | null; confidence: number | null; score: number | null; status: string; created_at: string; resolved_at: string | null;
@@ -23,7 +24,7 @@ const WIN = new Set(["tp1", "tp2", "tp3"]);
 export default function SetupsPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [state, setState] = useState<"loading" | "guest" | "ok" | "disabled">("loading");
-  const [tab, setTab] = useState<"journal" | "saved">("journal");
+  const [tab, setTab] = useState<"journal" | "paper" | "saved">("journal");
   const [closing, setClosing] = useState<Row | null>(null);
   const [heat, setHeat] = useState<{ level: string; messages: string[]; heatPct: number | null; openCount: number; limits: { maxHeatPct: number; maxOpen: number } } | null>(null);
   useEffect(() => { fetch("/api/me/heat").then((r) => (r.ok ? r.json() : null)).then((j) => setHeat(j?.current ?? null)).catch(() => {}); }, [rows]);
@@ -50,20 +51,21 @@ export default function SetupsPage() {
   useEffect(() => { load(); }, []);
   const patch = async (body: Record<string, unknown>) => { await fetch("/api/me/setups", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); load(); };
 
-  const journal = useMemo(() => (rows ?? []).filter((r) => r.taken), [rows]);
+  const journal = useMemo(() => (rows ?? []).filter((r) => r.taken && !r.paper), [rows]);
+  const paper = useMemo(() => (rows ?? []).filter((r) => r.taken && r.paper), [rows]);
   const saved = useMemo(() => (rows ?? []).filter((r) => !r.taken), [rows]);
-  const list = tab === "journal" ? journal : saved;
+  const list = tab === "journal" ? journal : tab === "paper" ? paper : saved;
 
   const stats = useMemo(() => {
     const src = list;
     const done = src.filter((r) => r.status !== "open");
     const wins = done.filter((r) => WIN.has(r.status) || (r.realized_usd ?? 0) > 0).length;
-    const realized = journal.filter((r) => r.realized_usd != null);
+    const realized = (tab === "paper" ? paper : journal).filter((r) => r.realized_usd != null);
     const pnl = realized.reduce((s, r) => s + (r.realized_usd ?? 0), 0);
     const rsum = realized.reduce((s, r) => s + (r.realized_r ?? 0), 0);
     const risked = journal.filter((r) => r.status === "open").reduce((s, r) => s + (r.risk_usd ?? 0), 0);
     return { total: src.length, open: src.length - done.length, resolved: done.length, winRate: done.length ? Math.round((wins / done.length) * 100) : null, pnl, avgR: realized.length ? +(rsum / realized.length).toFixed(2) : null, risked, closedCount: realized.length };
-  }, [list, journal]);
+  }, [list, journal, paper, tab]);
 
   return (
     <div className="space-y-4">
@@ -74,6 +76,7 @@ export default function SetupsPage() {
         </div>
         <div className="ml-auto flex gap-1">
           <button className="btn-ghost text-xs" data-active={tab === "journal"} onClick={() => setTab("journal")}>Journal ({journal.length})</button>
+          <button className="btn-ghost text-xs" data-active={tab === "paper"} onClick={() => setTab("paper")}>Paper ({paper.length})</button>
           <button className="btn-ghost text-xs" data-active={tab === "saved"} onClick={() => setTab("saved")}>Saved only ({saved.length})</button>
         </div>
       </div>
@@ -85,7 +88,7 @@ export default function SetupsPage() {
           <div className="num grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <StatCard label={tab === "journal" ? "Trades" : "Saved"} value={stats.total} sub={`${stats.open} open`} />
             <StatCard label="Win rate" value={stats.winRate != null ? `${stats.winRate}%` : "-"} sub={`${stats.resolved} resolved`} />
-            {tab === "journal" ? <>
+            {tab === "journal" || tab === "paper" ? <>
               <StatCard label="Realized P&L" value={<span className={stats.pnl >= 0 ? "up" : "down"}>{stats.pnl >= 0 ? "+" : ""}{fmtUsd(stats.pnl)}</span>} sub={`${stats.closedCount} closed with a price`} />
               <StatCard label="Average R" value={stats.avgR != null ? `${stats.avgR > 0 ? "+" : ""}${stats.avgR}R` : "-"} sub="per closed trade" />
               <StatCard label="Money at risk now" value={fmtUsd(stats.risked)} sub="sum of open stops" />
@@ -123,9 +126,9 @@ export default function SetupsPage() {
               {sugg?.errors?.length ? <p className="text-amber">{sugg.errors.join(" · ")}</p> : null}
             </div>
           ) : null}
-          <Section title={tab === "journal" ? "Your trades" : "Saved setups (not taken)"} right={list.length ? <button className="btn-ghost text-xs" onClick={() => downloadCsv(`ashesignal-${tab}.csv`, list.map((r) => ({ date: r.created_at, symbol: r.symbol, timeframe: r.timeframe, side: r.side, kind: r.kind, exchange: r.exchange, fill: r.fill_price, size_units: r.size_units, size_usd: r.size_usd, entry_low: r.entry_low, entry_high: r.entry_high, sl1: r.sl1, tp1: r.tp1, tp2: r.tp2, tp3: r.tp3, rr: r.rr, status: r.status, exit_price: r.exit_price, exit_reason: r.exit_reason, realized_usd: r.realized_usd, realized_r: r.realized_r, notes: r.notes })))}>Export CSV</button> : null}>
+          <Section title={tab === "journal" ? "Your trades" : tab === "paper" ? "Paper trades (practice, no money)" : "Saved setups (not taken)"} right={list.length ? <button className="btn-ghost text-xs" onClick={() => downloadCsv(`ashesignal-${tab}.csv`, list.map((r) => ({ date: r.created_at, symbol: r.symbol, timeframe: r.timeframe, side: r.side, kind: r.kind, exchange: r.exchange, fill: r.fill_price, size_units: r.size_units, size_usd: r.size_usd, entry_low: r.entry_low, entry_high: r.entry_high, sl1: r.sl1, tp1: r.tp1, tp2: r.tp2, tp3: r.tp3, rr: r.rr, status: r.status, exit_price: r.exit_price, exit_reason: r.exit_reason, realized_usd: r.realized_usd, realized_r: r.realized_r, notes: r.notes })))}>Export CSV</button> : null}>
             {!list.length ? (
-              <Empty>{tab === "journal" ? <>No trades recorded yet. On any setup card or Trading Discovery card press <b>I took this trade</b> after placing it on your exchange.</> : <>No saved setups. Press "Save setup" on any analysis to watch one without taking it.</>}</Empty>
+              <Empty>{tab === "paper" ? <>No paper trades yet. Tick "Paper trade" in the "I took this trade" dialog to practise without money; results are graded the same way.</> : tab === "journal" ? <>No trades recorded yet. On any setup card or Trading Discovery card press <b>I took this trade</b> after placing it on your exchange.</> : <>No saved setups. Press "Save setup" on any analysis to watch one without taking it.</>}</Empty>
             ) : (
               <div className="space-y-2">
                 {list.map((r) => <TradeRow key={r.id} r={r} onPatch={patch} onClose={() => setClosing(r)} onDelete={async () => { await fetch(`/api/me/setups?id=${r.id}`, { method: "DELETE" }); load(); }} />)}
@@ -154,7 +157,7 @@ function TradeRow({ r, onPatch, onClose, onDelete }: { r: Row; onPatch: (b: Reco
         <span className={`pill ${r.side === "LONG" ? "pill-mint" : "pill-red"}`}>{r.side}</span>
         <span className="pill pill-gray">{r.timeframe}</span>
         <span className={`pill ${r.kind === "confirmed" ? "pill-mint" : "pill-gray"}`}>{r.kind}</span>
-        {r.exchange ? <span className="pill pill-gray">{isVenueId(r.exchange) ? VENUE_META[r.exchange].label : r.exchange}</span> : null}
+        {r.paper ? <span className="pill pill-amber">paper</span> : r.exchange ? <span className="pill pill-gray">{isVenueId(r.exchange) ? VENUE_META[r.exchange].label : r.exchange}</span> : null}
         <span className={`pill ${statusTone}`}>{r.status}</span>
         <span className="ml-auto text-xs text-fg-3">{r.taken_at ? `taken ${timeAgo(Date.parse(r.taken_at))}` : `saved ${timeAgo(Date.parse(r.created_at))}`}{r.last_checked_at ? ` · checked ${timeAgo(Date.parse(r.last_checked_at))}` : ""}</span>
       </div>
@@ -167,7 +170,7 @@ function TradeRow({ r, onPatch, onClose, onDelete }: { r: Row; onPatch: (b: Reco
         <div><span className="text-fg-3">{r.exit_price ? "Result" : "Excursion"}</span><div>{r.exit_price ? <span className={(r.realized_usd ?? 0) >= 0 ? "up" : "down"}>{r.realized_usd != null ? `${r.realized_usd >= 0 ? "+" : ""}${fmtUsd(r.realized_usd)}` : ""} {r.realized_r != null ? `(${r.realized_r > 0 ? "+" : ""}${r.realized_r}R)` : ""}</span> : <span className="text-fg-2">+{r.max_favorable_pct ?? 0}% / -{r.max_adverse_pct ?? 0}%</span>}</div></div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-        {r.taken && !r.exit_price ? <button className="btn" onClick={onClose}>Close at my exit</button> : null}
+        {r.taken && !r.exit_price ? <button className="btn" onClick={onClose}>{r.paper ? "Close paper trade" : "Close at my exit"}</button> : null}
         {r.taken && r.exit_price ? <button className="btn-ghost" onClick={() => onPatch({ id: r.id, reopen: true })}>Reopen</button> : null}
         {!r.taken ? <button className="btn-ghost" onClick={() => onPatch({ id: r.id, taken: true })}>Mark as taken</button> : null}
         <label className="flex items-center gap-1 text-fg-3">Status
