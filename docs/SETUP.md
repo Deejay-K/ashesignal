@@ -211,6 +211,12 @@ Run `supabase/schema.sql` again (engine config tables, Discord column); pull the
 
 No schema change. "I took this trade" is now on every setup card and every discovery card (Confirmed, Watching, Speculative with justified targets, and "I bought (spot)" on Spot picks), with a note when the setup is not confirmed. Card actions are split into a primary row (Details, I took this trade, Copy Trade Setup) and a secondary row (Full analysis, Open on exchange, Size it, How to place it, History). Push notifications: the web-push library is now imported as a namespace; the previous default import was undefined in Vercel's build, which silently broke every push send.
 
+## 24. Stages 30 and 31 - site overhaul, Ask AsheSignal
+
+No schema change. The header now has five hubs (Home, Trade, Portfolio, Alerts, Tools) with menus, a sub-nav row with the sibling pages of the current hub, a grouped phone sheet and a hub bottom bar; the dashboard opens with a Today panel (conditions, regime, confirmed trades on your exchange, your open trades and heat, unread alerts, Fear & Greed). Buttons, inputs, tables and typography were unified.
+
+**Ask AsheSignal** (the floating "Ask" button on every page) answers questions grounded in the engine: a coin ("what does the engine say about SOL"), today's trades on your exchange, your journal and heat (signed in), position sizing, spot picks, market regime, how to place an order. With `AI_API_KEY` set the prose comes from your model over a context the engine assembled (numbers are never invented by the model); without it the built-in writer answers from templates. 20 questions per 10 minutes per address. It never tells you to buy or sell.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).

@@ -19,6 +19,7 @@ import { VENUE_COOKIE } from "@/lib/venue-pref";
 import { DEFAULT_VENUE, VENUE_META, isVenueId, type VenueId } from "@/lib/venues";
 import DiscoveryStrip from "@/components/DiscoveryStrip";
 import RegimeCard from "@/components/RegimeCard";
+import TodayPanel from "@/components/TodayPanel";
 import type { DiscoverItem } from "@/lib/market/discover";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,7 @@ export default async function Dashboard() {
 
   return (
     <div className="space-y-4">
+      <TodayPanel />
       <Welcome />
       <GettingStarted />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">

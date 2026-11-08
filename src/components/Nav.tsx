@@ -7,26 +7,9 @@ import { fmtUsd } from "@/lib/format";
 import AuthMenu from "./AuthMenu";
 import ThemePicker from "./ThemePicker";
 import VenuePicker from "./VenuePicker";
+import SubNav from "./SubNav";
 
-export const NAV_LINKS = [
-  { href: "/", label: "Dashboard", primary: 1 },
-  { href: "/opportunities", label: "Trading Discovery", primary: 1 },
-  { href: "/discover", label: "Discover", primary: 1 },
-  { href: "/scanner", label: "Scanner", primary: 1 },
-  { href: "/screener", label: "Screener", primary: 2 },
-  { href: "/portfolio", label: "Portfolio", primary: 2 },
-  { href: "/alerts", label: "Alerts", primary: 2 },
-  { href: "/risk", label: "Risk", primary: 2 },
-  { href: "/watchlist", label: "Watchlist", primary: 3 },
-  { href: "/setups", label: "Journal", primary: 3 },
-  { href: "/review", label: "Weekly review", primary: 3 },
-  { href: "/performance", label: "Performance", primary: 3 },
-  { href: "/lab", label: "Engine Lab", primary: 3 },
-  { href: "/sentiment", label: "Sentiment", primary: 3 },
-  { href: "/guide", label: "Trade guide", primary: 3 },
-  { href: "/glossary", label: "Glossary", primary: 3 },
-  { href: "/account", label: "Account", primary: 3 },
-];
+import { NAV_GROUPS, groupFor } from "@/lib/nav";
 
 interface SearchRes {
   isAddress: boolean;
@@ -41,15 +24,14 @@ export default function Nav() {
   const [res, setRes] = useState<SearchRes | null>(null);
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
-  const [more, setMore] = useState(false);
+  const [more, setMore] = useState<string | null>(null);
   const t = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const moreRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") { e.preventDefault(); searchRef.current?.focus(); }
-      if (e.key === "Escape") { setOpen(false); setMenu(false); setMore(false); }
+      if (e.key === "Escape") { setOpen(false); setMenu(false); setMore(null); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -69,12 +51,12 @@ export default function Nav() {
 
   useEffect(() => {
     setMenu(false);
-    setMore(false);
+    setMore(null);
   }, [path]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMore(false);
+      if (!(e.target as HTMLElement).closest?.(".nav-group")) setMore(null);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -96,29 +78,26 @@ export default function Nav() {
           <span className="nav-brand-text">AsheSignal</span>
         </Link>
 
-        {/* Desktop / tablet links: tier 1 always (md+), tier 2 from lg, tier 3 in the More menu */}
+        {/* Desktop / tablet: five hubs; hubs with children open a menu on hover/click */}
         <nav className="nav-links" aria-label="Primary">
-          {NAV_LINKS.filter((l) => l.primary <= 2).map((l) => (
-            <Link key={l.href} href={l.href} className={`${linkCls(l.href)} ${l.primary === 2 ? "nav-tier2" : ""}`}>
-              {l.label}
-            </Link>
-          ))}
-          <div className="relative" ref={moreRef}>
-            <button className={`nav-link ${more ? "nav-link-active" : ""}`} onClick={() => setMore((m) => !m)} aria-haspopup="menu" aria-expanded={more}>
-              More ▾
-            </button>
-            {more ? (
-              <div className="nav-menu" role="menu">
-                {NAV_LINKS.filter((l) => l.primary >= 2).map((l) => (
-                  <Link key={l.href} href={l.href} role="menuitem" className={`nav-menu-item ${l.primary === 2 ? "nav-tier2-menu" : ""} ${isActive(l.href) ? "nav-link-active" : ""}`}>
-                    {l.label}
-                  </Link>
-                ))}
-                <div className="mt-1 border-t border-border px-2 pt-2 text-xs text-fg-3">Exchange <VenuePicker compact /></div>
-                <div className="px-2 pt-1 text-xs text-fg-3">Theme <ThemePicker compact /></div>
+          {NAV_GROUPS.map((g) => {
+            const active = groupFor(path)?.id === g.id;
+            if (!g.items.length) return <Link key={g.id} href={g.href} className={`nav-link ${active ? "nav-link-active" : ""}`}>{g.label}</Link>;
+            return (
+              <div key={g.id} className="nav-group" onMouseEnter={() => setMore(g.id)} onMouseLeave={() => setMore((m) => (m === g.id ? null : m))}>
+                <Link href={g.href} className={`nav-link ${active ? "nav-link-active" : ""}`} aria-haspopup="menu" aria-expanded={more === g.id} onClick={(e) => { if (more !== g.id && window.matchMedia("(hover: none)").matches) { e.preventDefault(); setMore(g.id); } }}>{g.label} <span className="nav-caret">▾</span></Link>
+                {more === g.id ? (
+                  <div className="nav-menu" role="menu">
+                    {g.items.map((l) => (
+                      <Link key={l.href} href={l.href} role="menuitem" className={`nav-menu-item ${isActive(l.href) ? "nav-link-active" : ""}`}>
+                        <span>{l.label}</span>{l.hint ? <span className="nav-menu-hint">{l.hint}</span> : null}
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-          </div>
+            );
+          })}
         </nav>
 
         <div className="nav-search">
@@ -165,6 +144,7 @@ export default function Nav() {
         </div>
 
         <div className="nav-right">
+          <Link href="/account" className={`nav-link nav-settings ${path.startsWith("/account") ? "nav-link-active" : ""}`} aria-label="Account and settings" title="Account, exchange, theme, notifications">⚙</Link>
           <AuthMenu />
           <button className="nav-burger" onClick={() => setMenu((m) => !m)} aria-label="Menu" aria-expanded={menu}>
             <span /><span /><span />
@@ -174,15 +154,23 @@ export default function Nav() {
 
       {menu ? (
         <nav className="nav-sheet" aria-label="All pages">
-          {NAV_LINKS.map((l) => (
-            <Link key={l.href} href={l.href} className={`nav-sheet-item ${isActive(l.href) ? "nav-link-active" : ""}`}>
-              {l.label}
-            </Link>
+          {NAV_GROUPS.map((g) => (
+            <div key={g.id} className="nav-sheet-group">
+              <div className="nav-sheet-title">{g.icon} {g.label}</div>
+              {(g.items.length ? g.items : [{ href: g.href, label: g.label, hint: undefined }]).map((l) => (
+                <Link key={l.href} href={l.href} className={`nav-sheet-item ${isActive(l.href) ? "nav-link-active" : ""}`}>{l.label}</Link>
+              ))}
+            </div>
           ))}
-          <div className="col-span-2 flex items-center gap-2 pt-1 text-xs text-fg-3">Exchange <VenuePicker compact /></div>
-          <div className="col-span-2 flex items-center gap-2 pt-1 text-xs text-fg-3">Theme <ThemePicker compact /></div>
+          <div className="nav-sheet-group">
+            <div className="nav-sheet-title">● Account</div>
+            <Link href="/account" className={`nav-sheet-item ${isActive("/account") ? "nav-link-active" : ""}`}>Account & settings</Link>
+            <div className="flex items-center gap-2 px-1 pt-1 text-xs text-fg-3">Exchange <VenuePicker compact /></div>
+            <div className="flex items-center gap-2 px-1 pt-1 text-xs text-fg-3">Theme <ThemePicker compact /></div>
+          </div>
         </nav>
       ) : null}
+      <SubNav path={path} />
     </header>
   );
 }

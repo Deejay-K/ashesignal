@@ -195,3 +195,78 @@ tr:last-child td { border-bottom: 0; }
 .opp-card-amber { --tone: var(--amber); --tone-dim: var(--amber-dim); background-image: repeating-linear-gradient(135deg, transparent 0 14px, var(--amber-dim) 14px 16px); background-size: 100% 3px; background-repeat: no-repeat; }
 .opp-card-violet { --tone: var(--violet); --tone-dim: var(--violet-dim); }
 @media (max-width: 640px) { .opp-tab { flex: 1 1 calc(50% - 0.25rem); justify-content: center; padding: 0.55rem 0.5rem; font-size: 0.75rem; } }
+
+/* ---------- Stage 30: visual system overhaul ---------- */
+/* Typography scale and page rhythm */
+main h1 { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.015em; line-height: 1.2; }
+main h2 { font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em; }
+main > * + * { margin-top: 0; }
+main p { line-height: 1.55; }
+
+/* Cards: slightly softer, consistent hover affordance where clickable */
+.card { border-radius: 14px; transition: border-color .15s; }
+a.card:hover, button.card:hover { border-color: var(--fg-3); }
+
+/* Buttons: one height, one radius; primary carries the brand, ghost is quiet, link is text */
+.btn, .btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 9px; font-size: 13px; line-height: 1; white-space: nowrap; transition: background .15s, border-color .15s, color .15s; }
+.btn { font-weight: 600; }
+.btn:hover:not(:disabled) { filter: brightness(1.08); }
+.btn-ghost:hover:not(:disabled) { color: var(--fg); border-color: var(--fg-3); background: rgba(159,176,192,.06); }
+.btn:focus-visible, .btn-ghost:focus-visible, .link:focus-visible, .nav-link:focus-visible, .subnav-item:focus-visible { outline: 2px solid var(--mint); outline-offset: 2px; }
+button.link { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; }
+
+/* Inputs: clearer focus */
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--mint); box-shadow: 0 0 0 3px var(--mint-dim); }
+
+/* Tables: breathing room, sticky header, zebra */
+table th { position: sticky; top: 0; background: var(--bg-2); z-index: 1; }
+table tbody tr:nth-child(even) td { background: rgba(159,176,192,.03); }
+table tbody tr:hover td { background: rgba(159,176,192,.06); }
+
+/* Skeleton */
+.skeleton { background: linear-gradient(90deg, var(--bg-3) 25%, rgba(159,176,192,.12) 50%, var(--bg-3) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 10px; }
+@keyframes shimmer { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+
+/* Header: hubs with menus */
+.nav-group { position: relative; }
+.nav-caret { font-size: 10px; opacity: .6; margin-left: 2px; }
+.nav-menu { min-width: 240px; padding: 6px; }
+.nav-menu-item { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; }
+.nav-menu-hint { font-size: 11px; color: var(--fg-3); white-space: normal; }
+.nav-settings { padding: 6px 9px; font-size: 15px; }
+.nav-sheet { display: grid; grid-template-columns: 1fr; gap: 10px; padding: 10px 12px 14px; }
+.nav-sheet-group { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+.nav-sheet-title { grid-column: 1 / -1; padding: 6px 2px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--fg-3); }
+@media (min-width: 640px) { .nav-sheet { grid-template-columns: repeat(2, 1fr); } }
+
+/* Sub-nav row under the header */
+.subnav { border-bottom: 1px solid var(--border); background: rgba(11,15,20,.6); }
+.subnav-inner { display: flex; gap: 2px; max-width: 80rem; margin: 0 auto; padding: 4px 12px; overflow-x: auto; scrollbar-width: none; }
+.subnav-inner::-webkit-scrollbar { display: none; }
+.subnav-item { flex: 0 0 auto; padding: 6px 10px; border-radius: 8px; font-size: 12.5px; color: var(--fg-3); white-space: nowrap; }
+.subnav-item:hover { color: var(--fg); }
+.subnav-active { color: var(--mint); background: var(--mint-dim); }
+@media (min-width: 768px) { .subnav-inner { padding: 4px 16px; } }
+:root[data-theme="paper"] .subnav { background: rgba(255,255,255,.7); }
+
+/* Today panel on the dashboard */
+.today { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (min-width: 768px) { .today { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1100px) { .today { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.today-tile { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg-2); min-width: 0; }
+.today-tile:hover { border-color: var(--fg-3); }
+.today-k { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--fg-3); }
+.today-v { font-size: 1.1rem; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; }
+.today-s { font-size: 11px; color: var(--fg-3); line-height: 1.35; }
+
+/* ---------- Stage 31: Ask AsheSignal ---------- */
+.ask-fab { position: fixed; right: 14px; bottom: calc(64px + env(safe-area-inset-bottom)); z-index: 45; display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--mint); color: var(--fg); font-weight: 600; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+@media (min-width: 768px) { .ask-fab { bottom: 20px; right: 20px; } }
+.ask-fab-dot { width: 10px; height: 10px; border-radius: 999px; background: var(--mint); box-shadow: 0 0 12px var(--mint); }
+.ask-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.5); display: flex; justify-content: flex-end; }
+.ask-drawer { width: min(100%, 440px); height: 100%; display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--border); }
+.ask-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.ask-msg { max-width: 92%; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+.ask-user { align-self: flex-end; background: var(--mint-dim); color: var(--fg); border: 1px solid rgba(54,189,148,.35); }
+.ask-bot { align-self: flex-start; background: var(--bg-2); border: 1px solid var(--border); color: var(--fg); }
+@media (max-width: 640px) { .ask-drawer { width: 100%; } .ask-msg { max-width: 100%; } }
