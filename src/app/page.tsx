@@ -18,6 +18,7 @@ import { cookies } from "next/headers";
 import { VENUE_COOKIE } from "@/lib/venue-pref";
 import { DEFAULT_VENUE, VENUE_META, isVenueId, type VenueId } from "@/lib/venues";
 import DiscoveryStrip from "@/components/DiscoveryStrip";
+import RegimeCard from "@/components/RegimeCard";
 import type { DiscoverItem } from "@/lib/market/discover";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +48,7 @@ export default async function Dashboard() {
       {!g.ok ? <p className="text-xs text-red">Market overview unavailable: {g.error}</p> : null}
 
       <TradeConditions compact />
+      <RegimeCard />
       <DiscoveryStrip />
       <MarketBriefing />
 

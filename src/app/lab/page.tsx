@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Disclaimer, Empty, Section } from "@/components/ui";
 import { timeAgo } from "@/lib/format";
 import type { VariantAgg } from "@/app/api/lab/route";
+import LiveRules from "@/components/LiveRules";
 
 interface ChartRec { assetKey: string; symbol: string; timeframe: string; filled: number; winRate: number | null; expectancyR: number | null; updatedAt: string }
 interface Res { variants: VariantAgg[]; best: ChartRec[]; worst: ChartRec[]; coverage: number; updatedAt: number | null; note?: string }
@@ -29,6 +30,7 @@ export default function LabPage() {
     return out;
   }, [d, prod]);
 
+  const betterIds = useMemo(() => (d && prod && prod.filled >= 30 ? d.variants.filter((v) => v.id !== "production" && v.filled >= 30 && v.expectancyR != null && prod.expectancyR != null && v.expectancyR - prod.expectancyR >= 0.08 && v.filled >= prod.filled * 0.4).map((v) => v.id) : []), [d, prod]);
   return (
     <div className="space-y-4">
       <div>
@@ -43,6 +45,7 @@ export default function LabPage() {
             <ul className="list-disc space-y-1 pl-5 text-sm text-fg-2">{verdicts.length ? verdicts.map((v, i) => <li key={i}>{v}</li>) : <li>Fewer than 30 filled trades for production so far; verdicts appear once there is enough data to mean something.</li>}</ul>
             <p className="mt-2 text-xs text-fg-3">Read these as evidence, not proof: past candles, no fees or slippage, one position at a time per chart. A variant needs a clear edge in expectancy with a decent trade count before it is worth shipping.</p>
           </Section>
+          <LiveRules betterVariantIds={betterIds} />
           <Section title="Rule variants (pooled across all charts)">
             <div className="table-scroll">
               <table>

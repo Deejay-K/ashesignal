@@ -15,6 +15,7 @@ import { safe } from "@/lib/fetch";
 import type { Timeframe } from "@/lib/types";
 import { categorize, detailSnapshot } from "./categorize";
 import { engineRecord } from "@/lib/ta/backtest";
+import { marketRegime, regimeAllows } from "@/lib/market/regime";
 import { scanAddress } from "./scan";
 import { buildSpecDetail } from "./speculative";
 import { buildSpot } from "./spot";
@@ -40,6 +41,7 @@ export function liveTaCategories(n = 40, venue?: VenueId | null): Promise<Opport
     const coins = top.data.filter((c) => !EXCLUDE.test(c.symbol)).slice(0, n);
     const TFS: Timeframe[] = ["4h", "1d"];
     const now = new Date().toISOString();
+    const regime = await safe(marketRegime()).then((r) => (r.ok ? r.data : null));
     const out: Opportunity[] = [];
     await Promise.all(coins.map(async (c) => {
       const ks = await Promise.all(TFS.map((tf) => safe(getOhlcv({ symbol: c.symbol, coingeckoId: c.id, venue }, tf, 300))));
@@ -50,7 +52,7 @@ export function liveTaCategories(n = 40, venue?: VenueId | null): Promise<Opport
         if (!a) return;
         const htf = analyses[i + 1] ?? null;
         const record = a.setup?.kind === "confirmed" ? engineRecord(TFS[i], k.data.candles) : null;
-        const cat = categorize(a, { htf, record });
+        const cat = categorize(a, { htf, record, regime: a.setup ? regimeAllows(regime, c.symbol, a.setup.side) : null });
         if (cat.category === "none") return;
         const d = detailSnapshot(a, cat, { htf, record });
         const s = a.setup;

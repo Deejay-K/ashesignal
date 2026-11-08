@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ensureEngineConfig } from "@/lib/engine-config";
 import { cronAuthorized, supabaseAdmin } from "@/lib/supabase/admin";
 import { getMarkets } from "@/lib/providers/coingecko";
 import { getOhlcv } from "@/lib/market/ohlcv";
@@ -21,6 +22,7 @@ const TFS: Timeframe[] = ["1h", "4h", "1d"];
  *   ?all=1       → every coin in one request (only on a plan with long function timeouts)
  */
 export async function GET(req: Request) {
+  await ensureEngineConfig();
   try {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sb = supabaseAdmin();

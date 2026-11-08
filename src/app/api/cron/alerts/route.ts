@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ensureEngineConfig } from "@/lib/engine-config";
 import { cronAuthorized, supabaseAdmin } from "@/lib/supabase/admin";
 import { evaluateAlerts } from "@/lib/alerts/evaluate";
 
@@ -6,6 +7,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function GET(req: Request) {
+  await ensureEngineConfig();
   if (!cronAuthorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sb = supabaseAdmin();
   if (!sb) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 501 });

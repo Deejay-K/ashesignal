@@ -113,6 +113,11 @@ const MIN_CANDLES = 60;
 export interface GateOptions { band?: number; volMin?: number; stretchMax?: number; tp1Min?: number; tp2Min?: number }
 export const DEFAULT_GATES: Required<GateOptions> = { band: 35, volMin: 0.8, stretchMax: 2.5, tp1Min: 1, tp2Min: 1.5 };
 
+/** Runtime overrides adopted from the Engine Lab (loaded from engine_config by src/lib/engine-config.ts). */
+let runtimeGates: Partial<GateOptions> = {};
+export function setRuntimeGates(g: Partial<GateOptions>) { runtimeGates = { ...g }; }
+export function currentGates(): Required<GateOptions> { return { ...DEFAULT_GATES, ...runtimeGates }; }
+
 export function analyzeTimeframe(tf: Timeframe, candles: Candle[], gates?: GateOptions): TimeframeAnalysis | null {
   if (candles.length < MIN_CANDLES) return null;
   const closes = candles.map((c) => c.close);
@@ -280,7 +285,7 @@ export function analyzeTimeframe(tf: Timeframe, candles: Candle[], gates?: GateO
   };
 
   /* ---- setup ---- */
-  const { setup, setupReason } = buildSetup({ tf, price, score, dir, atrNow, atrPct, levels, swingHigh, swingLow, rsiNow, volRatio, breakout, confirmedPatterns: confirmedP, completed, forming, ema20, ema50, regime, gates: { ...DEFAULT_GATES, ...(gates ?? {}) } });
+  const { setup, setupReason } = buildSetup({ tf, price, score, dir, atrNow, atrPct, levels, swingHigh, swingLow, rsiNow, volRatio, breakout, confirmedPatterns: confirmedP, completed, forming, ema20, ema50, regime, gates: { ...currentGates(), ...(gates ?? {}) } });
 
   const opportunityScore = clamp(Math.round(Math.abs(score) * 0.6 + (setup && setup.kind !== "watch" ? setup.confidence * 0.4 : 0)), 0, 100);
 

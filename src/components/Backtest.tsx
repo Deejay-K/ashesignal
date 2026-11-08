@@ -12,8 +12,12 @@ export default function Backtest({ asset, tf }: { asset: AssetQuery; tf: Timefra
   const [r, setR] = useState<(BacktestResult & { source: string; quality: string }) | null>(null);
   const [state, setState] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [err, setErr] = useState<string | null>(null);
-  const qs = new URLSearchParams(Object.entries({ ...asset, tf }).filter(([, v]) => !!v) as [string, string][]).toString();
-  useEffect(() => { setR(null); setState("idle"); }, [qs]);
+  const [tester, setTester] = useState(false);
+  const [g, setG] = useState({ band: "35", volMin: "0.8", stretchMax: "2.5", tp1Min: "1", tp2Min: "1.5", onlyConfirmed: true, htf: false });
+  const [base, setBase] = useState<(BacktestResult & { source: string; quality: string }) | null>(null);
+  const qsBase = new URLSearchParams(Object.entries({ ...asset, tf }).filter(([, v]) => !!v) as [string, string][]).toString();
+  const qs = tester ? `${qsBase}&band=${g.band}&volMin=${g.volMin}&stretchMax=${g.stretchMax}&tp1Min=${g.tp1Min}&tp2Min=${g.tp2Min}${g.onlyConfirmed ? "&onlyConfirmed=1" : ""}${g.htf ? "&htf=1" : ""}` : qsBase;
+  useEffect(() => { setR(null); setBase(null); setState("idle"); }, [qsBase]);
   const run = async () => {
     setState("loading");
     setErr(null);
@@ -22,11 +26,31 @@ export default function Backtest({ asset, tf }: { asset: AssetQuery; tf: Timefra
       const j = await res.json();
       if (!res.ok) { setErr(j.error); setState("error"); return; }
       setR(j);
+      if (!tester) setBase(j); else if (!base) { const b = await fetch(`/api/backtest?${qsBase}`); if (b.ok) setBase(await b.json()); }
       setState("ok");
     } catch (e) { setErr(String(e)); setState("error"); }
   };
   return (
-    <Section title={`Backtest the engine on ${tf}`} right={<button className="btn-ghost" onClick={run} disabled={state === "loading"}>{state === "loading" ? "Replaying" : r ? "Re-run" : "Run backtest"}</button>}>
+    <Section title={`Backtest the engine on ${tf}`} right={<span className="flex gap-1"><button className="btn-ghost" data-active={tester} onClick={() => setTester((v) => !v)}>Rule tester</button><button className="btn-ghost" onClick={run} disabled={state === "loading"}>{state === "loading" ? "Replaying" : r ? "Re-run" : "Run backtest"}</button></span>}>
+      {tester ? (
+        <div className="mb-3 rounded-lg border border-border bg-bg-2 p-3 text-xs">
+          <p className="mb-2 text-fg-2">Change the confirmation gates and replay this chart with them. Production values are the placeholders; the result is compared with production below. The same variants run across the top 40 coins on the <a className="link" href="/lab">Engine Lab</a> page.</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 text-fg-3">
+            <label>Score band ±<input className="num" value={g.band} onChange={(e) => setG({ ...g, band: e.target.value })} /></label>
+            <label>Min volume ratio<input className="num" value={g.volMin} onChange={(e) => setG({ ...g, volMin: e.target.value })} /></label>
+            <label>Max ATR from 20 EMA<input className="num" value={g.stretchMax} onChange={(e) => setG({ ...g, stretchMax: e.target.value })} /></label>
+            <label>Min TP1 (R)<input className="num" value={g.tp1Min} onChange={(e) => setG({ ...g, tp1Min: e.target.value })} /></label>
+            <label>Min TP2 (R)<input className="num" value={g.tp2Min} onChange={(e) => setG({ ...g, tp2Min: e.target.value })} /></label>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-4">
+            <label className="flex items-center gap-1"><input type="checkbox" className="w-auto" checked={g.onlyConfirmed} onChange={(e) => setG({ ...g, onlyConfirmed: e.target.checked })} /> Confirmed setups only</label>
+            <label className="flex items-center gap-1"><input type="checkbox" className="w-auto" checked={g.htf} onChange={(e) => setG({ ...g, htf: e.target.checked })} /> Require higher-timeframe agreement</label>
+          </div>
+          {r && base && r !== base ? (
+            <p className="mt-2 text-fg-2">Versus production on this chart: {r.filled} vs {base.filled} trades, win rate {r.winRate ?? "-"}% vs {base.winRate ?? "-"}%, expectancy {r.expectancyR ?? "-"}R vs {base.expectancyR ?? "-"}R {r.expectancyR != null && base.expectancyR != null ? <b className={r.expectancyR - base.expectancyR >= 0.08 ? "up" : r.expectancyR - base.expectancyR <= -0.08 ? "down" : ""}>({r.expectancyR - base.expectancyR >= 0 ? "+" : ""}{(r.expectancyR - base.expectancyR).toFixed(2)}R)</b> : null}. One chart is anecdote; the Lab is evidence.</p>
+          ) : null}
+        </div>
+      ) : null}
       {state === "idle" ? <Empty>Replays the engine over this chart's history: every setup it would have fired, graded against what price did next. Takes a few seconds.</Empty> : null}
       {state === "error" ? <p className="text-sm text-red">{err}</p> : null}
       {state === "loading" ? <div className="h-32 animate-pulse rounded-lg bg-bg-3" /> : null}

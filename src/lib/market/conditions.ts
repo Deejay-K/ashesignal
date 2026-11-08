@@ -4,6 +4,7 @@
 
 import { fetchJson, safe } from "@/lib/fetch";
 import type { TimeframeAnalysis } from "@/lib/ta/analysis";
+import { marketRegime } from "./regime";
 
 export type Severity = "avoid" | "caution" | "info";
 export interface Condition {
@@ -83,6 +84,11 @@ export async function globalConditions(): Promise<Omit<ConditionsReport, "verdic
   if (day === 0 || day === 6) conditions.push({ severity: "caution", code: "weekend", title: "Weekend session", detail: "Weekend liquidity is thinner: wider spreads, more wicks, and weekend moves often retrace on Monday." });
   const hour = now.getUTCHours();
   if (hour >= 21 || hour < 1) conditions.push({ severity: "info", code: "session_gap", title: "Low-liquidity hours (21:00-01:00 UTC)", detail: "Between the US close and Asia open volume is lowest; breakouts here are less reliable." });
+  const reg = await safe(marketRegime());
+  if (reg.ok && reg.data) {
+    const r = reg.data;
+    conditions.push({ severity: r.label === "risk-off" ? "caution" : "info", code: `regime_${r.label}`, title: `Market regime: ${r.label}`, detail: `${r.headline} ${r.advice} BTC ${r.btc.trend} (daily score ${r.btc.score > 0 ? "+" : ""}${r.btc.score}), breadth ${r.breadth.above50}% up over 30 d, alt-season gauge ${r.alts.altSeason}% (${r.alts.label})${r.alts.btcDominance != null ? `, BTC dominance ${r.alts.btcDominance}%` : ""}.` });
+  }
   const value = { conditions, events: horizon, source };
   globalCache = { at: Date.now(), value };
   return value;

@@ -10,6 +10,7 @@ import ThemePicker from "@/components/ThemePicker";
 import VenuePicker from "@/components/VenuePicker";
 import ExchangePanel from "@/components/ExchangePanel";
 import RiskLimits from "@/components/RiskLimits";
+import DiscordSettings from "@/components/DiscordSettings";
 
 export default function AccountPage() {
   const sb = supabaseBrowser();
@@ -79,6 +80,9 @@ export default function AccountPage() {
       </Section>
       <Section title="Notifications">
         <PushToggle />
+      </Section>
+      <Section title="Discord">
+        <DiscordSettings />
       </Section>
       <Section title="Synced to this account">
         <ul className="list-disc space-y-1 pl-5 text-sm text-fg-2">

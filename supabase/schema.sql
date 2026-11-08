@@ -444,3 +444,29 @@ create table if not exists public.engine_lab (
 alter table public.engine_lab enable row level security;
 drop policy if exists "lab readable" on public.engine_lab;
 create policy "lab readable" on public.engine_lab for select using (true);
+
+-- ---------- Stage 24: live engine config ----------
+create table if not exists public.engine_config (
+  key text primary key,
+  value jsonb not null,
+  note text,
+  updated_at timestamptz default now(),
+  updated_by text
+);
+create table if not exists public.engine_config_history (
+  id bigserial primary key,
+  key text not null,
+  value jsonb not null,
+  note text,
+  changed_at timestamptz default now(),
+  changed_by text
+);
+alter table public.engine_config enable row level security;
+alter table public.engine_config_history enable row level security;
+drop policy if exists "config readable" on public.engine_config;
+create policy "config readable" on public.engine_config for select using (true);
+drop policy if exists "config history readable" on public.engine_config_history;
+create policy "config history readable" on public.engine_config_history for select using (true);
+
+-- ---------- Stage 28: Discord delivery ----------
+alter table public.profiles add column if not exists discord_webhook text;

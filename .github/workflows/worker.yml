@@ -34,3 +34,5 @@ jobs:
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/digest?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Engine lab (rule variants backtest, 45 s budget)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/lab?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Weekly review (Sundays, at each user's digest hour)
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/review?secret=${{ secrets.CRON_SECRET }}" || true

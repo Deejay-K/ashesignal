@@ -19,6 +19,7 @@ export const NAV_LINKS = [
   { href: "/risk", label: "Risk", primary: 2 },
   { href: "/watchlist", label: "Watchlist", primary: 3 },
   { href: "/setups", label: "Journal", primary: 3 },
+  { href: "/review", label: "Weekly review", primary: 3 },
   { href: "/performance", label: "Performance", primary: 3 },
   { href: "/lab", label: "Engine Lab", primary: 3 },
   { href: "/sentiment", label: "Sentiment", primary: 3 },

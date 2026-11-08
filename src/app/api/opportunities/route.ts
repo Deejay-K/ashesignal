@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ensureEngineConfig } from "@/lib/engine-config";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import type { Opportunity, RiskLevel } from "@/lib/market/opportunities";
 import { liveTaCategories, liveSpeculative, liveSpot, within } from "@/lib/market/live-opportunities";
@@ -24,6 +25,7 @@ function riskFromMetrics(r: any): RiskLevel {
 }
 
 export async function GET(req: NextRequest) {
+  await ensureEngineConfig();
   const sb = supabaseAdmin();
   const cat = req.nextUrl.searchParams.get("cat") ?? "all";
   const wantLive = req.nextUrl.searchParams.get("live") === "1";

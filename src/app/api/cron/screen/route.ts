@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ensureEngineConfig } from "@/lib/engine-config";
 import { cronAuthorized, supabaseAdmin } from "@/lib/supabase/admin";
 import { getMarkets } from "@/lib/providers/coingecko";
 import { getOhlcv } from "@/lib/market/ohlcv";
@@ -7,6 +8,7 @@ import { safe } from "@/lib/fetch";
 import type { Timeframe } from "@/lib/types";
 import { categorize, detailSnapshot, type EngineRecord } from "@/lib/market/categorize";
 import { engineRecord } from "@/lib/ta/backtest";
+import { marketRegime, regimeAllows } from "@/lib/market/regime";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -14,6 +16,7 @@ const TFS: Timeframe[] = ["1h", "4h", "1d"];
 
 /** Keeps coin_metrics fresh for the top 100 Binance-listed coins: 10 coins per call, 10 rotating batches. */
 export async function GET(req: Request) {
+  await ensureEngineConfig();
   if (!cronAuthorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sb = supabaseAdmin();
   if (!sb) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 501 });
@@ -29,6 +32,7 @@ export async function GET(req: Request) {
   const all = url.searchParams.get("all") === "1";
   const batch = all ? -1 : url.searchParams.get("batch") != null ? Number(url.searchParams.get("batch")) % batches : Math.floor(new Date().getMinutes() / 5) % batches;
   const slice = all ? coins : coins.slice(batch * BATCH, batch * BATCH + BATCH);
+  const regime = await safe(marketRegime()).then((r) => (r.ok ? r.data : null));
   const rows: Record<string, unknown>[] = [];
   const { data: prevRows } = await sb.from("coin_metrics").select("asset_key, timeframe, category, category_since").in("asset_key", slice.map((c) => `cg:${c.id}`));
   const prev = new Map((prevRows ?? []).map((r) => [`${r.asset_key}|${r.timeframe}`, r]));
@@ -46,12 +50,12 @@ export async function GET(req: Request) {
       const htf = analyses[i + 1] ?? null;
       let record: EngineRecord | null = null;
       if (a.setup?.kind === "confirmed" && !all) record = engineRecord(TFS[i], k.data.candles);
-      const cat = categorize(a, { htf, record });
+      const cat = categorize(a, { htf, record, regime: a.setup ? regimeAllows(regime, c.symbol, a.setup.side) : null });
       const key = `cg:${c.id}|${TFS[i]}`;
       const before = prev.get(key);
       const changed = (before?.category ?? "none") !== cat.category;
       if (changed) history.push({ asset_key: `cg:${c.id}`, symbol: c.symbol, timeframe: TFS[i], category: cat.category, prev_category: before?.category ?? "none", reason: cat.category === "confirmed" ? cat.qualifies.slice(0, 2).join(" ") : cat.category === "watching" ? cat.reasons.slice(0, 2).join("; ") : "Setup no longer qualifies.", snapshot: a.setup ? { side: a.setup.side, kind: a.setup.kind, confidence: a.setup.confidence, entry: a.setup.entry.mid, tp1: a.setup.takeProfits[0]?.price, sl1: a.setup.stopLosses[0]?.price, score: a.score, price: a.price } : { score: a.score, price: a.price } });
-      rows.push({ venue, bt_n: record?.n ?? null, bt_winrate: record?.winRate ?? null, bt_expectancy: record?.expectancyR ?? null, category: cat.category, category_since: changed ? new Date().toISOString() : before?.category_since ?? new Date().toISOString(), watch_reasons: cat.reasons, detail: detailSnapshot(a, cat, { htf, record }), liquidity_note: `${c.volume24hUsd != null && c.marketCapUsd ? ((c.volume24hUsd / c.marketCapUsd) * 100).toFixed(1) + "% of market cap traded in 24h" : ""}`, asset_key: `cg:${c.id}`, symbol: c.symbol, name: c.name, timeframe: TFS[i], price: a.price, market_cap: c.marketCapUsd, volume_24h: c.volume24hUsd, change_24h_pct: c.change24hPct, score: a.score, outlook: a.outlook, opportunity: a.opportunityScore, rsi: a.momentum.rsi, atr_pct: a.volatility.atrPct * 100, vol_ratio: a.volume.ratio, vol_regime: a.volatility.regime, trend: a.trend.direction, macd_cross: a.momentum.macdCross, breakout: a.breakout.type, setup_side: a.setup?.side ?? null, setup_kind: a.setup?.kind ?? null, setup_rr: a.setup?.riskRewardTp2 ?? null, setup_confidence: a.setup?.confidence ?? null, leverage: a.setup?.leverage.recommended ?? null, patterns: [...a.patterns.confirmed, ...a.patterns.forming].slice(0, 4).map((p) => `${p.name} (${p.status})`), updated_at: new Date().toISOString() });
+      rows.push({ venue, bt_n: record?.n ?? null, bt_winrate: record?.winRate ?? null, bt_expectancy: record?.expectancyR ?? null, category: cat.category, category_since: changed ? new Date().toISOString() : before?.category_since ?? new Date().toISOString(), watch_reasons: cat.reasons, detail: detailSnapshot(a, cat, { htf, record, regime: a.setup ? regimeAllows(regime, c.symbol, a.setup.side) : null }), liquidity_note: `${c.volume24hUsd != null && c.marketCapUsd ? ((c.volume24hUsd / c.marketCapUsd) * 100).toFixed(1) + "% of market cap traded in 24h" : ""}`, asset_key: `cg:${c.id}`, symbol: c.symbol, name: c.name, timeframe: TFS[i], price: a.price, market_cap: c.marketCapUsd, volume_24h: c.volume24hUsd, change_24h_pct: c.change24hPct, score: a.score, outlook: a.outlook, opportunity: a.opportunityScore, rsi: a.momentum.rsi, atr_pct: a.volatility.atrPct * 100, vol_ratio: a.volume.ratio, vol_regime: a.volatility.regime, trend: a.trend.direction, macd_cross: a.momentum.macdCross, breakout: a.breakout.type, setup_side: a.setup?.side ?? null, setup_kind: a.setup?.kind ?? null, setup_rr: a.setup?.riskRewardTp2 ?? null, setup_confidence: a.setup?.confidence ?? null, leverage: a.setup?.leverage.recommended ?? null, patterns: [...a.patterns.confirmed, ...a.patterns.forming].slice(0, 4).map((p) => `${p.name} (${p.status})`), updated_at: new Date().toISOString() });
     });
   }));
   if (rows.length) {

@@ -15,6 +15,8 @@ export interface CategorizeContext {
   htf?: TimeframeAnalysis | null;
   /** Backtest record of the engine on this coin/timeframe; weak records demote to watching. */
   record?: EngineRecord | null;
+  /** Market regime verdict for this symbol/side (from regimeAllows). */
+  regime?: { ok: boolean; reason: string | null } | null;
 }
 
 export const RECORD_MIN_TRADES = 8;
@@ -38,7 +40,8 @@ export function categorize(a: TimeframeAnalysis, ctx: CategorizeContext = {}): {
     if ((r.winRate ?? 0) < RECORD_MIN_WINRATE || (r.expectancyR ?? 0) <= 0) return `The engine's recent record on this chart is weak: ${r.winRate ?? 0}% winners over ${r.n} signals, ${r.expectancyR ?? 0}R per trade. Not confirmed until the record improves.`;
     return null;
   })();
-  if (s && s.kind === "confirmed" && !htfGap && !recGap) {
+  const regGap = s && s.kind === "confirmed" && ctx.regime && !ctx.regime.ok ? ctx.regime.reason : null;
+  if (s && s.kind === "confirmed" && !htfGap && !recGap && !regGap) {
     qualifies.push(`Score ${a.score > 0 ? "+" : ""}${a.score} (${a.outlook}) is beyond the ±35 confirmation band.`);
     if (a.breakout.type) qualifies.push(`Level ${a.breakout.type}: ${a.breakout.note}`);
     for (const p of a.patterns.confirmed.slice(0, 2)) qualifies.push(`Confirmed ${p.bias} pattern: ${p.name} (${Math.round(p.confidence * 100)}%).`);
@@ -50,6 +53,7 @@ export function categorize(a: TimeframeAnalysis, ctx: CategorizeContext = {}): {
     else if (ctx.record) qualifies.push(`Engine record on this chart: only ${ctx.record.n} recent signals (not enough to grade).`);
     return { category: "confirmed", reasons: qualifies, watch: [], qualifies };
   }
+  if (regGap) watch.push({ what: "Setup qualifies, market regime does not", why: regGap, needs: "A regime change (BTC trend or breadth) or a BTC setup instead of an altcoin." });
   if (htfGap) watch.push({ what: `Confirmed on ${a.timeframe} but against the higher timeframe`, why: htfGap, needs: `${ctx.htf!.timeframe} turning ${s!.side === "LONG" ? "up" : "down"} (or at least neutral) while this setup holds.` });
   if (recGap) watch.push({ what: "Setup qualifies, engine record here does not", why: recGap, needs: `At least ${RECORD_MIN_WINRATE}% winners and positive expectancy over the last ${RECORD_MIN_TRADES}+ signals on this chart.` });
   if (s && s.kind === "speculative" && s.quality.confirmGaps.length) {
@@ -79,6 +83,7 @@ export function detailSnapshot(a: TimeframeAnalysis, cat: ReturnType<typeof cate
   return {
     htf: ctx.htf ? { timeframe: ctx.htf.timeframe, trend: ctx.htf.trend.direction, score: ctx.htf.score } : null,
     record: ctx.record ?? null,
+    regimeGap: ctx.regime && !ctx.regime.ok ? ctx.regime.reason : null,
     price: a.price,
     outlook: a.outlook,
     score: a.score,

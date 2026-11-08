@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ensureEngineConfig } from "@/lib/engine-config";
 import { getOhlcv } from "@/lib/market/ohlcv";
 import { analyzeTimeframe } from "@/lib/ta/analysis";
 import { analyzeAsset } from "@/lib/market/analyze";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 
 /** ?symbol=SOL&id=solana[&tf=1h] - single timeframe when tf given, else multi-timeframe consensus. */
 export async function GET(req: NextRequest) {
+  await ensureEngineConfig();
   const sp = req.nextUrl.searchParams;
   const ref = {
     symbol: sp.get("symbol") ?? undefined,

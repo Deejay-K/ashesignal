@@ -197,6 +197,16 @@ Run `supabase/schema.sql` again (adds the `spot_zone` alert type). Nothing else 
 
 Run `supabase/schema.sql` again (adds `engine_lab`); the pushed `worker.yml` adds the lab call. `/lab` (More menu) shows, per rule variant, pooled trades, win rate, expectancy and profit factor across the top 40 coins on 1h/4h/1d, with "better" / "worse" tags against the production rules, verdict sentences once 30+ trades exist, and the charts where the engine works best and worst. Variants live in `src/lib/ta/lab.ts`; the production thresholds in `DEFAULT_GATES` (`src/lib/ta/analysis.ts`). Change a threshold only after the lab shows it earns its place.
 
+## 22. Stages 24 to 28
+
+Run `supabase/schema.sql` again (engine config tables, Discord column); pull the new `worker.yml` (weekly review job).
+
+- **24 Adopt from the Lab**: set `ADMIN_EMAILS=you@example.com` in Vercel (and `.env.local`) to unlock "Live confirmation rules" on `/lab`: apply custom thresholds, adopt a variant the lab rates better, reset or roll back; every change is logged. Workers and pages pick changes up within 5 minutes, no redeploy.
+- **25 Market regime**: dashboard card and conditions banner show risk-on / risk-off / choppy / transition from BTC's daily trend, breadth (share of the top 100 up over 30 d) and the alt-season gauge. In risk-off, confirmed alt longs are held in Watching (and alt shorts in risk-on with alts leading); BTC setups are never gated.
+- **26 Weekly review**: `/review` ("Weekly review" in the menu) and a Sunday report (sent with the daily digest, same hour) with flagged mistakes the data can see: oversize vs your risk %, non-confirmed entries, hand-closed losses and early winners, high leverage, missing notes, weekend entries, streaks. Test with `/api/cron/review?secret=<CRON_SECRET>&force=1`.
+- **27 Rule tester**: on any chart's Backtest panel, "Rule tester" lets you change the gates and filters and compares the result with production on that chart.
+- **28 Discord**: Account > Discord: paste a channel webhook; alerts, digest, weekly review and journal updates post there as embeds. "Send test" verifies it.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).
