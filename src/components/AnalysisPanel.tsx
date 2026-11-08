@@ -37,6 +37,9 @@ interface ChartPrefs { tf?: Timeframe; overlays?: ChartOverlays }
 export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asset: AssetQuery; defaultTf?: Timeframe; title?: string }) {
   const [tf, setTf] = useState<Timeframe>(() => {
     if (typeof window === "undefined") return defaultTf;
+    // A ?tf= in the URL (links from discovery cards, alerts, share cards) wins over the remembered preference.
+    const q = new URLSearchParams(window.location.search).get("tf");
+    if (q && (TIMEFRAMES as readonly string[]).includes(q)) return q as Timeframe;
     try { const p = JSON.parse(localStorage.getItem(PREF_KEY) ?? "{}") as ChartPrefs; return p.tf ?? defaultTf; } catch { return defaultTf; }
   });
   const [prefSaved, setPrefSaved] = useState<"idle" | "saving" | "saved">("idle");
@@ -423,6 +426,12 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
         <div className="mb-2 rounded-lg border border-border bg-bg-3 p-2 text-xs text-fg-2">
           <b className="text-fg">Targets are computed from the chart structure, but the engine does not rate this a trade yet:</b>
           <ul className="mt-1 list-disc pl-4">{s.quality.issues.map((x, i) => <li key={i}>{x}</li>)}</ul>
+        </div>
+      ) : null}
+      {s.kind === "speculative" && s.quality.confirmGaps?.length ? (
+        <div className="mb-2 rounded-lg border border-amber/40 bg-amber-dim p-2 text-xs text-fg-2">
+          <b className="text-fg">Speculative, not confirmed. Still missing:</b>
+          <ul className="mt-1 list-disc pl-4">{s.quality.confirmGaps.map((x, i) => <li key={i}>{x}</li>)}</ul>
         </div>
       ) : null}
       <div className="num space-y-1 text-sm">

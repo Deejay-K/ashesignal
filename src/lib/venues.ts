@@ -20,16 +20,17 @@ export interface VenueMeta {
   instrument: (base: string, quote: string) => string;   // display format of a pair
   tradeUrl: (base: string, quote: string) => string;     // deep link to the spot trading page
   accounts: boolean;                      // read-only account connection supported
+  canShort: boolean;                      // offers perpetuals or spot margin (shorting) to most users
   note: string;
   color: string;
 }
 
 export const VENUE_META: Record<VenueId, VenueMeta> = {
-  binance: { id: "binance", label: "Binance", quotes: ["USDT", "FDUSD", "USDC"], instrument: (b, q) => `${b}${q}`, tradeUrl: (b, q) => `https://www.binance.com/en/trade/${b}_${q}?type=spot`, accounts: true, note: "Largest spot liquidity, all 10 timeframes. Not available to residents of Canada, the US and some other regions.", color: "#f3ba2f" },
-  okx: { id: "okx", label: "OKX", quotes: ["USDT", "USDC"], instrument: (b, q) => `${b}-${q}`, tradeUrl: (b, q) => `https://www.okx.com/trade-spot/${b.toLowerCase()}-${q.toLowerCase()}`, accounts: true, note: "Deep altcoin coverage, all timeframes, 300 candles per request.", color: "#ffffff" },
-  bybit: { id: "bybit", label: "Bybit", quotes: ["USDT", "USDC"], instrument: (b, q) => `${b}${q}`, tradeUrl: (b, q) => `https://www.bybit.com/trade/spot/${b}/${q}`, accounts: true, note: "Wide listing, all timeframes, up to 1000 candles.", color: "#f7a600" },
-  kraken: { id: "kraken", label: "Kraken", quotes: ["USD", "USDT", "USDC"], instrument: (b, q) => `${b === "BTC" ? "XBT" : b}/${q}`, tradeUrl: (b, q) => `https://pro.kraken.com/app/trade/${b.toLowerCase()}-${q.toLowerCase()}`, accounts: true, note: "USD pairs, regulated in Canada/US/EU. 12h and 1M candles are resampled.", color: "#5741d9" },
-  coinbase: { id: "coinbase", label: "Coinbase", quotes: ["USD", "USDT", "USDC"], instrument: (b, q) => `${b}-${q}`, tradeUrl: (b, q) => `https://www.coinbase.com/advanced-trade/spot/${b}-${q}`, accounts: true, note: "USD pairs, regulated in Canada/US. 30m, 4h, 1w and 1M candles are resampled.", color: "#0052ff" },
+  binance: { id: "binance", label: "Binance", quotes: ["USDT", "FDUSD", "USDC"], instrument: (b, q) => `${b}${q}`, tradeUrl: (b, q) => `https://www.binance.com/en/trade/${b}_${q}?type=spot`, accounts: true, canShort: true, note: "Largest spot liquidity, all 10 timeframes. Not available to residents of Canada, the US and some other regions.", color: "#f3ba2f" },
+  okx: { id: "okx", label: "OKX", quotes: ["USDT", "USDC"], instrument: (b, q) => `${b}-${q}`, tradeUrl: (b, q) => `https://www.okx.com/trade-spot/${b.toLowerCase()}-${q.toLowerCase()}`, accounts: true, canShort: true, note: "Deep altcoin coverage, all timeframes, 300 candles per request.", color: "#ffffff" },
+  bybit: { id: "bybit", label: "Bybit", quotes: ["USDT", "USDC"], instrument: (b, q) => `${b}${q}`, tradeUrl: (b, q) => `https://www.bybit.com/trade/spot/${b}/${q}`, accounts: true, canShort: true, note: "Wide listing, all timeframes, up to 1000 candles.", color: "#f7a600" },
+  kraken: { id: "kraken", label: "Kraken", quotes: ["USD", "USDT", "USDC"], instrument: (b, q) => `${b === "BTC" ? "XBT" : b}/${q}`, tradeUrl: (b, q) => `https://pro.kraken.com/app/trade/${b.toLowerCase()}-${q.toLowerCase()}`, accounts: true, canShort: true, note: "USD pairs, regulated in Canada/US/EU. 12h and 1M candles are resampled.", color: "#5741d9" },
+  coinbase: { id: "coinbase", label: "Coinbase", quotes: ["USD", "USDT", "USDC"], instrument: (b, q) => `${b}-${q}`, tradeUrl: (b, q) => `https://www.coinbase.com/advanced-trade/spot/${b}-${q}`, accounts: true, canShort: false, note: "USD pairs, regulated in Canada/US. Spot only: LONG setups can be placed, SHORT setups cannot (no margin or perpetuals). 30m, 4h, 1w and 1M candles are resampled.", color: "#0052ff" },
 };
 
 /** Binance exposed through the same Venue interface as the others. */

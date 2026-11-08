@@ -164,6 +164,10 @@ To add another exchange later: one `Venue` (public candles + tickers) in `src/li
 
 Nothing to configure. `/guide` gives click-by-click steps to place a setup on the active exchange (spot or perpetual) with the setup's own numbers; it opens from "How to place it" on every setup card and discovery card, from the risk calculator, and from the More menu. `/risk` has a Simple mode, a 2-minute walkthrough, a "?" on every field and a plain-language answer ("Buy X units; if the stop hits you lose Y").
 
+## 17. Stage 19 - stricter confirmations
+
+Run `supabase/schema.sql` again (adds the engine-record columns on `coin_metrics`). Nothing else to configure. Confirmed now means all of: score beyond ±35, a trigger in the trade direction (a level break or a confirmed pattern; a completed pattern no longer counts), volume at least 0.8x average, not overextended (within 2.5 ATR of the 20 EMA, RSI not extreme), volatility not in the expanded regime, a level-based stop, TP1 at least 1R and TP2 at least 1.5R, the next-higher timeframe not against the trade, and the engine's own walk-forward record on that chart at least 50% winners with positive expectancy (once 8+ signals exist). Confirmed rows older than 10 minutes are re-checked against live candles every time the discovery page loads and demoted the moment they stop qualifying. Expect far fewer Confirmed cards and a much longer Watching list, which now says exactly which gate each one is missing.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).

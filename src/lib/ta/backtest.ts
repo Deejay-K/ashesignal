@@ -94,3 +94,11 @@ function partialR(tp: number[], entry: number, risk: number, reached: number, cl
   return r + rem * exitR;
 }
 const round2 = (v: number) => Math.round(v * 100) / 100;
+
+/** Compact record of the engine on this chart for the category gates (last ~300 candles, walk-forward). */
+export function engineRecord(tf: Timeframe, candles: Candle[]): { n: number; winRate: number | null; expectancyR: number | null } | null {
+  if (candles.length < 160) return null;
+  const r = backtest(tf, candles, { step: 5, minHistory: 120, maxHold: 40 });
+  const filled = r.trades.filter((t) => t.outcome !== "no_fill");
+  return { n: filled.length, winRate: r.winRate, expectancyR: r.expectancyR };
+}

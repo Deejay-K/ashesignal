@@ -63,7 +63,8 @@ export interface Setup {
    *             (neutral score, poor reward:risk, or extreme volatility); `quality` says why
    */
   kind: "confirmed" | "speculative" | "watch";
-  quality: { tradeable: boolean; issues: string[] };
+  /** issues: why it is only "watch". confirmGaps: which confirmation gates a tradeable setup still fails (why it is speculative, not confirmed). */
+  quality: { tradeable: boolean; issues: string[]; confirmGaps: string[] };
   entry: { low: number; high: number; mid: number; type: "pullback" | "breakout" | "market" };
   takeProfits: { label: string; price: number; basis: string; rr: number; reliable: boolean }[];
   stopLosses: { label: string; price: number; basis: string; pctFromEntry: number; reliable: boolean }[];
@@ -275,7 +276,7 @@ export function analyzeTimeframe(tf: Timeframe, candles: Candle[]): TimeframeAna
   };
 
   /* ---- setup ---- */
-  const { setup, setupReason } = buildSetup({ tf, price, score, dir, atrNow, atrPct, levels, swingHigh, swingLow, rsiNow, volRatio, breakout, completed: [...confirmedP, ...completed], forming, ema20, ema50, regime });
+  const { setup, setupReason } = buildSetup({ tf, price, score, dir, atrNow, atrPct, levels, swingHigh, swingLow, rsiNow, volRatio, breakout, confirmedPatterns: confirmedP, completed, forming, ema20, ema50, regime });
 
   const opportunityScore = clamp(Math.round(Math.abs(score) * 0.6 + (setup && setup.kind !== "watch" ? setup.confidence * 0.4 : 0)), 0, 100);
 
@@ -314,7 +315,7 @@ function nextTarget(levels: Level[], price: number, dirn: "up" | "down"): number
 interface SetupInput {
   tf: Timeframe; price: number; score: number; dir: "up" | "down" | "sideways"; atrNow: number; atrPct: number;
   levels: Level[]; swingHigh: number; swingLow: number; rsiNow: number; volRatio: number;
-  breakout: TimeframeAnalysis["breakout"]; completed: Pattern[]; forming: Pattern[]; ema20: number; ema50: number; regime: string;
+  breakout: TimeframeAnalysis["breakout"]; confirmedPatterns: Pattern[]; completed: Pattern[]; forming: Pattern[]; ema20: number; ema50: number; regime: string;
 }
 
 function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string } {
@@ -330,8 +331,20 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
   const ress = i.levels.filter((l) => l.kind === "resistance").sort((a, b) => a.price - b.price);
   const reasons: string[] = [];
   const invalid: string[] = [];
-  let kind: Setup["kind"] = abs >= 35 && (i.breakout.type || i.completed.length) ? "confirmed" : "speculative";
-  reasons.push(kind === "confirmed" ? "Confirmed: strong score backed by a confirmed pattern or level break." : "Speculative: directional bias without a confirmed trigger yet - size smaller.");
+  // ---- Confirmation gates (all must pass; each miss is recorded so the UI can say what is still needed) ----
+  // A completed pattern (target already reached) is NOT a trigger: entering there is chasing the move.
+  const confirmGaps: string[] = [];
+  const trigger = (side === "LONG" && i.breakout.type === "breakout") || (side === "SHORT" && i.breakout.type === "breakdown") || i.confirmedPatterns.some((p) => (side === "LONG" ? p.bias === "bullish" : p.bias === "bearish"));
+  if (abs < 35) confirmGaps.push(`Score ${i.score > 0 ? "+" : ""}${i.score} is inside the ±35 confirmation band.`);
+  if (!trigger) confirmGaps.push(side === "LONG" ? "No bullish trigger yet: needs a close above resistance or a confirmed bullish pattern." : "No bearish trigger yet: needs a close below support or a confirmed bearish pattern.");
+  if (i.volRatio < 0.8) confirmGaps.push(`Volume ${i.volRatio.toFixed(2)}x average: a confirmation needs at least 0.8x.`);
+  const stretch = Math.abs(i.price - i.ema20) / Math.max(i.atrNow, 1e-12);
+  if (stretch > 2.5) confirmGaps.push(`Price is ${stretch.toFixed(1)} ATR from the 20 EMA: overextended, wait for a pullback instead of chasing.`);
+  if (side === "LONG" && i.rsiNow > 78) confirmGaps.push(`RSI ${i.rsiNow.toFixed(0)} is extreme for a new long.`);
+  if (side === "SHORT" && i.rsiNow < 22) confirmGaps.push(`RSI ${i.rsiNow.toFixed(0)} is extreme for a new short.`);
+  if (i.regime === "expanded") confirmGaps.push("Volatility regime is expanded (Bollinger width in its top 15%): stops get hit by noise; wait for it to settle.");
+  let kind: Setup["kind"] = confirmGaps.length ? "speculative" : "confirmed";
+  reasons.push(kind === "confirmed" ? "Confirmed: strong score, a trigger in the trade direction, healthy volume, not overextended." : "Speculative: directional bias, but not every confirmation gate passes yet - size smaller or wait.");
 
   let entry: Setup["entry"];
   let sl1: number;
@@ -354,8 +367,9 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
       reasons.push("No clean pullback level nearby - scale in near market with a tight ATR stop.");
     }
     const below = sups.filter((s) => s.price < entry.low);
-    // structural stop under the nearest support if it is within 2.5 ATR, else a 1.5 ATR stop
-    const structL = below[0] ? below[0].price - i.atrNow * 0.3 : null;
+    // structural stop: under the broken level for breakout entries (a close back below it is the invalidation),
+    // else under the nearest support if it is within 2.5 ATR, else a 1.5 ATR stop
+    const structL = entry.type === "breakout" ? entry.low - i.atrNow * 0.8 : below[0] ? below[0].price - i.atrNow * 0.3 : null;
     sl1Reliable = structL != null && entry.low - structL <= i.atrNow * 2.5;
     sl1 = sl1Reliable ? Math.min(structL!, entry.low - i.atrNow * 0.8) : entry.low - i.atrNow * 1.5;
     const struct2L = below.find((b) => b.price - i.atrNow * 0.3 < sl1 - i.atrNow * 0.5 && entry.low - b.price <= i.atrNow * 4.5);
@@ -385,7 +399,7 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
       reasons.push("No clean rally level nearby - scale in near market with a tight ATR stop.");
     }
     const above = ress.filter((r) => r.price > entry.high);
-    const structS = above[0] ? above[0].price + i.atrNow * 0.3 : null;
+    const structS = entry.type === "breakout" ? entry.high + i.atrNow * 0.8 : above[0] ? above[0].price + i.atrNow * 0.3 : null;
     sl1Reliable = structS != null && structS - entry.high <= i.atrNow * 2.5;
     sl1 = sl1Reliable ? Math.max(structS!, entry.high + i.atrNow * 0.8) : entry.high + i.atrNow * 1.5;
     const struct2S = above.find((b) => b.price + i.atrNow * 0.3 > sl1 + i.atrNow * 0.5 && b.price - entry.high <= i.atrNow * 4.5);
@@ -425,10 +439,13 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
   }
   const rr2 = takeProfits[1].rr;
   if (takeProfits[0].rr < 0.8) issues.push(`TP1 pays only ${takeProfits[0].rr}R against the structural stop: reward does not justify the risk until price pulls back or the stop can tighten.`);
+  if (kind === "confirmed" && takeProfits[0].rr < 1) { confirmGaps.push(`TP1 pays ${takeProfits[0].rr}R: a confirmation needs at least 1R to the first target.`); kind = "speculative"; }
+  if (kind === "confirmed" && rr2 < 1.5) { confirmGaps.push(`TP2 pays ${rr2}R: a confirmation needs at least 1.5R to the second target.`); kind = "speculative"; }
+  if (kind === "confirmed" && !sl1Reliable) { confirmGaps.push("No structural level for the stop (ATR stop only): confirmations need a level-based stop."); kind = "speculative"; }
   if (issues.length) kind = "watch";
 
   const stopLosses = [
-    { label: "SL1", price: sl1, basis: sl1Reliable ? (side === "LONG" ? "below nearest support + 0.3 ATR" : "above nearest resistance + 0.3 ATR") : "1.5x ATR stop (no structural level within 2.5 ATR)", pctFromEntry: round2(((sl1 - entry.mid) / entry.mid) * 100), reliable: sl1Reliable },
+    { label: "SL1", price: sl1, basis: sl1Reliable ? (entry.type === "breakout" ? (side === "LONG" ? "0.8 ATR below the broken level" : "0.8 ATR above the broken level") : side === "LONG" ? "below nearest support + 0.3 ATR" : "above nearest resistance + 0.3 ATR") : "1.5x ATR stop (no structural level within 2.5 ATR)", pctFromEntry: round2(((sl1 - entry.mid) / entry.mid) * 100), reliable: sl1Reliable },
     { label: "SL2", price: sl2, basis: sl2Reliable ? "wider structural stop (second level)" : "SL1 plus 1x ATR (no second structural level)", pctFromEntry: round2(((sl2 - entry.mid) / entry.mid) * 100), reliable: sl2Reliable },
   ];
 
@@ -446,7 +463,7 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
 
   return {
     setup: {
-      side, kind, quality: { tradeable: kind !== "watch", issues }, entry, takeProfits, stopLosses, riskRewardTp2: rr2, leverage, confidence, style, holdingPeriod, holdingReason,
+      side, kind, quality: { tradeable: kind !== "watch", issues, confirmGaps }, entry, takeProfits, stopLosses, riskRewardTp2: rr2, leverage, confidence, style, holdingPeriod, holdingReason,
       invalidation: invalid,
       reasons,
       exitEarlyIf: side === "LONG"

@@ -14,6 +14,7 @@ import { analyzeTimeframe } from "@/lib/ta/analysis";
 import { safe } from "@/lib/fetch";
 import type { Timeframe } from "@/lib/types";
 import { categorize, detailSnapshot } from "./categorize";
+import { engineRecord } from "@/lib/ta/backtest";
 import { scanAddress } from "./scan";
 import { buildSpecDetail } from "./speculative";
 import { buildSpot } from "./spot";
@@ -42,13 +43,16 @@ export function liveTaCategories(n = 40, venue?: VenueId | null): Promise<Opport
     const out: Opportunity[] = [];
     await Promise.all(coins.map(async (c) => {
       const ks = await Promise.all(TFS.map((tf) => safe(getOhlcv({ symbol: c.symbol, coingeckoId: c.id, venue }, tf, 300))));
+      const analyses = ks.map((k, i) => (k.ok && k.data.quality === "verified" && k.data.candles.length ? analyzeTimeframe(TFS[i], k.data.candles) : null));
       ks.forEach((k, i) => {
         if (!k.ok || k.data.quality !== "verified" || !k.data.candles.length) return;
-        const a = analyzeTimeframe(TFS[i], k.data.candles);
+        const a = analyses[i];
         if (!a) return;
-        const cat = categorize(a);
+        const htf = analyses[i + 1] ?? null;
+        const record = a.setup?.kind === "confirmed" ? engineRecord(TFS[i], k.data.candles) : null;
+        const cat = categorize(a, { htf, record });
         if (cat.category === "none") return;
-        const d = detailSnapshot(a, cat);
+        const d = detailSnapshot(a, cat, { htf, record });
         const s = a.setup;
         const tp2 = s?.takeProfits[1]?.price ?? s?.takeProfits[0]?.price ?? null;
         out.push({

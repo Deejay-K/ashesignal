@@ -7,6 +7,7 @@ import { timeAgo } from "@/lib/format";
 import type { Opportunity, OppCategory } from "@/lib/market/opportunities";
 import { RISK_ORDER } from "@/lib/market/opportunities";
 import { VENUE_IDS, VENUE_META, type VenueId } from "@/lib/venues";
+import { currentVenue, VENUE_EVENT } from "@/lib/venue-pref";
 import OpportunityCard from "@/components/OpportunityCard";
 import CategoryHistory from "@/components/CategoryHistory";
 
@@ -38,6 +39,9 @@ function OpportunitiesInner() {
   const [f, setF] = useState<Filters>(EMPTY);
   const [sort, setSort] = useState<SortKey>("confidence");
   const [showHistory, setShowHistory] = useState(false);
+  const [mine, setMine] = useState(false);
+  const [venue, setVenueState] = useState<VenueId>("binance");
+  useEffect(() => { setVenueState(currentVenue()); const on = () => setVenueState(currentVenue()); window.addEventListener(VENUE_EVENT, on); return () => window.removeEventListener(VENUE_EVENT, on); }, []);
   useEffect(() => {
     let alive = true;
     const load = () => fetch("/api/opportunities?cat=all").then((r) => r.json()).then((x) => { if (alive) setD(x); }).catch(() => {});
@@ -57,6 +61,10 @@ function OpportunitiesInner() {
   const items = useMemo(() => {
     const inBand = (v: number | null, b?: [number, number]) => !b || (v != null && v >= b[0] && v < b[1]);
     return all.filter((i) => {
+      if (mine && i.category !== "speculative") {
+        if (!i.venues?.includes(venue)) return false;
+        if (i.side === "SHORT" && !VENUE_META[venue].canShort) return false;
+      }
       if (f.q && !(`${i.symbol} ${i.name}`.toLowerCase().includes(f.q.toLowerCase()))) return false;
       if (f.chain && !(i.venues?.includes(f.chain as VenueId) || i.chain === f.chain)) return false;
       if (f.mcap && !inBand(i.marketCap, BANDS[f.mcap])) return false;
@@ -83,7 +91,7 @@ function OpportunitiesInner() {
         case "updated": return Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
       }
     });
-  }, [all, f, sort]);
+  }, [all, f, sort, mine, venue]);
 
   const setTab = (k: OppCategory) => router.replace(`/opportunities?cat=${k}`, { scroll: false });
   const sel = (k: keyof Filters, opts: [string, string][], label: string) => (
@@ -157,7 +165,10 @@ function OpportunitiesInner() {
           </label>
           {JSON.stringify(f) !== JSON.stringify(EMPTY) ? <button className="btn-ghost text-xs" onClick={() => setF(EMPTY)}>Clear</button> : null}
         </div>
-        <div className="text-[11px] text-fg-3">{items.length} of {all.length} shown</div>
+        <div className="flex flex-wrap items-center gap-3 text-[11px] text-fg-3">
+          <span>{items.length} of {all.length} shown</span>
+          {tab !== "speculative" ? <label className="flex items-center gap-1.5 text-xs text-fg-2"><input type="checkbox" className="w-auto" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Only what I can trade on {VENUE_META[venue].label}{!VENUE_META[venue].canShort ? " (listed there, longs only: it cannot short)" : " (listed there)"}</label> : null}
+        </div>
       </div>
 
       {!d ? <div className="card h-40 animate-pulse"><div className="p-4 text-xs text-fg-3">Loading. If the worker has not filled this category yet, a live scan runs now (10 to 40 seconds).</div></div> : d.note ? <Empty>{d.note}</Empty> : !all.length ? (

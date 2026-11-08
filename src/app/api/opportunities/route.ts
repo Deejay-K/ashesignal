@@ -4,6 +4,11 @@ import type { Opportunity, RiskLevel } from "@/lib/market/opportunities";
 import { liveTaCategories, liveSpeculative, liveSpot, within } from "@/lib/market/live-opportunities";
 import { venueFromRequest } from "@/lib/venue-pref";
 import { venueListings, venuesFor } from "@/lib/venues";
+import { getOhlcv } from "@/lib/market/ohlcv";
+import { analyzeTimeframe } from "@/lib/ta/analysis";
+import { categorize, detailSnapshot } from "@/lib/market/categorize";
+import type { Timeframe } from "@/lib/types";
+import { safe } from "@/lib/fetch";
 
 export const maxDuration = 60;
 
@@ -97,9 +102,47 @@ export async function GET(req: NextRequest) {
     }
   }
   await fill();
+  // Confirmed rows are re-checked against live candles before they are shown: the worker revisits a coin
+  // about once an hour, and a setup can stop qualifying in between. Demotions are written back and logged.
+  const demoted = await verifyConfirmed(items, sb);
   await tag();
   const newest = items.reduce((m, i) => Math.max(m, Date.parse(i.updatedAt)), 0);
-  return NextResponse.json({ items, updatedAt: newest || null, live, counts: counts(items) });
+  return NextResponse.json({ items, updatedAt: newest || null, live, demoted, counts: counts(items) });
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function verifyConfirmed(items: Opportunity[], sb: NonNullable<ReturnType<typeof supabaseAdmin>>): Promise<number> {
+  const started = Date.now();
+  const targets = items.filter((i) => i.category === "confirmed" && i.assetKey.startsWith("cg:") && Date.now() - Date.parse(i.updatedAt) > 10 * 60_000);
+  let demoted = 0;
+  const updates: Record<string, unknown>[] = [];
+  const history: Record<string, unknown>[] = [];
+  await Promise.all(targets.slice(0, 40).map(async (i) => {
+    if (Date.now() - started > 20_000) return;
+    const tf = i.timeframe as Timeframe;
+    const r = await safe(getOhlcv({ symbol: i.symbol, coingeckoId: i.assetKey.slice(3) }, tf, 300));
+    if (!r.ok || r.data.quality !== "verified") return;
+    const a = analyzeTimeframe(tf, r.data.candles);
+    if (!a) return;
+    const d: any = i.detail ?? {};
+    const record = d.record ?? null;
+    const cat = categorize(a, { record });
+    if (cat.category === "confirmed") return;
+    demoted++;
+    const now = new Date().toISOString();
+    const newCat = cat.category === "none" ? "watching" : cat.category; // keep it visible as watching with the reason
+    const reasons = cat.reasons.length ? cat.reasons : ["Setup no longer meets the confirmation gates on the latest candles."];
+    i.category = newCat;
+    i.detail = detailSnapshot(a, { ...cat, category: newCat, watch: cat.watch.length ? cat.watch : [{ what: "Lost confirmation on the latest candles", why: a.setup?.quality.confirmGaps[0] ?? a.setup?.quality.issues[0] ?? "Score or trigger faded.", needs: "The gates passing again on a candle close." }] }, { record }) as unknown as Record<string, unknown>;
+    i.firstSeen = now; i.updatedAt = now;
+    updates.push({ asset_key: i.assetKey, timeframe: tf, category: newCat, category_since: now, watch_reasons: reasons, detail: i.detail, price: a.price, score: a.score, outlook: a.outlook, setup_kind: a.setup?.kind ?? null, updated_at: now });
+    history.push({ asset_key: i.assetKey, symbol: i.symbol, timeframe: tf, category: newCat, prev_category: "confirmed", reason: `Live re-check: ${reasons[0]}`, snapshot: { price: a.price, score: a.score } });
+  }));
+  if (updates.length) {
+    for (const u of updates) await sb.from("coin_metrics").update(u).eq("asset_key", u.asset_key as string).eq("timeframe", u.timeframe as string);
+    await sb.from("category_history").insert(history);
+  }
+  return demoted;
 }
 
 function counts(items: Opportunity[]) {

@@ -397,3 +397,8 @@ create policy "spot readable" on public.spot_picks for select using (true);
 alter table public.coin_metrics add column if not exists venue text;   -- binance | okx | bybit | kraken | coinbase
 alter table public.exchange_accounts drop constraint if exists exchange_accounts_exchange_check;
 alter table public.exchange_accounts add constraint exchange_accounts_exchange_check check (exchange in ('kraken','coinbase','binance','okx','bybit'));
+
+-- ---------- Stage 19: engine quality gates ----------
+alter table public.coin_metrics add column if not exists bt_n int;             -- engine record on this chart (walk-forward backtest)
+alter table public.coin_metrics add column if not exists bt_winrate numeric;
+alter table public.coin_metrics add column if not exists bt_expectancy numeric;

@@ -85,6 +85,7 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
         </div>
       </header>
 
+      {o.side === "SHORT" && !VENUE_META[currentVenue()].canShort ? <div className="mx-3 mb-2 rounded border border-amber/40 bg-amber-dim px-2 py-1 text-[11px] text-amber">{VENUE_META[currentVenue()].label} is spot only: this SHORT cannot be opened there. If you hold {o.symbol}, treat it as a sell / reduce signal.</div> : null}
       {/* summary line */}
       <div className="px-3 pb-2 text-xs text-fg-2">
         {o.category === "confirmed" && d?.qualifies?.[0] ? d.qualifies[0] : null}
@@ -165,6 +166,8 @@ function TaBody({ o }: { o: Opportunity }) {
         <div><span className="up">Bullish:</span> {d.scenarios?.bullish}</div>
         <div><span className="down">Bearish:</span> {d.scenarios?.bearish}</div>
       </Block>
+      {d.record ? <Block title="Engine record on this chart"><div>{d.record.n >= 8 ? <>{d.record.winRate}% winners over the last {d.record.n} signals, {d.record.expectancyR}R per trade (walk-forward backtest of this exact timeframe).</> : <>Only {d.record.n} recent signals: not enough to grade.</>}</div>{d.htf ? <div className="text-fg-2">Higher timeframe {d.htf.timeframe}: trend {d.htf.trend}, score {d.htf.score > 0 ? "+" : ""}{d.htf.score}.</div> : null}</Block> : d.htf ? <Block title="Higher timeframe"><div>{d.htf.timeframe}: trend {d.htf.trend}, score {d.htf.score > 0 ? "+" : ""}{d.htf.score}.</div></Block> : null}
+      {s?.confirmGaps?.length && watching ? <Block title="What is still missing for Confirmed" tone="md:col-span-2"><List items={s.confirmGaps} bullet="○" /></Block> : null}
       {s?.invalidation?.length ? <Block title="What invalidates this setup" tone="md:col-span-2"><List items={s.invalidation} bullet="✕" />{s.issues?.length ? <div className="pt-1 text-fg-3">Quality notes: {s.issues.join(" ")}</div> : null}</Block> : null}
       <div className="md:col-span-2 text-[11px] text-fg-3">Key levels: {(d.levels ?? []).slice(0, 6).map((l: any) => `${l.kind === "support" ? "S" : "R"} ${fmtUsd(l.price)}`).join(" · ")}. <Term id="setup-kind">Confirmed</Term> means the engine's criteria were met; it is not a guarantee.</div>
     </>

@@ -5,7 +5,8 @@ import { getOhlcv } from "@/lib/market/ohlcv";
 import { analyzeTimeframe } from "@/lib/ta/analysis";
 import { safe } from "@/lib/fetch";
 import type { Timeframe } from "@/lib/types";
-import { categorize, detailSnapshot } from "@/lib/market/categorize";
+import { categorize, detailSnapshot, type EngineRecord } from "@/lib/market/categorize";
+import { engineRecord } from "@/lib/ta/backtest";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -34,17 +35,23 @@ export async function GET(req: Request) {
   const history: Record<string, unknown>[] = [];
   await Promise.all(slice.map(async (c) => {
     const ks = await Promise.all(TFS.map((tf) => safe(getOhlcv({ symbol: c.symbol, coingeckoId: c.id }, tf, 300))));
+    const analyses = ks.map((k, i) => (k.ok && k.data.quality === "verified" && k.data.candles.length ? analyzeTimeframe(TFS[i], k.data.candles) : null));
     ks.forEach((k, i) => {
       if (!k.ok || k.data.quality !== "verified" || !k.data.candles.length) return; // CEX candles only; no synthesized data in the screener
-      const a = analyzeTimeframe(TFS[i], k.data.candles);
+      const a = analyses[i];
       if (!a) return;
       const venue = k.data.source;
-      const cat = categorize(a);
+      // Gates beyond one timeframe: the next-higher timeframe and the engine's own record on this chart
+      // (backtest only when the setup would otherwise confirm, to keep the worker inside its time budget).
+      const htf = analyses[i + 1] ?? null;
+      let record: EngineRecord | null = null;
+      if (a.setup?.kind === "confirmed" && !all) record = engineRecord(TFS[i], k.data.candles);
+      const cat = categorize(a, { htf, record });
       const key = `cg:${c.id}|${TFS[i]}`;
       const before = prev.get(key);
       const changed = (before?.category ?? "none") !== cat.category;
       if (changed) history.push({ asset_key: `cg:${c.id}`, symbol: c.symbol, timeframe: TFS[i], category: cat.category, prev_category: before?.category ?? "none", reason: cat.category === "confirmed" ? cat.qualifies.slice(0, 2).join(" ") : cat.category === "watching" ? cat.reasons.slice(0, 2).join("; ") : "Setup no longer qualifies.", snapshot: a.setup ? { side: a.setup.side, kind: a.setup.kind, entry: a.setup.entry.mid, tp1: a.setup.takeProfits[0]?.price, sl1: a.setup.stopLosses[0]?.price, score: a.score, price: a.price } : { score: a.score, price: a.price } });
-      rows.push({ venue, category: cat.category, category_since: changed ? new Date().toISOString() : before?.category_since ?? new Date().toISOString(), watch_reasons: cat.reasons, detail: detailSnapshot(a, cat), liquidity_note: `${c.volume24hUsd != null && c.marketCapUsd ? ((c.volume24hUsd / c.marketCapUsd) * 100).toFixed(1) + "% of market cap traded in 24h" : ""}`, asset_key: `cg:${c.id}`, symbol: c.symbol, name: c.name, timeframe: TFS[i], price: a.price, market_cap: c.marketCapUsd, volume_24h: c.volume24hUsd, change_24h_pct: c.change24hPct, score: a.score, outlook: a.outlook, opportunity: a.opportunityScore, rsi: a.momentum.rsi, atr_pct: a.volatility.atrPct * 100, vol_ratio: a.volume.ratio, vol_regime: a.volatility.regime, trend: a.trend.direction, macd_cross: a.momentum.macdCross, breakout: a.breakout.type, setup_side: a.setup?.side ?? null, setup_kind: a.setup?.kind ?? null, setup_rr: a.setup?.riskRewardTp2 ?? null, setup_confidence: a.setup?.confidence ?? null, leverage: a.setup?.leverage.recommended ?? null, patterns: [...a.patterns.confirmed, ...a.patterns.forming].slice(0, 4).map((p) => `${p.name} (${p.status})`), updated_at: new Date().toISOString() });
+      rows.push({ venue, bt_n: record?.n ?? null, bt_winrate: record?.winRate ?? null, bt_expectancy: record?.expectancyR ?? null, category: cat.category, category_since: changed ? new Date().toISOString() : before?.category_since ?? new Date().toISOString(), watch_reasons: cat.reasons, detail: detailSnapshot(a, cat, { htf, record }), liquidity_note: `${c.volume24hUsd != null && c.marketCapUsd ? ((c.volume24hUsd / c.marketCapUsd) * 100).toFixed(1) + "% of market cap traded in 24h" : ""}`, asset_key: `cg:${c.id}`, symbol: c.symbol, name: c.name, timeframe: TFS[i], price: a.price, market_cap: c.marketCapUsd, volume_24h: c.volume24hUsd, change_24h_pct: c.change24hPct, score: a.score, outlook: a.outlook, opportunity: a.opportunityScore, rsi: a.momentum.rsi, atr_pct: a.volatility.atrPct * 100, vol_ratio: a.volume.ratio, vol_regime: a.volatility.regime, trend: a.trend.direction, macd_cross: a.momentum.macdCross, breakout: a.breakout.type, setup_side: a.setup?.side ?? null, setup_kind: a.setup?.kind ?? null, setup_rr: a.setup?.riskRewardTp2 ?? null, setup_confidence: a.setup?.confidence ?? null, leverage: a.setup?.leverage.recommended ?? null, patterns: [...a.patterns.confirmed, ...a.patterns.forming].slice(0, 4).map((p) => `${p.name} (${p.status})`), updated_at: new Date().toISOString() });
     });
   }));
   if (rows.length) {

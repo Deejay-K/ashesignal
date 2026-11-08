@@ -32,6 +32,17 @@ check("macd defined at end", Number.isFinite(macd(closes).hist.at(-1)!));
 check("bollinger upper>lower", (() => { const b = bollinger(closes); return b.upper.at(-1)! > b.lower.at(-1)!; })());
 check("atr positive", atr(up).at(-1)! > 0);
 
+function rangeBreakout(seed: number, rangeBars: number, breakBars: number, breakStep: number, vol: number): Candle[] {
+  let s = seed; const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const out: Candle[] = []; let p = 100; let t = 1_700_000_000;
+  for (let i = 0; i < 200; i++) { const o = p; const c = o * (1 + (rnd() - 0.5) * 2 * vol + 0.0015); out.push({ time: t += 3600, open: o, high: Math.max(o, c) * (1 + rnd() * vol * 0.5), low: Math.min(o, c) * (1 - rnd() * vol * 0.5), close: c, volume: 1000 + rnd() * 500 }); p = c; }
+  const base = p;
+  for (let i = 0; i < rangeBars; i++) { const o = p; const c = base * (1 + (rnd() - 0.5) * 2 * vol * 1.2); out.push({ time: t += 3600, open: o, high: Math.max(o, c) * (1 + rnd() * vol * 0.4), low: Math.min(o, c) * (1 - rnd() * vol * 0.4), close: c, volume: 1000 + rnd() * 500 }); p = c; }
+  for (let i = 0; i < breakBars; i++) { const o = p; const c = o * (1 + breakStep + rnd() * vol * 0.3); out.push({ time: t += 3600, open: o, high: c * (1 + rnd() * vol * 0.3), low: o * (1 - rnd() * vol * 0.2), close: c, volume: 2500 + rnd() * 1500 }); p = c; }
+  return out;
+}
+
+const aBreak = analyzeTimeframe("1h", rangeBreakout(1, 30, 1, 0.009, 0.008))!;
 const aUp = analyzeTimeframe("1h", up)!;
 const aDown = analyzeTimeframe("1h", down)!;
 const aFlat = analyzeTimeframe("1h", flat)!;
@@ -120,7 +131,24 @@ import { resolveAgainst } from "../src/lib/alerts/resolve";
 {
   let f3 = 0;
   const c3 = (n: string, ok: boolean, info?: unknown) => { console.log(`${ok ? "PASS" : "FAIL"} ${n}`, info ?? ""); if (!ok) f3++; };
-  for (const a of [aUp, aDown, aFlat]) {
+  // confirmation gates: a completed pattern alone is not a trigger; every confirmed setup has TP1 >= 1R, a level stop and in-direction trigger
+  c3("range breakout on volume confirms", aBreak.setup?.kind === "confirmed", aBreak.setup?.quality.confirmGaps);
+  for (const a of [aBreak, aUp, aDown, aFlat]) {
+    const s = a.setup;
+    if (s?.kind === "confirmed") {
+      const trig = (s.side === "LONG" && a.breakout.type === "breakout") || (s.side === "SHORT" && a.breakout.type === "breakdown") || a.patterns.confirmed.some((p) => (s.side === "LONG" ? p.bias === "bullish" : p.bias === "bearish"));
+      c3(`confirmed ${a.timeframe} has in-direction trigger, TP1>=1R, TP2>=1.5R, level stop`, trig && s.takeProfits[0].rr >= 1 && s.riskRewardTp2 >= 1.5 && s.stopLosses[0].reliable && a.volume.ratio >= 0.8);
+    }
+    if (s?.kind === "speculative") c3(`speculative ${a.timeframe} lists what is missing`, s.quality.confirmGaps.length > 0, s.quality.confirmGaps[0]);
+    // higher-timeframe gate demotes a confirmed setup that fights the bigger trend
+    if (s?.kind === "confirmed") {
+      const opp = { ...a, trend: { ...a.trend, direction: s.side === "LONG" ? "down" : "up" }, score: s.side === "LONG" ? -40 : 40 } as typeof a;
+      c3("confirmed against higher timeframe becomes watching", categorize(a, { htf: opp }).category === "watching");
+      c3("weak engine record demotes to watching", categorize(a, { record: { n: 12, winRate: 35, expectancyR: -0.2 } }).category === "watching");
+      c3("good engine record keeps confirmed", categorize(a, { record: { n: 12, winRate: 60, expectancyR: 0.4 } }).category === "confirmed");
+    }
+  }
+  for (const a of [aBreak, aUp, aDown, aFlat]) {
     const cat = categorize(a);
     c3(`category consistent with setup kind (${a.setup?.kind ?? "none"} -> ${cat.category})`, a.setup?.kind === "confirmed" ? cat.category === "confirmed" : cat.category !== "confirmed");
     if (cat.category === "confirmed") c3("confirmed has qualifies text", cat.qualifies.length >= 2);
