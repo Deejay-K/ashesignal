@@ -68,7 +68,7 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
   const copy = async () => { try { await navigator.clipboard.writeText(copyTradeText(o)); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} };
   const loadHist = async () => { if (hist) { setHist(null); return; } const r = await fetch(`/api/opportunities/history?asset=${encodeURIComponent(o.assetKey)}`); setHist((await r.json()).rows ?? []); };
   const tone = o.category === "confirmed" ? "opp-card-green" : o.category === "speculative" ? "opp-card-amber" : o.category === "spot" ? "opp-card-violet" : "opp-card-blue";
-  const d: any = o.detail; const s = d?.setup;
+  const d: any = o.detail; const s = d?.setup; const spec = o.spec;
 
   return (
     <article className={`card opp-card ${tone}`}>
@@ -98,19 +98,28 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
 
       {open ? <div className="grid gap-2 border-t border-border p-3 md:grid-cols-2">{o.category === "spot" && o.spot ? <SpotBody o={o} /> : o.category === "speculative" && o.spec ? <SpecBody o={o} /> : <TaBody o={o} />}</div> : null}
 
-      <footer className="flex flex-wrap items-center gap-2 border-t border-border px-3 py-2 text-xs">
-        <button className="btn-ghost" onClick={() => setOpen((v) => !v)}>{open ? "Less" : "Details and why"}</button>
-        <button className={o.category === "confirmed" ? "btn" : "btn-ghost"} onClick={copy} title="Copies direction, entry, TPs, SLs, sizing to your clipboard. Nothing is sent to any exchange.">{copied ? "Copied" : "Copy Trade Setup"}</button>
-        <Link className="btn-ghost" href={o.href}>Full analysis</Link>
-        {o.category !== "speculative" && o.venues?.length ? <a className="btn-ghost" target="_blank" rel="noreferrer" href={tradeLink(o.venues[0], o.symbol)} title={o.venues[0] === currentVenue() ? "Opens the spot pair on your active exchange in a new tab. You place the order yourself." : `Not listed on your active exchange; opens on ${VENUE_META[o.venues[0]].label} instead.`}>Open on {VENUE_META[o.venues[0]].label} ↗</a> : null}
-        {s ? <Link className="btn-ghost" href={`/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, tf: o.timeframe ?? "", leverage: String(s.leverage?.recommended ?? 1) })}`}>Size it</Link> : null}
-        {s ? <Link className="btn-ghost" href={`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0]?.price ?? ""), stop2: String(s.stopLosses[1]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, leverage: String(s.leverage?.recommended ?? 1), venue: o.venues?.[0] ?? currentVenue() })}`}>How to place it</Link> : null}
-        {s && o.category === "confirmed" ? <button className="btn-ghost" onClick={() => setTaking(true)}>I took this trade</button> : null}
-        {o.category === "spot" ? <Link className="btn-ghost" href={`/alerts?symbol=${encodeURIComponent(o.symbol)}&asset=${encodeURIComponent(o.assetKey)}&type=spot_zone`}>Alert me in the zone</Link> : null}
-        <button className="btn-ghost" onClick={loadHist}>{hist ? "Hide history" : "History"}</button>
-        <span className="ml-auto text-fg-3">in category {timeAgo(Date.parse(o.firstSeen))} · updated {timeAgo(Date.parse(o.updatedAt))}</span>
+      <footer className="space-y-2 border-t border-border px-3 py-2 text-xs">
+        {/* primary actions */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button className="btn-ghost" onClick={() => setOpen((v) => !v)}>{open ? "Less" : "Details and why"}</button>
+          {s || spec?.targets.justified || o.spot ? <button className={o.category === "confirmed" ? "btn" : "btn-ghost"} onClick={() => setTaking(true)} title="Record the trade you placed on your exchange in the journal. Nothing is sent to any exchange.">{o.spot ? "I bought (spot)" : "I took this trade"}</button> : null}
+          <button className="btn-ghost" onClick={copy} title="Copies direction, entry, TPs, SLs, sizing to your clipboard. Nothing is sent to any exchange.">{copied ? "Copied" : "Copy Trade Setup"}</button>
+          {o.category === "spot" ? <Link className="btn-ghost" href={`/alerts?symbol=${encodeURIComponent(o.symbol)}&asset=${encodeURIComponent(o.assetKey)}&type=spot_zone`}>Alert me in the zone</Link> : null}
+          <span className="ml-auto text-fg-3">{timeAgo(Date.parse(o.updatedAt))}</span>
+        </div>
+        {/* secondary actions */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          <Link className="link" href={o.href}>Full analysis</Link>
+          {o.category !== "speculative" && o.venues?.length ? <a className="link" target="_blank" rel="noreferrer" href={tradeLink(o.venues[0], o.symbol)} title={o.venues[0] === currentVenue() ? "Opens the spot pair on your active exchange in a new tab. You place the order yourself." : `Not listed on your active exchange; opens on ${VENUE_META[o.venues[0]].label} instead.`}>Open on {VENUE_META[o.venues[0]].label} ↗</a> : null}
+          {s ? <Link className="link" href={`/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, tf: o.timeframe ?? "", leverage: String(s.leverage?.recommended ?? 1) })}`}>Size it</Link> : null}
+          {s ? <Link className="link" href={`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0]?.price ?? ""), stop2: String(s.stopLosses[1]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, leverage: String(s.leverage?.recommended ?? 1), venue: o.venues?.[0] ?? currentVenue() })}`}>How to place it</Link> : null}
+          <button className="link" onClick={loadHist}>{hist ? "Hide history" : "History"}</button>
+          <span className="text-fg-3">in category {timeAgo(Date.parse(o.firstSeen))}</span>
+        </div>
       </footer>
-      {taking && s ? <TakeTradeDialog setup={{ side: s.side, kind: s.kind, entry: s.entry, takeProfits: s.takeProfits, stopLosses: s.stopLosses, rr: s.rr, confidence: s.confidence, leverage: s.leverage }} symbol={o.symbol} timeframe={o.timeframe ?? "4h"} assetKey={o.assetKey} score={d?.score ?? null} onClose={() => setTaking(false)} /> : null}
+      {taking && s ? <TakeTradeDialog setup={{ side: s.side, kind: o.category === "confirmed" ? "confirmed" : s.kind === "confirmed" ? "watch" : s.kind, entry: s.entry, takeProfits: s.takeProfits, stopLosses: s.stopLosses, rr: s.rr, confidence: s.confidence, leverage: s.leverage }} symbol={o.symbol} timeframe={o.timeframe ?? "4h"} assetKey={o.assetKey} score={d?.score ?? null} onClose={() => setTaking(false)} /> : null}
+      {taking && o.spot ? <TakeTradeDialog setup={{ side: "LONG", kind: "spot", entry: { low: o.spot.analysis.accumulation.low, high: o.spot.analysis.accumulation.high, mid: o.price ?? o.spot.analysis.price }, takeProfits: o.spot.analysis.profitTaking.slice(0, 3).map((t) => ({ price: t.price })), stopLosses: [{ price: o.spot.analysis.accumulation.low * 0.85 }], rr: null as unknown as number, confidence: o.spot.score, leverage: null }} symbol={o.symbol} timeframe="1w" assetKey={o.assetKey} score={o.spot.score} onClose={() => setTaking(false)} /> : null}
+      {taking && !s && !o.spot && spec?.targets.justified && spec.targets.side ? <TakeTradeDialog setup={{ side: spec.targets.side, kind: "speculative", entry: { low: o.price ?? 0, high: o.price ?? 0, mid: o.price ?? 0 }, takeProfits: spec.targets.tp.map((t) => ({ price: t.price })), stopLosses: spec.targets.sl.map((t) => ({ price: t.price })), rr: null as unknown as number, confidence: o.confidence ?? 0, leverage: null }} symbol={o.symbol} timeframe={spec.ta?.timeframe ?? "1h"} assetKey={o.assetKey} score={spec.ta?.score ?? null} onClose={() => setTaking(false)} /> : null}
       {hist ? (
         <div className="border-t border-border px-3 py-2 text-xs">
           {!hist.length ? <span className="text-fg-3">No category changes recorded yet.</span> : (

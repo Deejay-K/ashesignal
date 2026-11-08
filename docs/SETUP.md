@@ -207,6 +207,10 @@ Run `supabase/schema.sql` again (engine config tables, Discord column); pull the
 - **27 Rule tester**: on any chart's Backtest panel, "Rule tester" lets you change the gates and filters and compares the result with production on that chart.
 - **28 Discord**: Account > Discord: paste a channel webhook; alerts, digest, weekly review and journal updates post there as embeds. "Send test" verifies it.
 
+## 23. Stage 29 - journal entry points, push fix
+
+No schema change. "I took this trade" is now on every setup card and every discovery card (Confirmed, Watching, Speculative with justified targets, and "I bought (spot)" on Spot picks), with a note when the setup is not confirmed. Card actions are split into a primary row (Details, I took this trade, Copy Trade Setup) and a secondary row (Full analysis, Open on exchange, Size it, How to place it, History). Push notifications: the web-push library is now imported as a namespace; the previous default import was undefined in Vercel's build, which silently broke every push send.
+
 ## 7. Checks
 
 - `npm run build` must pass before pushing (Vercel runs the same build).

@@ -77,6 +77,8 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
           <p className="text-sm text-fg-2">The journal needs an account so your trades are kept and auto-resolved. <Link href="/login" className="link">Sign in</Link> (free), then press this again.</p>
         ) : (
           <>
+            {setup.kind === "spot" ? <p className="rounded border border-border bg-bg-2 px-2 py-1 text-xs text-fg-2"><b>Spot purchase.</b> The "stop" here is 15% under the accumulation zone, a review level rather than an order; targets are the profit-taking zones. Status updates come as price reaches them.</p> : null}
+            {setup.kind !== "confirmed" && setup.kind !== "spot" ? <p className="rounded border border-amber/40 bg-amber-dim px-2 py-1 text-xs text-amber"><b>Not a confirmed setup</b> ({setup.kind}). You can record it, and you should if you placed it, but the journal and the weekly review will count it as a non-confirmed trade.</p> : null}
             <p className="text-xs text-fg-2">Enter what you actually did on the exchange. The journal then tracks it against live price, tells you when TP or SL is reached, and computes your real P&L. Nothing is sent to the exchange.</p>
             <div className="grid grid-cols-2 gap-2 text-xs text-fg-3">
               <label>Exchange<select value={venue} onChange={(e) => setVenue(e.target.value as VenueId)}>{VENUE_IDS.map((v) => <option key={v} value={v}>{VENUE_META[v].label}</option>)}</select></label>

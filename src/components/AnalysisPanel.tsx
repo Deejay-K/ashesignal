@@ -460,7 +460,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
         <button className="btn-ghost" onClick={save} disabled={saved === "saving" || saved === "saved"}>
           {saved === "saved" ? "Saved ✓" : saved === "saving" ? "Saving…" : "Save setup"}
         </button>
-        {s.kind !== "watch" ? <button className="btn-ghost" onClick={() => setTaking(true)} title="Record the trade you placed on your exchange in the journal">I took this trade</button> : null}
+        <button className={s.kind === "confirmed" ? "btn" : "btn-ghost"} onClick={() => setTaking(true)} title="Record the trade you placed on your exchange in the journal. Nothing is sent to any exchange.">I took this trade</button>
         {taking ? <TakeTradeDialog setup={s} symbol={asset.symbol ?? asset.id ?? ""} timeframe={tf} assetKey={asset.id ? `cg:${asset.id}` : undefined} score={score} onClose={() => setTaking(false)} /> : null}
         {saved === "guest" ? <Link href="/login" className="text-xs text-amber">Sign in to save setups</Link> : null}
         {saved === "error" ? <span className="text-xs text-red">Save failed</span> : null}
