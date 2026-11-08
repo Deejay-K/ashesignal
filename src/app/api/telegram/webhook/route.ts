@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { TELEGRAM_ENABLED, tgSend } from "@/lib/telegram";
-import { loadChat, handleCommand, handleCallback, handleStateReply, type ChatCtx } from "@/lib/telegram-bot";
+import { loadActor, handleCommand, handleCallback, handleStateReply, type ChatCtx } from "@/lib/telegram-bot";
 import { ensureEngineConfig } from "@/lib/engine-config";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +27,9 @@ export async function POST(req: NextRequest) {
       const chatId = String(cb.message.chat.id);
       if (!sb) { await tgSend(chatId, "This deployment has no database configured."); return NextResponse.json({ ok: true }); }
       await ensureEngineConfig();
-      const chat = await loadChat(sb, chatId, cb.message.chat.title);
-      const ctx: ChatCtx = { sb, chatId, userId: chat.userId, venue: chat.venue, state: chat.state, isGroup: cb.message.chat.type !== "private", messageId: cb.message.message_id };
+      const tgUserId = String(cb.from?.id ?? chatId);
+      const chat = await loadActor(sb, tgUserId, chatId, { firstName: cb.from?.first_name, username: cb.from?.username, chatTitle: cb.message.chat.title });
+      const ctx: ChatCtx = { sb, chatId, tgUserId, firstName: cb.from?.first_name, userId: chat.userId, venue: chat.venue, state: chat.state, isGroup: cb.message.chat.type !== "private", messageId: cb.message.message_id };
       await handleCallback(ctx, cb.data, cb.id);
       return NextResponse.json({ ok: true });
     }
@@ -40,12 +41,13 @@ export async function POST(req: NextRequest) {
     const isGroup = msg.chat?.type === "group" || msg.chat?.type === "supergroup";
     if (!sb) { await tgSend(chatId, "This deployment has no database configured."); return NextResponse.json({ ok: true }); }
     await ensureEngineConfig();
-    const chat = await loadChat(sb, chatId, msg.chat.title);
-    const ctx: ChatCtx = { sb, chatId, userId: chat.userId, venue: chat.venue, state: chat.state, isGroup, messageId: msg.message_id };
+    const tgUserId = String(msg.from?.id ?? chatId);
+    const chat = await loadActor(sb, tgUserId, chatId, { firstName: msg.from?.first_name, username: msg.from?.username, chatTitle: msg.chat.title });
+    const ctx: ChatCtx = { sb, chatId, tgUserId, firstName: msg.from?.first_name, userId: chat.userId, venue: chat.venue, state: chat.state, isGroup, messageId: msg.message_id };
 
-    // A guided flow (recording a trade) is waiting for a plain answer
+    // This user's guided flow (recording a trade) is waiting for a plain answer; the flow is per user, so in a
+    // group only that person's messages are read as answers.
     if (!text.startsWith("/") && chat.state?.flow) {
-      if (isGroup && msg.reply_to_message?.from?.is_bot !== true && !/@\w*bot\b/i.test(text)) return NextResponse.json({ ok: true });
       if (await handleStateReply(ctx, text.replace(/@\w+/g, "").trim())) return NextResponse.json({ ok: true });
     }
     if (isGroup && !text.startsWith("/")) {

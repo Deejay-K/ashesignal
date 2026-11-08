@@ -247,7 +247,7 @@ Run `supabase/schema.sql` again (Telegram columns on `profiles`, `paper` on `sav
 
 ## 26. Stage 32.2 - Telegram bot mirrors the whole app
 
-Run `supabase/schema.sql` again (new `telegram_chats` table: per-chat exchange, linked user, guided-flow state). Then open `https://<your-url>/api/telegram/setup?secret=<CRON_SECRET>` once more so the command menu is re-registered (it now also allows button taps).
+Run `supabase/schema.sql` again (new `telegram_users` table: each Telegram user keeps their own exchange, account link and guided-flow state, also inside groups; `telegram_chats` only records group titles). Then open `https://<your-url>/api/telegram/setup?secret=<CRON_SECRET>` once more so the command menu is re-registered (it now also allows button taps).
 
 What the bot does now, in private chats and groups:
 
@@ -260,7 +260,7 @@ What the bot does now, in private chats and groups:
 - `/alert BTC above 100000`, `/alerts`: create price alerts and see rules plus inbox (linked).
 - `/me`, `/journal`: open trades with heat, recent record, last 10 journal entries (linked).
 - `/take SOL` or the ✍️ / 🧪 buttons: a 3-step guided flow (fill price, size, stop when the engine has none) that records the trade in the journal exactly like the website's "I took this trade". The bot then messages when TP or SL is reached.
-- `/exchange coinbase`: exchange for this chat, synced to the account when linked.
+- `/exchange coinbase`: your exchange. Settings are per person, not per chat: in a group each member picks their own exchange and links their own account, and the bot prefixes replies with the member's name. Alerts, digest and review always go to the member's private chat with the bot (they must press Start there once).
 - Anything else in plain words goes to the grounded assistant.
 
 Groups: the bot answers commands, mentions, replies and button taps only. For plain-text questions in a group, disable privacy mode in @BotFather (`/setprivacy` > Disable) and re-add the bot to the group. Account-bound commands (`/me`, `/journal`, `/take`, `/alerts`) are hidden from the group command menu; link in a private chat.

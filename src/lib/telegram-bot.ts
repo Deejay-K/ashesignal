@@ -22,7 +22,7 @@ import type { Opportunity } from "./market/opportunities";
 const SITE = () => (process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
 const link = (path: string) => (SITE() ? `${SITE()}${path}` : undefined);
 
-export interface ChatCtx { sb: SupabaseClient; chatId: string; userId: string | null; venue: VenueId; isGroup: boolean; state: any; messageId?: number }
+export interface ChatCtx { sb: SupabaseClient; chatId: string; tgUserId: string; firstName?: string; userId: string | null; venue: VenueId; isGroup: boolean; state: any; messageId?: number }
 
 const MENU: Keyboard = [
   [{ text: "✅ Confirmed trades", callback_data: "cat:confirmed" }, { text: "👀 Watching", callback_data: "cat:watching" }],
@@ -32,16 +32,21 @@ const MENU: Keyboard = [
   [{ text: "⚙️ Exchange", callback_data: "exchange" }, { text: "❓ Help", callback_data: "help" }],
 ];
 
-export async function loadChat(sb: SupabaseClient, chatId: string, title?: string): Promise<{ userId: string | null; venue: VenueId; state: any }> {
-  const { data } = await sb.from("telegram_chats").select("*").eq("chat_id", chatId).maybeSingle();
+/**
+ * Settings are per Telegram user, not per chat: in a group every member keeps their own exchange, account link
+ * and guided flow. Falls back to the legacy profiles.telegram_chat_id link (private chat id = user id).
+ */
+export async function loadActor(sb: SupabaseClient, tgUserId: string, chatId: string, meta?: { firstName?: string; username?: string; chatTitle?: string }): Promise<{ userId: string | null; venue: VenueId; state: any }> {
+  const { data } = await sb.from("telegram_users").select("*").eq("tg_user_id", tgUserId).maybeSingle();
   if (data) return { userId: data.user_id, venue: isVenueId(data.venue) ? data.venue : "binance", state: data.state ?? null };
-  // legacy: profiles.telegram_chat_id
-  const { data: p } = await sb.from("profiles").select("id, preferences").eq("telegram_chat_id", chatId).maybeSingle();
+  const { data: p } = await sb.from("profiles").select("id, preferences").eq("telegram_chat_id", tgUserId).maybeSingle();
   const venue: VenueId = isVenueId(p?.preferences?.venue) ? p!.preferences.venue : "binance";
-  await sb.from("telegram_chats").upsert({ chat_id: chatId, user_id: p?.id ?? null, venue, title: title ?? null });
+  await sb.from("telegram_users").upsert({ tg_user_id: tgUserId, user_id: p?.id ?? null, venue, first_name: meta?.firstName ?? null, username: meta?.username ?? null });
+  if (chatId !== tgUserId) await sb.from("telegram_chats").upsert({ chat_id: chatId, title: meta?.chatTitle ?? null, updated_at: new Date().toISOString() });
   return { userId: p?.id ?? null, venue, state: null };
 }
-const setState = (c: ChatCtx, state: any) => c.sb.from("telegram_chats").update({ state, updated_at: new Date().toISOString() }).eq("chat_id", c.chatId);
+const setState = (c: ChatCtx, state: any) => c.sb.from("telegram_users").update({ state, updated_at: new Date().toISOString() }).eq("tg_user_id", c.tgUserId);
+const who = (c: ChatCtx) => (c.isGroup && c.firstName ? `${esc(c.firstName)}: ` : "");
 
 const pct = (a: number, b: number) => `${(((a - b) / b) * 100) >= 0 ? "+" : ""}${(((a - b) / b) * 100).toFixed(2)}%`;
 
@@ -109,7 +114,7 @@ export async function handleStateReply(c: ChatCtx, text: string): Promise<boolea
 
 async function sendMenu(c: ChatCtx) {
   const vm = VENUE_META[c.venue];
-  return tgSend(c.chatId, `<b>AsheSignal</b>\nExchange for this chat: <b>${esc(vm.label)}</b>${vm.canShort ? "" : " (spot only, longs)"}${c.userId ? "" : "\nNot linked to an account: /link CODE from the Account page for journal, alerts and digest."}\n\nPick a section:`, { html: true, keyboard: MENU });
+  return tgSend(c.chatId, `<b>AsheSignal</b>${c.isGroup && c.firstName ? ` for ${esc(c.firstName)}` : ""}\nYour exchange: <b>${esc(vm.label)}</b>${vm.canShort ? "" : " (spot only, longs)"}${c.userId ? "" : "\nNot linked to an account: /link CODE from the Account page for journal, alerts and digest."}\n\nPick a section:`, { html: true, keyboard: MENU });
 }
 
 async function help(c: ChatCtx) {
@@ -125,7 +130,7 @@ async function help(c: ChatCtx) {
     "/alerts - your rules and inbox (linked)",
     "/me, /journal - your trades, heat, record (linked)",
     "/take SOL - record a trade you placed (linked), guided",
-    "/exchange coinbase - exchange for this chat",
+    "/exchange coinbase - your exchange (each person has their own, also in groups)",
     "/guide - how to place a trade",
     "Or ask anything in plain words.",
     "",
@@ -139,29 +144,30 @@ async function linkAccount(c: ChatCtx, arg: string) {
   if (!code) return tgSend(c.chatId, "Send /link followed by the 6-character code shown on your Account page (Telegram section).");
   const { data: owner } = await c.sb.from("profiles").select("id, preferences").eq("telegram_link_code", code).maybeSingle();
   if (!owner) return tgSend(c.chatId, "That code is not valid or was already used. Open the Account page, Telegram section, and use the new code.");
-  await c.sb.from("profiles").update({ telegram_chat_id: c.chatId, telegram_link_code: null }).eq("id", owner.id);
+  // Deliveries (alerts, digest, review) go to the user's private chat with the bot, never to a group.
+  await c.sb.from("profiles").update({ telegram_chat_id: c.tgUserId, telegram_link_code: null }).eq("id", owner.id);
   const venue: VenueId = isVenueId(owner.preferences?.venue) ? owner.preferences.venue : c.venue;
-  await c.sb.from("telegram_chats").upsert({ chat_id: c.chatId, user_id: owner.id, venue, updated_at: new Date().toISOString() });
+  await c.sb.from("telegram_users").upsert({ tg_user_id: c.tgUserId, user_id: owner.id, venue, first_name: c.firstName ?? null, updated_at: new Date().toISOString() });
   c.userId = owner.id; c.venue = venue;
-  await tgSend(c.chatId, `Linked. Exchange set to <b>${esc(VENUE_META[venue].label)}</b> from your account. Alerts, the daily digest and the weekly review arrive here.`, { html: true });
+  await tgSend(c.chatId, `${who(c)}Linked. Exchange set to <b>${esc(VENUE_META[venue].label)}</b> from your account. Alerts, the daily digest and the weekly review arrive in your private chat with me${c.isGroup ? " (open @AsheSignalBot and press Start once so I am allowed to message you)" : ""}.`, { html: true });
   return sendMenu(c);
 }
 async function unlink(c: ChatCtx) {
   if (c.userId) await c.sb.from("profiles").update({ telegram_chat_id: null, telegram_link_code: linkCode() }).eq("id", c.userId);
-  await c.sb.from("telegram_chats").update({ user_id: null, state: null }).eq("chat_id", c.chatId);
-  return tgSend(c.chatId, "Disconnected. The chat still works for public data; link again any time.");
+  await c.sb.from("telegram_users").update({ user_id: null, state: null }).eq("tg_user_id", c.tgUserId);
+  return tgSend(c.chatId, `${who(c)}Disconnected. Public data still works; link again any time.`, { html: true });
 }
 
 async function exchange(c: ChatCtx, arg: string): Promise<boolean> {
   if (arg && isVenueId(arg.toLowerCase())) return setExchange(c, arg.toLowerCase());
-  return tgSend(c.chatId, `Exchange for this chat: <b>${esc(VENUE_META[c.venue].label)}</b>. Pick another:`, { html: true, keyboard: [VENUE_IDS.slice(0, 3).map((v) => ({ text: (v === c.venue ? "• " : "") + VENUE_META[v].label, callback_data: `exchange:${v}` })), VENUE_IDS.slice(3).map((v) => ({ text: (v === c.venue ? "• " : "") + VENUE_META[v].label, callback_data: `exchange:${v}` }))] });
+  return tgSend(c.chatId, `${who(c)}Your exchange: <b>${esc(VENUE_META[c.venue].label)}</b>. Pick another:`, { html: true, keyboard: [VENUE_IDS.slice(0, 3).map((v) => ({ text: (v === c.venue ? "• " : "") + VENUE_META[v].label, callback_data: `exchange:${v}` })), VENUE_IDS.slice(3).map((v) => ({ text: (v === c.venue ? "• " : "") + VENUE_META[v].label, callback_data: `exchange:${v}` }))] });
 }
 async function setExchange(c: ChatCtx, v: string): Promise<boolean> {
   if (!isVenueId(v)) return exchange(c, "");
   c.venue = v;
-  await c.sb.from("telegram_chats").upsert({ chat_id: c.chatId, venue: v, user_id: c.userId, updated_at: new Date().toISOString() });
+  await c.sb.from("telegram_users").upsert({ tg_user_id: c.tgUserId, venue: v, user_id: c.userId, first_name: c.firstName ?? null, updated_at: new Date().toISOString() });
   if (c.userId) { const { data: p } = await c.sb.from("profiles").select("preferences").eq("id", c.userId).maybeSingle(); await c.sb.from("profiles").update({ preferences: { ...(p?.preferences ?? {}), venue: v } }).eq("id", c.userId); }
-  return tgSend(c.chatId, `Exchange set to <b>${esc(VENUE_META[v].label)}</b>${VENUE_META[v].canShort ? "" : " (spot only: SHORT setups are shown as sell/reduce signals)"}.${c.userId ? " Synced to your account." : ""}`, { html: true, keyboard: [[{ text: "Confirmed trades", callback_data: "cat:confirmed" }, { text: "Menu", callback_data: "menu" }]] });
+  return tgSend(c.chatId, `${who(c)}Exchange set to <b>${esc(VENUE_META[v].label)}</b>${VENUE_META[v].canShort ? "" : " (spot only: SHORT setups are shown as sell/reduce signals)"}.${c.userId ? " Synced to your account." : ""}`, { html: true, keyboard: [[{ text: "Confirmed trades", callback_data: "cat:confirmed" }, { text: "Menu", callback_data: "menu" }]] });
 }
 
 async function today(c: ChatCtx) {
@@ -208,7 +214,7 @@ async function category(c: ChatCtx, cat: "confirmed" | "watching" | "speculative
   const title = { confirmed: "✅ Confirmed trades", watching: "👀 Watching", speculative: "⚠️ Speculative opportunities", spot: "🏦 Spot investments" }[cat];
   const per = 6;
   const slice = items.slice(page * per, page * per + per);
-  const head = `<b>${title}</b> on ${esc(vm.label)}${cat === "confirmed" && !vm.canShort ? " (longs only)" : ""}: ${items.length}${cat === "confirmed" ? "\nConfirmed means the engine's gates passed; it is not a guarantee." : cat === "speculative" ? "\nHigh risk by definition. Position size: money you can lose entirely." : cat === "spot" ? "\nBuy and hold, no leverage. Zones are where accumulation makes sense." : "\nStructure is building; each one lists what must happen to confirm."}`;
+  const head = `${who(c)}<b>${title}</b> on ${esc(vm.label)}${cat === "confirmed" && !vm.canShort ? " (longs only)" : ""}: ${items.length}${cat === "confirmed" ? "\nConfirmed means the engine's gates passed; it is not a guarantee." : cat === "speculative" ? "\nHigh risk by definition. Position size: money you can lose entirely." : cat === "spot" ? "\nBuy and hold, no leverage. Zones are where accumulation makes sense." : "\nStructure is building; each one lists what must happen to confirm."}`;
   if (!slice.length) return tgSend(c.chatId, `${head}\n\n${cat === "confirmed" ? "Nothing qualifies right now. That is normal in quiet or risk-off markets; check Watching." : "Nothing here right now."}`, { html: true, keyboard: [[{ text: "Watching", callback_data: "cat:watching" }, { text: "Menu", callback_data: "menu" }]] });
   const lines = slice.map((i, idx) => {
     const n = page * per + idx + 1;

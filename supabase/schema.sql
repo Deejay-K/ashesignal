@@ -488,3 +488,17 @@ create table if not exists public.telegram_chats (
   updated_at timestamptz default now()
 );
 alter table public.telegram_chats enable row level security;
+
+-- Stage 32.3: Telegram settings per Telegram user (not per chat), so group members each keep their own exchange and link
+create table if not exists telegram_users (
+  tg_user_id text primary key,
+  user_id uuid references auth.users(id) on delete set null,
+  venue text not null default 'binance',
+  state jsonb,
+  first_name text,
+  username text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table telegram_users enable row level security;
+alter table telegram_chats alter column venue drop not null;
