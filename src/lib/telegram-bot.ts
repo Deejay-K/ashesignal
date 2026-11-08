@@ -15,6 +15,9 @@ import { portfolioHeat } from "./risk/heat";
 import { venueListings, venuesFor, VENUE_IDS, VENUE_META, isVenueId, type VenueId } from "./venues";
 import { fmtUsd, fmtNum } from "./format";
 import { zoneStatus, preTradeChecks, accountForChecks } from "./trade-check";
+import { scanAddress } from "./market/scan";
+import { buildSpecDetail } from "./market/speculative";
+import { classifyAddress } from "./providers/chains";
 import { buildWeeklyReview } from "./review";
 import { digestShared, buildDigest } from "./digest";
 import { safe } from "./fetch";
@@ -71,6 +74,7 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/today": case "/conditions": return today(c);
     case "/regime": return today(c);
     case "/coin": return coin(c, arg);
+    case "/scan": case "/token": case "/ca": return scanCard(c, arg);
     case "/screener": return screener(c, arg || "score");
     case "/size": return size(c, arg);
     case "/alert": return alertCreate(c, arg);
@@ -107,6 +111,8 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "exchange": return a ? setExchange(c, a) : exchange(c, "");
     case "coin": return coin(c, a, (b as Timeframe) || undefined);
     case "setup": return setupCard(c, a, (b as Timeframe) || "4h");
+    case "scan": return scanCard(c, a);
+    case "wa": return whaleAlert(c, a);
     case "copy": return copySetup(c, a, (b as Timeframe) || "4h");
     case "take": return takeStart(c, a, (b as Timeframe) || "4h", d === "paper");
     case "alerttp": return alertFromSetup(c, a, (b as Timeframe) || "4h");
@@ -146,6 +152,7 @@ async function help(c: ChatCtx) {
     "/trades, /watching, /spec, /spot - the four discovery categories",
     "/today - conditions, regime, Fear & Greed",
     "/coin SOL [1h|4h|1d] - full analysis with setup card",
+    "/scan ADDRESS - any token on any chain by contract address (Solana, Ethereum, Base, BNB, Polygon, Arbitrum, Avalanche, Optimism, Sui, TON...). Pasting an address also works.",
     "/screener [score|rsi|volume|oversold|overbought] - top coins",
     "/size ENTRY STOP [balance] [risk%] - position size",
     "/alert BTC above 100000 | below 90000 - price alert (linked)",
@@ -278,7 +285,8 @@ async function coin(c: ChatCtx, arg: string, tfArg?: Timeframe) {
   const parts = arg.trim().split(/\s+/);
   const tf = (tfArg ?? (["1h", "4h", "1d", "15m", "1w"].includes(parts[1]) ? parts[1] : undefined)) as Timeframe | undefined;
   const coinQ = parts[0];
-  if (!coinQ) return tgSend(c.chatId, "Which coin? Example: /coin SOL or /coin SOL 1h");
+  if (!coinQ) return tgSend(c.chatId, "Which coin? Example: /coin SOL or /coin SOL 1h, or a contract address.");
+  if (classifyAddress(coinQ) !== "unknown") return scanCard(c, coinQ);
   await tgTyping(c.chatId);
   const cn = await resolveCoin(coinQ);
   if (!cn) return tgSend(c.chatId, `I could not find "${esc(coinQ)}".`, { html: true });
@@ -658,7 +666,19 @@ export async function handleInline(sb: SupabaseClient, q: { id: string; query: s
   if (text.length >= 2) {
     const actor = q.from ? await loadActor(sb, String(q.from.id), String(q.from.id)) : null;
     const venue = actor?.venue ?? "binance";
-    const cn = await resolveCoin(text.split(/\s+/)[0]);
+    const first = text.split(/\s+/)[0];
+    if (classifyAddress(first) !== "unknown") {
+      const r = await safe(scanAddress(first, ["1h", "4h"]));
+      if (r.ok && r.data.token) {
+        const rep = r.data; const d = buildSpecDetail(rep, "watch");
+        const tok = rep.token!;
+        const sym = tok.symbol.toUpperCase();
+        const tgt = d.targets.justified && d.targets.side ? `\n${d.targets.side}: ${d.targets.tp.map((x) => `${x.label} ${fmtUsd(x.price)}`).join(" · ")} · ${d.targets.sl.map((x) => `${x.label} ${fmtUsd(x.price)}`).join(" · ")}` : `\n${esc(d.targets.note)}`;
+        const body = `<b>${esc(tok.name)} (${esc(sym)})</b> on ${esc(rep.chain?.name ?? "unknown chain")} · risk <b>${esc(rep.verdict.riskLevel)}</b>\nPrice ${fmtUsd(rep.market.priceUsd)} · liq ${fmtUsd(rep.market.liquidityUsd, { compact: true })} · 24h ${rep.market.change.h24 == null ? "n/a" : `${rep.market.change.h24 >= 0 ? "+" : ""}${rep.market.change.h24.toFixed(1)}%`}\n${esc(rep.verdict.summary)}${tgt}\n<code>${esc(rep.address)}</code>\n<i>AsheSignal scanner. Speculative. Not financial advice.</i>`;
+        results.push({ type: "article", id: `scan-${rep.address.slice(0, 40)}`, title: `${sym} on ${rep.chain?.name ?? "?"} · risk ${rep.verdict.riskLevel}`, description: rep.verdict.summary.slice(0, 90), input_message_content: { message_text: body, parse_mode: "HTML" }, reply_markup: link("/") ? { inline_keyboard: [[{ text: "Open in the scanner", url: link(`/scanner?address=${encodeURIComponent(rep.address)}`)! }]] } : undefined });
+      }
+    }
+    const cn = classifyAddress(first) === "unknown" ? await resolveCoin(first) : null;
     if (cn) {
       const a = await safe(analyzeAsset({ symbol: cn.symbol, coingeckoId: cn.id, venue }, ["4h", "1d"]));
       if (a.ok) for (const tf of ["4h", "1d"] as Timeframe[]) {
@@ -671,12 +691,63 @@ export async function handleInline(sb: SupabaseClient, q: { id: string; query: s
     }
   }
   const { tgAnswerInline } = await import("./telegram");
-  return tgAnswerInline(q.id, results, text.length < 2 ? "Type a coin, e.g. SOL" : results.length ? undefined : "No data for that coin");
+  return tgAnswerInline(q.id, results, text.length < 2 ? "Type a coin, e.g. SOL" : results.length ? undefined : "No data for that coin or address");
+}
+
+// ---------- any token on any chain (contract address) ----------
+
+async function scanCard(c: ChatCtx, raw: string) {
+  const addr = raw.trim().split(/\s+/)[0] ?? "";
+  if (!addr) return tgSend(c.chatId, "Send a contract address: /scan 0x... or a Solana mint address.");
+  if (classifyAddress(addr) === "unknown") return tgSend(c.chatId, "That does not look like a contract address. For a listed coin use /coin SOL.");
+  await tgTyping(c.chatId);
+  const r = await safe(scanAddress(addr, ["15m", "1h", "4h"]));
+  if (!r.ok) return tgSend(c.chatId, `Scan failed: ${esc(r.error)}`, { html: true });
+  const rep = r.data;
+  if (!rep.token) return tgSend(c.chatId, `No DEX pair found for <code>${esc(addr)}</code>${rep.chain ? ` on ${esc(rep.chain.name)}` : ""}. ${esc(rep.market.note)}`, { html: true });
+  const d = buildSpecDetail(rep, "watch");
+  const sym = rep.token.symbol.toUpperCase();
+  const riskIcon = rep.verdict.riskLevel === "extreme" ? "🟥" : rep.verdict.riskLevel === "high" ? "🟧" : rep.verdict.riskLevel === "medium" ? "🟨" : "🟩";
+  const chg = (v: number | null) => (v == null ? "n/a" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`);
+  const lines = [
+    `${who(c)}<b>${esc(rep.token.name)} (${esc(sym)})</b> on <b>${esc(rep.chain?.name ?? "unknown chain")}</b>`,
+    `${riskIcon} Risk: <b>${esc(rep.verdict.riskLevel)}</b>. ${esc(rep.verdict.summary)}`,
+    `Price ${fmtUsd(rep.market.priceUsd)}${rep.market.priceQuality !== "verified" ? ` (${esc(rep.market.priceQuality)})` : ""} · 1h ${chg(rep.market.change.h1)} · 24h ${chg(rep.market.change.h24)}`,
+    `Liquidity ${fmtUsd(rep.market.liquidityUsd, { compact: true })} · vol 24h ${fmtUsd(rep.market.volume24h, { compact: true })} · ${rep.market.marketCap ? `mcap ${fmtUsd(rep.market.marketCap, { compact: true })}` : `FDV ${fmtUsd(rep.market.fdv, { compact: true })}`} · ${rep.market.txns24h} txns${rep.market.ageHours != null ? ` · age ${rep.market.ageHours < 48 ? `${Math.round(rep.market.ageHours)} h` : `${Math.round(rep.market.ageHours / 24)} d`}` : ""}`,
+    d.security ? `🔐 Security: ${esc(d.security.summary)}${d.security.flags.length ? ` · ${esc(d.security.flags.slice(0, 3).join(", "))}` : ""}` : `🔐 Security: ${esc(rep.securityNote)}`,
+    d.ta ? `📈 TA ${esc(d.ta.timeframe)}: ${esc(d.ta.outlook)} (score ${d.ta.score > 0 ? "+" : ""}${d.ta.score})` : `📈 TA: ${esc(rep.analysisNote)}`,
+    d.targets.justified && d.targets.side ? `\n<b>${d.targets.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} levels (speculative)</b>\n${d.targets.tp.map((x) => `${x.label}: ${fmtUsd(x.price)}`).join("\n")}\n${d.targets.sl.map((x) => `${x.label}: ${fmtUsd(x.price)}`).join(" · ")}\nEntry zone: ${esc(d.zones.entry)}` : `\n<b>No technical targets:</b> ${esc(d.targets.note)}`,
+    d.attention.length ? `\n<b>Why it has attention:</b> ${esc(d.attention.slice(0, 2).join(" "))}` : "",
+    d.risks.length ? `<b>Risks:</b> ${esc(d.risks.slice(0, 3).join(" "))}` : "",
+    rep.tradingActivity.flags.length ? `<b>Trading flags:</b> ${esc(rep.tradingActivity.flags.slice(0, 2).join(" "))}` : "",
+    `\n<code>${esc(rep.address)}</code>`,
+    `<i>Speculative. Size with money you can lose entirely. Manual trading only. Not financial advice.</i>`,
+  ].filter(Boolean);
+  const kb: Keyboard = [];
+  const row: Keyboard[number] = [];
+  if (d.links.dexscreener) row.push({ text: "DexScreener", url: d.links.dexscreener });
+  if (rep.chain?.explorer) row.push({ text: "Explorer", url: `${rep.chain.explorer}${rep.address}` });
+  if (link("/")) row.push({ text: "Full scan", url: link(`/scanner?address=${encodeURIComponent(rep.address)}`)! });
+  if (row.length) kb.push(row);
+  if (c.userId) kb.push([{ text: "🔔 Whale alert", callback_data: `wa:${rep.address}` }, { text: "Menu", callback_data: "menu" }]);
+  else kb.push([{ text: "Menu", callback_data: "menu" }]);
+  const out = lines.join("\n");
+  return tgSend(c.chatId, out.length > 4000 ? out.slice(0, 3990) + "…" : out, { html: true, keyboard: kb });
+}
+async function whaleAlert(c: ChatCtx, address: string) {
+  if (!c.userId) return needLink(c);
+  const r = await safe(scanAddress(address, []));
+  const symbol = r.ok && r.data.token ? r.data.token.symbol.toUpperCase() : "TOKEN";
+  const ok = await createAlert(c, { asset_key: `addr:${address}`, symbol, type: "whale_transfer", params: { usd: 10000 }, asset_ref: { symbol, address }, channels: ["push", "email", "telegram"] });
+  return tgSend(c.chatId, ok ? `🔔 Whale alert set for ${esc(symbol)}: transfers of $10,000 or more.` : "Could not save the alert.", { html: true });
 }
 
 // ---------- free text ----------
 
 async function freeText(c: ChatCtx, text: string) {
+  // A contract address on any chain opens the scanner card.
+  const addr = text.trim().split(/\s+/)[0];
+  if (addr && classifyAddress(addr) !== "unknown") return scanCard(c, addr);
   // A bare ticker ("SOL", "$btc", "link 1d") opens the coin card directly.
   const m = text.trim().match(/^\$?([a-z0-9]{2,10})(?:\s+(1h|4h|1d))?$/i);
   if (m && !/^(hi|hey|yo|ok|yes|no|thanks|thank|help|menu|start|today|trades)$/i.test(m[1])) {

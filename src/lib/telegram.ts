@@ -71,6 +71,7 @@ export const COMMANDS = [
   { command: "top", description: "The 3 best confirmed setups for your exchange" },
   { command: "today", description: "Trade conditions, regime, Fear & Greed" },
   { command: "coin", description: "Analysis of a coin, e.g. /coin SOL 4h" },
+  { command: "scan", description: "Any token on any chain by contract address" },
   { command: "screener", description: "Top coins by score, RSI, volume" },
   { command: "size", description: "Position size: /size ENTRY STOP [balance] [risk%]" },
   { command: "alert", description: "Price alert: /alert BTC above 100000" },

@@ -299,3 +299,9 @@ Every time the screener worker moves a coin into Confirmed Trades, the bot sends
 - Capped per worker run (60 messages; 20 when `all=1`) so a full re-screen cannot flood a chat.
 - Test the format without waiting: `https://<your-url>/api/telegram/test-signal?secret=<CRON_SECRET>&symbol=SOL&tf=4h` (add `&chat=<your chat id>` to send only to yourself). It uses the coin's live setup and is labelled TEST.
 - The worker's JSON now reports `promoted` and `telegram: { sent, recipients, skipped }`.
+
+## 29. Stage 33.2 - the bot covers every chain
+
+`/scan ADDRESS` (or just paste a contract address, or `/coin ADDRESS`) runs the same scanner as the website for any token on any supported chain: Solana, Ethereum, Base, BNB Chain, Polygon, Arbitrum, Avalanche, Optimism, Sui, TON and the other DexScreener chains. The card shows chain, risk verdict, price and changes, liquidity, volume, market cap or FDV, age, GoPlus security summary and flags, TA outlook, speculative TP/SL levels when the engine can justify them, why it has attention, risks and trading flags, the address in a copyable block, and buttons for DexScreener, the explorer, the full scan and a one-tap whale alert (transfers of $10k or more).
+
+Inline mode handles addresses too: `@AsheSignalBot <address>` in any chat posts the scanner summary with a link. Re-open `/api/telegram/setup?secret=...` once so `/scan` appears in the command menu.
