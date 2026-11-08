@@ -27,8 +27,10 @@ export async function deliver(sb: SupabaseClient, n: Notification): Promise<{ pu
 
   const wantPush = n.channels ? n.channels.includes("push") : true;
   const wantEmail = n.channels ? n.channels.includes("email") : !!profile?.notify_email;
-  if (PUSH_ENABLED && wantPush && profile?.notify_push !== false) {
-    const webpush = (await import("web-push")).default;
+  if (PUSH_ENABLED && wantPush && profile?.notify_push !== false) try {
+    // web-push is CommonJS: depending on the bundler the functions sit on .default or on the module itself.
+    const mod = (await import("web-push")) as unknown as { default?: typeof import("web-push") } & typeof import("web-push");
+    const webpush = mod.default?.setVapidDetails ? mod.default : mod;
     webpush.setVapidDetails(process.env.VAPID_SUBJECT ?? "mailto:alerts@ashesignal.app", process.env.VAPID_PUBLIC_KEY!, process.env.VAPID_PRIVATE_KEY!);
     const { data: subs } = await sb.from("push_subscriptions").select("id, endpoint, keys").eq("user_id", n.userId);
     for (const s of subs ?? []) {
@@ -40,7 +42,7 @@ export async function deliver(sb: SupabaseClient, n: Notification): Promise<{ pu
         if (code === 404 || code === 410) await sb.from("push_subscriptions").delete().eq("id", s.id); // expired subscription
       }
     }
-  }
+  } catch (e) { console.warn("push failed", (e as Error).message); } // never block email / Discord / inbox
 
   if (EMAIL_ENABLED && wantEmail && profile?.email) {
     try {
