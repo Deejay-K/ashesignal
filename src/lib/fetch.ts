@@ -127,7 +127,8 @@ export async function fetchJson<T>(url: string, opts: FetchOpts): Promise<T> {
 
   if (ttl > 0) {
     inflight.set(key, run);
-    run.finally(() => inflight.delete(key));
+    // .finally() returns a new promise that would reject unhandled when the request fails; swallow that branch.
+    run.finally(() => inflight.delete(key)).catch(() => {});
   }
   return run;
 }

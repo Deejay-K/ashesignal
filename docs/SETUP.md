@@ -244,3 +244,25 @@ Run `supabase/schema.sql` again (Telegram columns on `profiles`, `paper` on `sav
 | Exchange accounts (read-only), realized P&L | ✗ | ✓ |
 | AI briefings | read cached | generate + history |
 | Risk profile (balance, risk %, exposure, leverage) | this browser only | synced |
+
+## 26. Stage 32.2 - Telegram bot mirrors the whole app
+
+Run `supabase/schema.sql` again (new `telegram_chats` table: per-chat exchange, linked user, guided-flow state). Then open `https://<your-url>/api/telegram/setup?secret=<CRON_SECRET>` once more so the command menu is re-registered (it now also allows button taps).
+
+What the bot does now, in private chats and groups:
+
+- `/menu` (or `/start`): one keyboard with every section: Confirmed, Watching, Speculative, Spot, Today, Screener, My trades, Alerts, Exchange, Help.
+- `/trades`, `/watching`, `/spec`, `/spot`: the same four categories as the Opportunities page, filtered to the exchange chosen for that chat (spot-only exchanges hide SHORT setups). Pages of 6 with Prev/Next; tap a coin for its full card.
+- `/coin SOL [1h|4h|1d]`: full analysis with a share-card image, levels, patterns, the setup (entry, TP1-3, SL1-2, leverage, what is missing for Confirmed) and buttons: Copy setup, Size it, I took it, Paper trade, Alert at TP1 (sets TP1 and SL1 price alerts), When it confirms, How to place it (the per-exchange guide pre-filled), Chart.
+- `/today`: conditions verdict, regime with advice, Fear & Greed, next high-impact events.
+- `/screener [score|oversold|overbought|volume]`: top 10 from the 4h screener with buttons to open cards.
+- `/size ENTRY STOP [balance] [risk%]`: position size from the same calculator as the Risk page (uses the account's balance and risk % when linked).
+- `/alert BTC above 100000`, `/alerts`: create price alerts and see rules plus inbox (linked).
+- `/me`, `/journal`: open trades with heat, recent record, last 10 journal entries (linked).
+- `/take SOL` or the ✍️ / 🧪 buttons: a 3-step guided flow (fill price, size, stop when the engine has none) that records the trade in the journal exactly like the website's "I took this trade". The bot then messages when TP or SL is reached.
+- `/exchange coinbase`: exchange for this chat, synced to the account when linked.
+- Anything else in plain words goes to the grounded assistant.
+
+Groups: the bot answers commands, mentions, replies and button taps only. For plain-text questions in a group, disable privacy mode in @BotFather (`/setprivacy` > Disable) and re-add the bot to the group. Account-bound commands (`/me`, `/journal`, `/take`, `/alerts`) are hidden from the group command menu; link in a private chat.
+
+The bot never places orders, never asks for keys, and labels every setup as not financial advice.

@@ -476,3 +476,15 @@ alter table public.profiles add column if not exists telegram_chat_id text;
 alter table public.profiles add column if not exists telegram_link_code text;
 alter table public.saved_setups add column if not exists paper boolean default false;
 create index if not exists profiles_telegram_chat on public.profiles(telegram_chat_id);
+
+-- ---------- Stage 32.2: Telegram chats (per-chat preferences and guided flows) ----------
+create table if not exists public.telegram_chats (
+  chat_id text primary key,
+  user_id uuid references auth.users(id) on delete set null,
+  venue text default 'binance',
+  state jsonb,                      -- pending guided flow (e.g. recording a trade)
+  title text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.telegram_chats enable row level security;
