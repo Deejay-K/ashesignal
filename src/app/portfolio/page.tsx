@@ -18,6 +18,7 @@ const COLORS = ["#36bd94", "#5aa7ff", "#f2b544", "#f0506e", "#a78bfa", "#9fb0c0"
 export default function PortfolioPage() {
   const [state, setState] = useState<"loading" | "guest" | "disabled" | "ok">("loading");
   const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [showDust, setShowDust] = useState(false);
   const [chains, setChains] = useState<string[]>([]);
   const [p, setP] = useState<Portfolio | null>(null);
   const [history, setHistory] = useState<{ date: string; totalUsd: number }[]>([]);
@@ -76,7 +77,7 @@ export default function PortfolioPage() {
         <>
           {p ? (
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <StatCard label="Total value" value={fmtMoney(p.totalUsd, { compact: p.totalUsd > 1e6 })} sub={`${p.holdings.length} holdings · ${wallets.length} wallet${wallets.length === 1 ? "" : "s"}`} />
+              <StatCard label="Total value" value={fmtMoney(p.totalUsd, { compact: p.totalUsd > 1e6 })} sub={`${p.holdings.filter((h) => !h.dust).length} holdings · ${wallets.length} wallet${wallets.length === 1 ? "" : "s"}${p.dustCount ? ` · ${p.dustCount} dust hidden` : ""}`} />
               <StatCard label="24h change" value={<span className={pctClass(change24(p))}>{fmtPct(change24(p))}</span>} sub="value-weighted, priced holdings" />
               <StatCard label={<Term id="unrealized">Unrealized P&L</Term>} value={<span className={pctClass(unreal(p))}>{unreal(p) != null ? fmtMoney(unreal(p)) : "-"}</span>} sub="on holdings with a cost basis" />
               <StatCard label="Priced" value={`${p.pricedPct.toFixed(0)}%`} sub={p.pricedPct < 100 ? "some tokens have no market price" : "all holdings priced"} />
@@ -124,13 +125,13 @@ export default function PortfolioPage() {
             </Section>
           ) : null}
 
-          <Section title="Holdings" right={p?.holdings.length ? <button className="btn-ghost" onClick={() => downloadCsv("ashesignal-holdings.csv", p.holdings.map((h) => ({ symbol: h.symbol, name: h.name, chain: h.chain, wallet: h.walletLabel ?? h.wallet, address: h.address ?? "", amount: h.amount, price_usd: h.priceUsd, value_usd: h.valueUsd, change_24h_pct: h.change24hPct, cost_basis_usd: h.costBasis, unrealized_usd: h.unrealizedUsd, price_source: h.priceSource })))}>Export CSV</button> : null}>
+          <Section title="Holdings" right={p?.holdings.length ? <span className="flex items-center gap-2">{p.dustCount ? <label className="flex items-center gap-1 text-xs text-fg-3"><input type="checkbox" className="w-auto" checked={showDust} onChange={(e) => setShowDust(e.target.checked)} /> show {p.dustCount} dust</label> : null}<button className="btn-ghost" onClick={() => downloadCsv("ashesignal-holdings.csv", p.holdings.filter((h) => showDust || !h.dust).map((h) => ({ symbol: h.symbol, name: h.name, chain: h.chain, wallet: h.walletLabel ?? h.wallet, address: h.address ?? "", amount: h.amount, price_usd: h.priceUsd, value_usd: h.valueUsd, change_24h_pct: h.change24hPct, cost_basis_usd: h.costBasis, unrealized_usd: h.unrealizedUsd, price_source: h.priceSource })))}>Export CSV</button></span> : null}>
             {p?.holdings.length ? (
               <div className="overflow-x-auto">
                 <table>
                   <thead><tr><th>Asset</th><th>Chain</th><th className="text-right">Amount</th><th className="text-right">Price</th><th className="text-right">24h</th><th className="text-right">Value</th><th className="text-right">Cost basis ({currency})</th><th className="text-right">Unrealized</th><th /></tr></thead>
                   <tbody>
-                    {p.holdings.map((h) => {
+                    {p.holdings.filter((h) => showDust || !h.dust).map((h) => {
                       const key = `${h.chain}:${h.address ?? "native"}`;
                       return (
                         <tr key={key + h.wallet}>

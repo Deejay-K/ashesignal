@@ -8,6 +8,7 @@ import { HELIUS_ENABLED, getSolHoldings, getSolTransfers, type SolTransfer } fro
 import { getPairsForTokens } from "@/lib/providers/dexscreener";
 
 export interface Holding {
+  dust?: boolean;
   wallet: string;
   walletLabel: string | null;
   chain: string;
@@ -27,7 +28,8 @@ export interface Holding {
 
 export interface Portfolio {
   totalUsd: number;
-  pricedPct: number; // % of holdings (by count) that have a price
+  pricedPct: number;
+  dustCount?: number; // % of holdings (by count) that have a price
   holdings: Holding[];
   byChain: { chain: string; valueUsd: number; pct: number }[];
   byAsset: { symbol: string; valueUsd: number; pct: number }[];
@@ -90,16 +92,21 @@ export async function buildPortfolio(wallets: WalletRef[], costBasis: Record<str
     }
   }
 
+  // Dust: exchange rounding leftovers (worth under one cent, or an unpriceable sliver under 1e-6 units).
+  // Kept in the list with a flag so the UI can hide them by default; excluded from totals and allocation.
+  for (const h of holdings) h.dust = (h.valueUsd != null && h.valueUsd < 0.01) || (h.valueUsd == null && h.amount < 1e-6) || (h.priceSource === "unavailable" && h.amount < 1e-3);
+  const live = holdings.filter((h) => !h.dust);
   holdings.sort((a, b) => (b.valueUsd ?? 0) - (a.valueUsd ?? 0));
-  const totalUsd = holdings.reduce((s, h) => s + (h.valueUsd ?? 0), 0);
+  const totalUsd = live.reduce((s, h) => s + (h.valueUsd ?? 0), 0);
   const group = (key: (h: Holding) => string) => {
     const m = new Map<string, number>();
-    holdings.forEach((h) => m.set(key(h), (m.get(key(h)) ?? 0) + (h.valueUsd ?? 0)));
+    live.forEach((h) => m.set(key(h), (m.get(key(h)) ?? 0) + (h.valueUsd ?? 0)));
     return [...m.entries()].map(([k, v]) => ({ key: k, valueUsd: v, pct: totalUsd ? (v / totalUsd) * 100 : 0 })).sort((a, b) => b.valueUsd - a.valueUsd);
   };
   return {
     totalUsd,
-    pricedPct: holdings.length ? (holdings.filter((h) => h.priceUsd != null).length / holdings.length) * 100 : 100,
+    pricedPct: live.length ? (live.filter((h) => h.priceUsd != null).length / live.length) * 100 : 100,
+    dustCount: holdings.length - live.length,
     holdings,
     byChain: group((h) => h.chain).map((g) => ({ chain: g.key, valueUsd: g.valueUsd, pct: g.pct })),
     byAsset: group((h) => h.symbol).map((g) => ({ symbol: g.key, valueUsd: g.valueUsd, pct: g.pct })),

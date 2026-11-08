@@ -16,18 +16,29 @@ export const maxDuration = 60;
  * trades and their status, and coins that lost confirmation in the last 24 h.
  */
 export async function GET(req: Request) {
+  try {
+    return await run(req);
+  } catch (e) {
+    // Never let the worker surface as a blank 500: report what broke.
+    return NextResponse.json({ error: (e as Error).message, stack: process.env.NODE_ENV === "production" ? undefined : (e as Error).stack }, { status: 500 });
+  }
+}
+
+async function run(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sb = supabaseAdmin();
   if (!sb) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 501 });
   const url = new URL(req.url);
   const force = url.searchParams.get("force") === "1"; // send now regardless of hour (testing)
+  const dry = url.searchParams.get("dry") === "1";     // build the digests but do not send or mark
   const hour = new Date().getUTCHours();
   const today = new Date().toISOString().slice(0, 10);
   let q = sb.from("profiles").select("id, email, preferences, digest_hour, digest_last_sent, notify_email").eq("digest_enabled", true);
   if (!force) q = q.eq("digest_hour", hour);
-  const { data: users } = await q;
+  const { data: users, error: uerr } = await q;
+  if (uerr) return NextResponse.json({ error: `profiles: ${uerr.message}. Did you run supabase/schema.sql after the last update?` }, { status: 500 });
   const due = (users ?? []).filter((u) => force || u.digest_last_sent !== today);
-  if (!due.length) return NextResponse.json({ ok: true, sent: 0, hour });
+  if (!due.length) return NextResponse.json({ ok: true, sent: 0, hour, note: force ? "No user has the daily digest enabled (Account > Notifications)." : "Nobody is due this hour." });
 
   const [condR, listings, { data: confirmed }, { data: lost }] = await Promise.all([
     safe(globalConditions()),
@@ -38,10 +49,13 @@ export async function GET(req: Request) {
   const cond = condR.ok ? summarize(condR.data.conditions) : null;
 
   let sent = 0;
+  const previews: { user: string; title: string; body: string }[] = [];
+  const failures: string[] = [];
   for (const u of due) {
+   try {
     const venue: VenueId = isVenueId(u.preferences?.venue) ? u.preferences.venue : "binance";
     const canShort = VENUE_META[venue].canShort;
-    const mine = (confirmed ?? []).filter((r) => venuesFor(r.symbol, listings, venue).includes(venue)).filter((r) => canShort || r.detail?.setup?.side === "LONG")
+    const mine = (confirmed ?? []).filter((r) => r.symbol && venuesFor(String(r.symbol), listings, venue).includes(venue)).filter((r) => canShort || r.detail?.setup?.side === "LONG")
       .sort((a, b) => (b.detail?.setup?.confidence ?? 0) - (a.detail?.setup?.confidence ?? 0));
     const { data: open } = await sb.from("saved_setups").select("symbol, side, timeframe, status, fill_price, size_usd, risk_usd, max_favorable_pct, max_adverse_pct").eq("user_id", u.id).eq("taken", true).is("exit_price", null).limit(20);
     const lines: string[] = [];
@@ -66,9 +80,11 @@ export async function GET(req: Request) {
     lines.push("");
     lines.push("Manual trading only. Not financial advice.");
     const title = `AsheSignal daily: ${mine.length} confirmed on ${VENUE_META[venue].label}, ${open?.length ?? 0} open trade${(open?.length ?? 0) === 1 ? "" : "s"}${cond && cond.verdict !== "ok" ? `, conditions: ${cond.verdict}` : ""}`;
+    if (dry) { previews.push({ user: u.email ?? u.id, title, body: lines.join("\n") }); continue; }
     await deliver(sb, { userId: u.id, alertId: null, symbol: "DIGEST", title, body: lines.join("\n"), url: "/opportunities?cat=confirmed" });
     await sb.from("profiles").update({ digest_last_sent: today }).eq("id", u.id);
     sent++;
+   } catch (e) { failures.push(`${u.email ?? u.id}: ${(e as Error).message}`); }
   }
-  return NextResponse.json({ ok: true, sent, hour });
+  return NextResponse.json({ ok: true, sent, hour, dry, previews: dry ? previews : undefined, failures, conditions: cond?.headline ?? null, confirmedRows: confirmed?.length ?? 0 });
 }

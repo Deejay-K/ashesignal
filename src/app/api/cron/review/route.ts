@@ -8,6 +8,10 @@ export const maxDuration = 60;
 
 /** Sunday weekly review for users with the digest on (runs with the hourly worker; sends once per week at digest_hour on Sunday). */
 export async function GET(req: Request) {
+  try { return await run(req); } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 500 }); }
+}
+
+async function run(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sb = supabaseAdmin();
   if (!sb) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 501 });
