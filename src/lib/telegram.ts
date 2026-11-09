@@ -72,6 +72,11 @@ export const COMMANDS = [
   { command: "top", description: "The 3 best confirmed setups for your exchange" },
   { command: "record", description: "The engine's public track record" },
   { command: "leaderboard", description: "Group: weekly R leaderboard (/optin to join)" },
+  { command: "optin", description: "Group: appear on the leaderboard" },
+  { command: "optout", description: "Group: leave the leaderboard" },
+  { command: "mywatch", description: "Group: add a coin to your personal watchlist" },
+  { command: "unwatch", description: "Remove a coin from the watchlist" },
+  { command: "cancel", description: "Stop the current guided flow" },
   { command: "today", description: "Trade conditions, regime, Fear & Greed" },
   { command: "coin", description: "Analysis of a coin, e.g. /coin SOL 4h" },
   { command: "scan", description: "Any token on any chain by contract address" },
@@ -98,7 +103,7 @@ export const COMMANDS = [
 export async function tgRegisterCommands() {
   const [cmds, groupCmds, desc, short] = await Promise.all([
     call("setMyCommands", { commands: COMMANDS, scope: { type: "default" } }),
-    call("setMyCommands", { commands: COMMANDS.filter((c) => !["link", "me", "journal", "take", "alerts", "alert", "review", "digest", "watch"].includes(c.command)), scope: { type: "all_group_chats" } }),
+    call("setMyCommands", { commands: COMMANDS.filter((c) => !["link"].includes(c.command)), scope: { type: "all_group_chats" } }),
     call("setMyDescription", { description: "AsheSignal in Telegram: trade conditions, confirmed setups with entry, targets and stop, coin analysis, spot picks, position sizing, alerts and your trading journal. Everything the website shows, with buttons. Manual trading only. Not financial advice." }),
     call("setMyShortDescription", { short_description: "Crypto setups, conditions, analysis and journal from AsheSignal. Manual trading only." }),
   ]);

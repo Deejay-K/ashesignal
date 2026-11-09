@@ -32,16 +32,23 @@ const link = (path: string) => (SITE() ? `${SITE()}${path}` : undefined);
 
 export interface ChatCtx { sb: SupabaseClient; chatId: string; tgUserId: string; firstName?: string; userId: string | null; venue: VenueId; isGroup: boolean; state: any; messageId?: number }
 
-const MENU: Keyboard = [
-  [{ text: "✅ Confirmed trades", callback_data: "cat:confirmed" }, { text: "👀 Watching", callback_data: "cat:watching" }],
-  [{ text: "⚠️ Speculative", callback_data: "cat:speculative" }, { text: "🏦 Spot picks", callback_data: "cat:spot" }],
-  [{ text: "🌡 Today", callback_data: "today" }, { text: "📊 Screener", callback_data: "screener:score" }],
-  [{ text: "☀️ Today's plan", callback_data: "plan" }, { text: "📈 Track record", callback_data: "record" }],
-  [{ text: "🏆 Top 3 for me", callback_data: "top" }, { text: "⭐ Watchlist", callback_data: "watchlist" }],
-  [{ text: "👤 My trades", callback_data: "me" }, { text: "🔔 Alerts", callback_data: "alerts" }],
-  [{ text: "📅 Weekly review", callback_data: "review" }, { text: "☀️ Digest now", callback_data: "digest" }],
-  [{ text: "⚙️ Settings", callback_data: "settings" }, { text: "❓ Help", callback_data: "help" }],
-];
+/** The main menu covers every command. It adapts to the chat: group-only rows in groups, account rows when linked. */
+function menuFor(c: ChatCtx): Keyboard {
+  const kb: Keyboard = [
+    [{ text: "✅ Confirmed trades", callback_data: "cat:confirmed" }, { text: "👀 Watching", callback_data: "cat:watching" }],
+    [{ text: "⚠️ Speculative", callback_data: "cat:speculative" }, { text: "🏦 Spot picks", callback_data: "cat:spot" }],
+    [{ text: "☀️ Today's plan", callback_data: "plan" }, { text: "🏆 Top 3 for me", callback_data: "top" }],
+    [{ text: "🌡 Today", callback_data: "today" }, { text: "📊 Screener", callback_data: "screener:score" }],
+    [{ text: "📈 Track record", callback_data: "record" }, { text: c.isGroup ? "⭐ Group watchlist" : "⭐ Watchlist", callback_data: "watchlist" }],
+    [{ text: "🔍 Coin / scan", callback_data: "howcoin" }, { text: "📐 Size a trade", callback_data: "howsize" }],
+  ];
+  if (c.isGroup) kb.push([{ text: "🏅 Leaderboard", callback_data: "leaderboard" }, { text: "🙋 Join leaderboard", callback_data: "optin:1" }]);
+  kb.push([{ text: "👤 My trades", callback_data: "me" }, { text: "📒 Journal", callback_data: "journal" }, { text: "🔔 Alerts", callback_data: "alerts" }]);
+  kb.push([{ text: "📅 Weekly review", callback_data: "review" }, { text: "☀️ Digest now", callback_data: "digest" }]);
+  kb.push([{ text: "📣 Signals on/off", callback_data: "signals" }, { text: "⚙️ Exchange", callback_data: "exchange" }, { text: "⚙️ Settings", callback_data: "settings" }]);
+  kb.push([{ text: "📖 Trade guide", callback_data: "guide" }, { text: c.userId ? "🔓 Unlink" : "🔗 Link account", callback_data: c.userId ? "settings:unlink" : "howlink" }, { text: "❓ Help", callback_data: "help" }]);
+  return kb;
+}
 
 /**
  * Settings are per Telegram user, not per chat: in a group every member keeps their own exchange, account link
@@ -126,6 +133,11 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
   const [kind, a, b, d] = data.split(":");
   switch (kind) {
     case "menu": return sendMenu(c);
+    case "journal": return journal(c);
+    case "guide": return handleCommand(c, "/guide", "", "/guide");
+    case "howcoin": return tgSend(c.chatId, "Send a ticker or a contract address, for example:\n<code>SOL</code> or <code>/coin SOL 1d</code>\n<code>/scan 0x...</code> or just paste the address\nIn any chat: type <code>@AsheSignalBot SOL</code> to share a card.", { html: true });
+    case "howsize": return tgSend(c.chatId, "Position size: <code>/size ENTRY STOP [balance] [risk%]</code>\nExample: <code>/size 0.594 0.583 500 1</code>\nLinked accounts can leave out balance and risk%; the Risk page values are used.", { html: true, keyboard: [...(link("/") ? [[{ text: "Full calculator", url: link("/risk")! }]] : [])] });
+    case "howlink": return needLink(c);
     case "cat": return category(c, a as any, Number(b ?? 0));
     case "today": return today(c);
     case "screener": return screener(c, a ?? "score");
@@ -174,38 +186,28 @@ export async function handleStateReply(c: ChatCtx, text: string): Promise<boolea
 
 async function sendMenu(c: ChatCtx) {
   const vm = VENUE_META[c.venue];
-  return tgSend(c.chatId, `<b>AsheSignal</b>${c.isGroup && c.firstName ? ` for ${esc(c.firstName)}` : ""}\nYour exchange: <b>${esc(vm.label)}</b>${vm.canShort ? "" : " (spot only, longs)"}${c.userId ? "" : "\nNot linked to an account: /link CODE from the Account page for journal, alerts and digest."}\n\nPick a section:`, { html: true, keyboard: MENU });
+  return tgSend(c.chatId, `<b>AsheSignal</b>${c.isGroup && c.firstName ? ` for ${esc(c.firstName)}` : ""}\nYour exchange: <b>${esc(vm.label)}</b>${vm.canShort ? "" : " (spot only, longs)"}${c.userId ? "" : "\nNot linked to an account: /link CODE from the Account page for journal, alerts and digest."}\n\nPick a section:`, { html: true, keyboard: menuFor(c) });
 }
 
 async function help(c: ChatCtx) {
   const lines = [
-    "<b>Commands</b>",
-    "/menu - buttons for everything",
-    "/trades, /watching, /spec, /spot - the four discovery categories",
-    "/today - conditions, regime, Fear & Greed",
-    "/coin SOL [1h|4h|1d] - full analysis with setup card",
-    "/scan ADDRESS - any token on any chain by contract address (Solana, Ethereum, Base, BNB, Polygon, Arbitrum, Avalanche, Optimism, Sui, TON...). Pasting an address also works.",
-    "/screener [score|rsi|volume|oversold|overbought] - top coins",
-    "/size ENTRY STOP [balance] [risk%] - position size",
-    "/alert BTC above 100000 | below 90000 - price alert (linked)",
-    "/alerts - your rules and inbox (linked)",
-    "/me, /journal - your trades, heat, record (linked)",
-    "/take SOL - record a trade you placed (linked), guided",
-    "/me then Cancel or Close - undo a recorded trade, or close it at your exit price",
-    "/plan - today's plan: stance, what to do with each open trade, confirmed setups in zone, events, risk budget",
-    "/record - the engine's public track record (and yours when linked)",
-    "/top - the 3 best confirmed setups for your exchange right now",
-    "/leaderboard (groups) - who is up what in R this week; /optin to appear, /optout to leave",
-    "In groups, /watch, /unwatch and /watchlist manage the group's shared watchlist; /mywatch SOL adds to your own.",
-    "/watch SOL, /unwatch SOL, /watchlist - your starred coins with status and zone",
-    "/review - this week's review (linked)",
-    "/digest - today's digest now (linked)",
-    "/settings - exchange, digest on/off and hour, link status",
-    "/signals on|off - automatic message for every new confirmed trade (per person; in a group, for the group)",
-    "/exchange coinbase - your exchange (each person has their own, also in groups)",
-    "Type @AsheSignalBot SOL in any chat to share a setup card inline.",
-    "/guide - how to place a trade",
-    "Or ask anything in plain words.",
+    "<b>Discovery</b>",
+    "/trades /watching /spec /spot - the four categories, filtered to your exchange",
+    "/top - 3 best confirmed for your exchange · /plan - today's plan · /today - conditions, regime, Fear & Greed",
+    "/screener [score|oversold|overbought|volume] · /record - engine track record",
+    "<b>Coins</b>",
+    "/coin SOL [1h|4h|1d] or just SOL · /scan ADDRESS or paste an address (any chain)",
+    "@AsheSignalBot SOL in any chat shares a card (inline)",
+    "<b>Trading</b>",
+    "/size ENTRY STOP [balance] [risk%] · /take SOL (guided, with pre-trade check) · /me then Close or Cancel",
+    "/journal · /review · /digest · /guide",
+    "<b>Alerts and watchlist</b>",
+    "/alert BTC above 100000 · /alerts · /watch SOL · /unwatch SOL · /watchlist · /mywatch SOL (groups: personal list)",
+    "/signals on|off - automatic message for every new confirmed trade",
+    "<b>Groups</b>",
+    "/leaderboard · /optin · /optout · /watch and /watchlist act on the group's shared list",
+    "<b>Account</b>",
+    "/link CODE (from the Account page) · /unlink · /exchange coinbase · /settings · /menu · /cancel",
     "",
     "Manual trading only. The bot never places orders. Not financial advice.",
   ];
