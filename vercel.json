@@ -46,7 +46,7 @@
     },
     {
       "path": "/api/cron/followups",
-      "schedule": "0 */2 * * *"
+      "schedule": "30 7 * * *"
     }
   ]
 }
