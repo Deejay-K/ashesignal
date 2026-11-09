@@ -12,6 +12,7 @@ import ExchangePanel from "@/components/ExchangePanel";
 import RiskLimits from "@/components/RiskLimits";
 import DiscordSettings from "@/components/DiscordSettings";
 import TelegramSettings from "@/components/TelegramSettings";
+import NotifyPrefs from "@/components/NotifyPrefs";
 
 export default function AccountPage() {
   const sb = supabaseBrowser();
@@ -81,6 +82,7 @@ export default function AccountPage() {
       </Section>
       <Section title="Notifications">
         <PushToggle />
+        <div className="mt-3 border-t border-border pt-3"><NotifyPrefs /></div>
       </Section>
       <Section title="Telegram bot">
         <TelegramSettings />

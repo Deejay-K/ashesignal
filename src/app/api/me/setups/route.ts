@@ -52,6 +52,8 @@ export async function POST(req: NextRequest) {
     fill_price: num(b.fillPrice),
     size_units: num(b.sizeUnits),
     size_usd: num(b.sizeUsd),
+    pretrade_verdict: typeof b.pretradeVerdict === "string" ? b.pretradeVerdict.slice(0, 16) : null,
+    leverage_used: num(b.leverageUsed),
     risk_usd: num(b.riskUsd),
     fees_usd: num(b.feesUsd),
     notes: typeof b.notes === "string" ? b.notes.slice(0, 2000) : null,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { TELEGRAM_ENABLED, tgSend } from "@/lib/telegram";
-import { loadActor, handleCommand, handleCallback, handleStateReply, handleInline, type ChatCtx } from "@/lib/telegram-bot";
+import { loadActor, handleCommand, handleCallback, handleStateReply, handleInline, touchGroupMember, type ChatCtx } from "@/lib/telegram-bot";
 import { ensureEngineConfig } from "@/lib/engine-config";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
     const tgUserId = String(msg.from?.id ?? chatId);
     const chat = await loadActor(sb, tgUserId, chatId, { firstName: msg.from?.first_name, username: msg.from?.username, chatTitle: msg.chat.title });
     const ctx: ChatCtx = { sb, chatId, tgUserId, firstName: msg.from?.first_name, userId: chat.userId, venue: chat.venue, state: chat.state, isGroup, messageId: msg.message_id };
+    if (isGroup) await touchGroupMember(sb, chatId, tgUserId, msg.from?.first_name);
 
     // This user's guided flow (recording a trade) is waiting for a plain answer; the flow is per user, so in a
     // group only that person's messages are read as answers.

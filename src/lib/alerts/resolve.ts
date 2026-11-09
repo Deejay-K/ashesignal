@@ -111,7 +111,7 @@ export async function resolveTable(sb: SupabaseClient, table: "saved_setups" | "
       const pnl = lvl != null && units > 0 ? (lvl - fill) * dir * units : null;
       const title = st === "sl" ? `${row.symbol} ${row.side}: stop reached at ${fmtUsd(lvl)}` : st === "expired" ? `${row.symbol} ${row.side}: no target or stop within 30 days` : `${row.symbol} ${row.side}: ${st.toUpperCase()} reached at ${fmtUsd(lvl)}`;
       const body = `${st === "sl" ? "Your exchange stop should have closed the position." : st.startsWith("tp") ? `Take the ${st === "tp1" ? "first 30%" : st === "tp2" ? "next 30%" : "rest"} if it has not filled, ${st === "tp1" ? "and move the stop to break-even at " + fmtUsd(fill) : "and trail the stop"}.` : "Consider closing or re-evaluating."}${pnl != null ? ` Estimated ${pnl >= 0 ? "profit" : "loss"} on this leg: ${fmtUsd(Math.abs(pnl))}.` : ""} Record your real exit in the journal.`;
-      await deliver(sb, { userId: row.user_id, alertId: null, symbol: row.symbol, title, body, url: "/setups" });
+      await deliver(sb, { userId: row.user_id, alertId: null, symbol: row.symbol, kind: "trade", title, body, url: "/setups" });
       patch.notified_status = st;
     }
     await sb.from(table).update(patch).eq("id", row.id);

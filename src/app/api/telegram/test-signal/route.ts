@@ -27,6 +27,6 @@ export async function GET(req: Request) {
   const t = a.timeframes[tf];
   if (!t || "unavailable" in t || !t.setup) return NextResponse.json({ error: `${symbol} has no setup on ${tf} right now; try another coin or timeframe` }, { status: 404 });
   const only = url.searchParams.get("chat");
-  const r = await broadcastConfirmed(sb, [{ coingeckoId: cn.id, symbol: cn.symbol.toUpperCase(), name: cn.name, timeframe: tf, price: t.price, setup: t.setup, qualifies: [`TEST MESSAGE (${t.setup.kind} setup used as a sample). Real signals only go out when the engine confirms a trade.`] }], { maxMessages: 40, onlyChat: only ?? undefined });
+  const r = await broadcastConfirmed(sb, [{ coingeckoId: cn.id, symbol: cn.symbol.toUpperCase(), name: cn.name, timeframe: tf, price: t.price, setup: t.setup, qualifies: [`TEST MESSAGE (${t.setup.kind} setup used as a sample). Real signals only go out when the engine confirms a trade.`] }], { maxMessages: 40, onlyChat: only ?? undefined, test: true });
   return NextResponse.json({ ok: true, symbol: cn.symbol.toUpperCase(), tf, kind: t.setup.kind, ...r });
 }

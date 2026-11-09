@@ -48,7 +48,7 @@ async function run(req: Request) {
     const { title, body } = await buildDigest(sb, u.id, u.preferences?.venue, shared);
     const lines = [body];
     if (dry) { previews.push({ user: u.email ?? u.id, title, body: lines.join("\n") }); continue; }
-    await deliver(sb, { userId: u.id, alertId: null, symbol: "DIGEST", title, body: lines.join("\n"), url: "/opportunities?cat=confirmed" });
+    await deliver(sb, { userId: u.id, alertId: null, symbol: "DIGEST", kind: "digest", title, body: lines.join("\n"), url: "/opportunities?cat=confirmed" });
     await sb.from("profiles").update({ digest_last_sent: today }).eq("id", u.id);
     sent++;
    } catch (e) { failures.push(`${u.email ?? u.id}: ${(e as Error).message}`); }

@@ -510,3 +510,47 @@ alter table public.alerts add constraint alerts_type_check check (type in ('pric
 -- Stage 33.1: automatic Telegram signal per new Confirmed trade (opt-out per user and per group)
 alter table telegram_users add column if not exists broadcast boolean not null default true;
 alter table telegram_chats add column if not exists broadcast boolean not null default true;
+
+-- Stage 35: track record, signal follow-ups, group features, analytics, notification preferences
+create table if not exists signal_followups (
+  id uuid primary key default gen_random_uuid(),
+  asset_key text not null,
+  coingecko_id text not null,
+  symbol text not null,
+  timeframe text not null,
+  side text not null,
+  entry_low numeric not null, entry_high numeric not null,
+  tp1 numeric, tp2 numeric, tp3 numeric, sl1 numeric,
+  confidence int,
+  emitted_at timestamptz not null default now(),
+  zone_at timestamptz, tp1_at timestamptz, tp2_at timestamptz, tp3_at timestamptz, sl_at timestamptz, lost_at timestamptz,
+  closed_at timestamptz,
+  last_price numeric, last_checked_at timestamptz
+);
+create index if not exists signal_followups_open on signal_followups(closed_at, emitted_at desc);
+alter table signal_followups enable row level security;
+drop policy if exists "followups readable" on signal_followups;
+create policy "followups readable" on signal_followups for select using (true);
+
+create table if not exists telegram_group_members (
+  chat_id text not null,
+  tg_user_id text not null,
+  opt_in boolean not null default false,
+  first_name text,
+  updated_at timestamptz not null default now(),
+  primary key (chat_id, tg_user_id)
+);
+alter table telegram_group_members enable row level security;
+
+create table if not exists telegram_group_watch (
+  chat_id text not null,
+  coingecko_id text not null,
+  symbol text not null,
+  added_by text,
+  created_at timestamptz not null default now(),
+  primary key (chat_id, coingecko_id)
+);
+alter table telegram_group_watch enable row level security;
+
+alter table public.saved_setups add column if not exists pretrade_verdict text;
+alter table public.saved_setups add column if not exists leverage_used numeric;

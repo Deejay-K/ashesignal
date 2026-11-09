@@ -6,7 +6,7 @@ import { getOhlcv, type AssetRef } from "@/lib/market/ohlcv";
 import { analyzeTimeframe, type TimeframeAnalysis } from "@/lib/ta/analysis";
 import { getFearGreed } from "@/lib/providers/feargreed";
 import type { Timeframe } from "@/lib/types";
-import { deliver } from "./notify";
+import { deliver, kindOfAlertType } from "./notify";
 import { liquidityChanges } from "@/lib/market/liquidity";
 import { detectNewListings, type NewListing } from "@/lib/market/listings";
 import { globalConditions } from "@/lib/market/conditions";
@@ -222,7 +222,7 @@ export async function evaluateAlerts(sb: SupabaseClient) {
       fired++;
       patch.last_fired_at = new Date().toISOString();
       const url = msg.url ?? (a.asset_key.startsWith("cg:") ? `/token/${a.asset_key.slice(3)}` : "/alerts");
-      await deliver(sb, { userId: a.user_id, alertId: a.id, symbol: a.symbol, title: msg.title, body: msg.body, url, channels: (a as unknown as { channels?: string[] }).channels });
+      await deliver(sb, { userId: a.user_id, alertId: a.id, symbol: a.symbol, kind: kindOfAlertType(a.type), title: msg.title, body: msg.body, url, channels: (a as unknown as { channels?: string[] }).channels });
     }
     await sb.from("alerts").update(patch).eq("id", a.id);
   }

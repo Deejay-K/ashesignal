@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { PreTrade } from "@/lib/trade-check";
 
 /** The checklist shown before a trade is recorded. Fetches once per distinct inputs; never blocks saving. */
-export default function PreTradeChecklist({ symbol, side, kind, price, entry, stop, risk, venue, gap }: { symbol: string; side: "LONG" | "SHORT"; kind: string; price: number | null; entry: { low: number; high: number } | null; stop: number | null; risk: number | null; venue: string; gap?: string }) {
+export default function PreTradeChecklist({ symbol, side, kind, price, entry, stop, risk, venue, gap, onVerdict }: { symbol: string; side: "LONG" | "SHORT"; kind: string; price: number | null; entry: { low: number; high: number } | null; stop: number | null; risk: number | null; venue: string; gap?: string; onVerdict?: (v: string | null) => void }) {
   const [r, setR] = useState<PreTrade | null | undefined>(undefined);
   const [open, setOpen] = useState(false);
   const key = JSON.stringify([symbol, side, kind, price, entry, stop, risk, venue]);
@@ -12,7 +12,7 @@ export default function PreTradeChecklist({ symbol, side, kind, price, entry, st
     const t = setTimeout(() => {
       const q = new URLSearchParams({ symbol, side, kind, venue });
       if (price) q.set("price", String(price)); if (entry) { q.set("entryLow", String(entry.low)); q.set("entryHigh", String(entry.high)); } if (stop) q.set("stop", String(stop)); if (risk) q.set("risk", String(risk)); if (gap) q.set("gap", gap);
-      fetch(`/api/pretrade?${q}`).then((x) => (x.ok ? x.json() : null)).then(setR).catch(() => setR(null));
+      fetch(`/api/pretrade?${q}`).then((x) => (x.ok ? x.json() : null)).then((j) => { setR(j); onVerdict?.(j?.verdict ?? null); }).catch(() => { setR(null); onVerdict?.(null); });
     }, 350);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps

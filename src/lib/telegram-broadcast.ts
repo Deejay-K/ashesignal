@@ -59,22 +59,46 @@ function caption(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[], forGro
   return out;
 }
 
+export interface Recipient { chatId: string; venue: VenueId; group: boolean }
+export function recipientsFrom(users: any[] | null, groups: any[] | null): Recipient[] {
+  return [
+    ...(users ?? []).map((u) => ({ chatId: String(u.tg_user_id), venue: (isVenueId(u.venue) ? u.venue : "binance") as VenueId, group: false })),
+    ...(groups ?? []).map((g) => ({ chatId: String(g.chat_id), venue: "binance" as VenueId, group: true })),
+  ];
+}
+export async function loadRecipients(sb: SupabaseClient): Promise<Recipient[]> {
+  const [{ data: users }, { data: groups }] = await Promise.all([
+    sb.from("telegram_users").select("tg_user_id, venue").eq("broadcast", true),
+    sb.from("telegram_chats").select("chat_id").eq("broadcast", true),
+  ]);
+  return recipientsFrom(users, groups);
+}
+/** Who should hear about a coin: everyone with signals on whose exchange lists it (SHORTs skipped on spot-only). */
+export function canReceive(r: Recipient, listed: VenueId[], side: "LONG" | "SHORT"): boolean {
+  if (r.group) return listed.length > 0;
+  if (!listed.includes(r.venue)) return false;
+  if (side === "SHORT" && !VENUE_META[r.venue].canShort) return false;
+  return true;
+}
+
 /**
  * Send one message per confirmed signal to every opted-in Telegram user (by exchange) and group.
  * Returns how many messages went out. Capped so a full re-screen cannot flood.
  */
-export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedSignal[], opts: { maxMessages?: number; onlyChat?: string } = {}): Promise<{ sent: number; recipients: number; skipped: number }> {
+export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedSignal[], opts: { maxMessages?: number; onlyChat?: string; test?: boolean } = {}): Promise<{ sent: number; recipients: number; skipped: number }> {
   if (!TELEGRAM_ENABLED() || !signals.length) return { sent: 0, recipients: 0, skipped: 0 };
   const [{ data: users }, { data: groups }, listings] = await Promise.all([
     sb.from("telegram_users").select("tg_user_id, venue").eq("broadcast", true),
     sb.from("telegram_chats").select("chat_id").eq("broadcast", true),
     venueListings(),
   ]);
-  let recipients = [
-    ...(users ?? []).map((u) => ({ chatId: String(u.tg_user_id), venue: (isVenueId(u.venue) ? u.venue : "binance") as VenueId, group: false })),
-    ...(groups ?? []).map((g) => ({ chatId: String(g.chat_id), venue: "binance" as VenueId, group: true })),
-  ];
+  let recipients = recipientsFrom(users, groups);
   if (opts.onlyChat) recipients = recipients.filter((r) => r.chatId === opts.onlyChat);
+  // Remember each broadcast so the follow-up worker can report zone entry, TP1, TP2, SL and lost confirmation.
+  if (!opts.onlyChat && !opts.test) for (const sig of signals) {
+    const { data: existing } = await sb.from("signal_followups").select("id").eq("asset_key", `cg:${sig.coingeckoId}`).eq("timeframe", sig.timeframe).is("closed_at", null).limit(1);
+    if (!existing?.length) await sb.from("signal_followups").insert({ asset_key: `cg:${sig.coingeckoId}`, coingecko_id: sig.coingeckoId, symbol: sig.symbol, timeframe: sig.timeframe, side: sig.setup.side, entry_low: sig.setup.entry.low, entry_high: sig.setup.entry.high, tp1: sig.setup.takeProfits[0]?.price ?? null, tp2: sig.setup.takeProfits[1]?.price ?? null, tp3: sig.setup.takeProfits[2]?.price ?? null, sl1: sig.setup.stopLosses[0]?.price ?? null, confidence: sig.setup.confidence, last_price: sig.price });
+  }
   if (!recipients.length) return { sent: 0, recipients: 0, skipped: 0 };
   const max = opts.maxMessages ?? 60;
   // If every listing fetch failed we cannot know where a coin trades; do not silently drop the signal.
@@ -82,6 +106,7 @@ export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedS
   let sent = 0, skipped = 0;
   for (const sig of signals) {
     const listed = listingsUnknown ? ([...VENUE_IDS] as VenueId[]) : venuesFor(sig.symbol, listings, null);
+    const chart = link(`/api/chart?${new URLSearchParams({ symbol: sig.symbol, id: sig.coingeckoId, tf: sig.timeframe, side: sig.setup.side, entryLow: String(sig.setup.entry.low), entryHigh: String(sig.setup.entry.high), tp1: String(sig.setup.takeProfits[0]?.price ?? ""), tp2: String(sig.setup.takeProfits[1]?.price ?? ""), tp3: String(sig.setup.takeProfits[2]?.price ?? ""), sl1: String(sig.setup.stopLosses[0].price), sl2: String(sig.setup.stopLosses[1]?.price ?? "") })}`);
     const og = link(`/api/og?${new URLSearchParams({ symbol: sig.symbol, tf: sig.timeframe, side: sig.setup.side, kind: "confirmed", entryLow: String(sig.setup.entry.low), entryHigh: String(sig.setup.entry.high), tp1: String(sig.setup.takeProfits[0]?.price ?? ""), tp2: String(sig.setup.takeProfits[1]?.price ?? ""), tp3: String(sig.setup.takeProfits[2]?.price ?? ""), sl1: String(sig.setup.stopLosses[0].price), sl2: String(sig.setup.stopLosses[1]?.price ?? sig.setup.stopLosses[0].price), rr: String(sig.setup.riskRewardTp2), lev: String(sig.setup.leverage.recommended), conf: String(sig.setup.confidence), style: sig.setup.style, theme: "foundry" })}`);
     for (const r of recipients) {
       if (sent >= max) return { sent, recipients: recipients.length, skipped };
@@ -92,7 +117,9 @@ export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedS
       const venue = r.group ? (listed[0] ?? "binance") : r.venue;
       const text = caption(sig, venue, listed, r.group);
       const kb = keyboard(sig, venue, listed);
-      let ok = og ? await tgPhoto(r.chatId, og, text, kb) : false;
+      if (og) kb.push([{ text: "🖼 Share card", url: og }]);
+      let ok = chart ? await tgPhoto(r.chatId, chart, text, kb) : false;
+      if (!ok && og) ok = await tgPhoto(r.chatId, og, text, kb);
       if (!ok) ok = await tgSend(r.chatId, text, { html: true, keyboard: kb });
       if (ok) sent++;
       await new Promise((res) => setTimeout(res, 60)); // stay under Telegram's ~30 msg/s

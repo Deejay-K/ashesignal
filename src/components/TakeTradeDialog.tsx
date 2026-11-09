@@ -36,6 +36,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
   const [notes, setNotes] = useState("");
   const [paper, setPaper] = useState(false);
   const [lev, setLev] = useState(String(setup.leverage?.recommended ?? 1));
+  const [verdict, setVerdict] = useState<string | null>(null);
   const needsLevels = !setup.stopLosses.length;
   const [myStop, setMyStop] = useState("");
   const [myTp1, setMyTp1] = useState("");
@@ -71,7 +72,7 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
     try {
       const base = needsLevels ? { ...setup, stopLosses: sl ? [{ price: sl }] : [], takeProfits: [num(myTp1), num(myTp2)].filter((x) => x > 0).map((price) => ({ price })), entry: { low: f, high: f, mid: f } } : setup;
       const effective = { ...base, leverage: { ...(setup.leverage ?? {}), recommended: L, used: L } };
-      const r = await fetch("/api/me/setups", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ setup: { ...effective, riskRewardTp2: rr ?? 0 }, symbol, timeframe, assetKey, score, taken: true, paper, exchange: paper ? "paper" : venue, fillPrice: f || null, sizeUnits: u || null, sizeUsd: positionUsd ? +positionUsd.toFixed(2) : su || null, riskUsd, feesUsd: num(fees) || null, notes: [notes, L > 1 ? `${L}x leverage, margin ${fmtUsd(su)}` : ""].filter(Boolean).join(" · ") }) });
+      const r = await fetch("/api/me/setups", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ setup: { ...effective, riskRewardTp2: rr ?? 0 }, symbol, timeframe, assetKey, score, taken: true, paper, exchange: paper ? "paper" : venue, fillPrice: f || null, sizeUnits: u || null, sizeUsd: positionUsd ? +positionUsd.toFixed(2) : su || null, riskUsd, feesUsd: num(fees) || null, pretradeVerdict: paper ? null : verdict, leverageUsed: L, notes: [notes, L > 1 ? `${L}x leverage, margin ${fmtUsd(su)}` : ""].filter(Boolean).join(" · ") }) });
       if (r.status === 401) { setGuest(true); setBusy(false); return; }
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error ?? "save failed");
@@ -115,14 +116,14 @@ export default function TakeTradeDialog({ setup, symbol, timeframe, assetKey, sc
               <label>Fees paid (USD, optional)<input inputMode="decimal" className="num" placeholder="0.03" value={fees} onChange={(e) => setFees(e.target.value)} /></label>
               <label className="col-span-2">Notes (why you took it, how you feel)<input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="optional" /></label>
             </div>
-            {!paper ? <PreTradeChecklist symbol={symbol} side={setup.side} kind={setup.kind} price={f || null} entry={needsLevels ? null : setup.entry} stop={sl ?? null} risk={riskUsd} venue={venue} /> : null}
+            {!paper ? <PreTradeChecklist symbol={symbol} side={setup.side} kind={setup.kind} price={f || null} entry={needsLevels ? null : setup.entry} stop={sl ?? null} risk={riskUsd} venue={venue} onVerdict={setVerdict} /> : null}
             {riskUsd != null ? <p className="num text-xs text-fg-2">If the stop hits you lose about <b className="down">{fmtUsd(riskUsd)}</b>{su > 0 ? ` (${Math.round((riskUsd / su) * 100)}% of your ${L > 1 ? "margin" : "stake"})` : ""}; TP2 would pay about <b className="up">{fmtUsd(riskUsd * (rr ?? 0))}</b> ({rr}R).{L > 1 && liq != null ? <> Estimated liquidation near <b className={liqBeforeStop ? "down" : ""}>{fmtUsd(liq)}</b>{liqBeforeStop ? ", which is BEFORE your stop: lower the leverage or the stop never gets to work." : ", beyond your stop, as it should be."}</> : null}</p> : <p className="text-xs text-fg-3">Enter a size to see the money at risk.</p>}
             {setup.leverage?.recommended && L > setup.leverage.recommended ? <p className="rounded border border-amber/40 bg-amber-dim px-2 py-1 text-xs text-amber">You are using more leverage than the engine suggests ({setup.leverage.recommended}x). Leverage changes how fast you lose, not whether the setup is right.</p> : null}
             {heat ? <div className={`rounded border px-2 py-1 text-xs ${heat.level === "stop" ? "border-red/50 bg-red/10 text-red" : heat.level === "caution" ? "border-amber/40 bg-amber-dim text-amber" : "border-border bg-bg-2 text-fg-2"}`}><b>{heat.level === "stop" ? "Over your risk limits with this trade." : heat.level === "caution" ? "Heads up." : "Within limits."}</b> {heat.messages.join(" ")}</div> : null}
             {err ? <p className="text-xs text-red">{err}</p> : null}
             <div className="flex flex-wrap gap-2">
               <button className="btn text-sm" disabled={busy || !(f > 0) || (needsLevels && !(num(myStop) > 0))} onClick={save}>{busy ? "Saving…" : paper ? "Record paper trade" : "Record in journal"}</button>
-              <Link className="btn-ghost text-sm" href={`/guide?${new URLSearchParams({ side: setup.side, entry: String(setup.entry.mid), stop: String(sl ?? ""), tp1: String(setup.takeProfits[0]?.price ?? ""), tp2: String(setup.takeProfits[1]?.price ?? ""), tp3: String(setup.takeProfits[2]?.price ?? ""), symbol, leverage: String(L), venue })}`}>How to place it</Link>
+              <Link className="btn-ghost text-sm" href={`/guide?${new URLSearchParams({ side: setup.side, entry: String(setup.entry.mid), stop: String(sl ?? ""), tp1: String(setup.takeProfits[0]?.price ?? ""), tp2: String(setup.takeProfits[1]?.price ?? ""), tp3: String(setup.takeProfits[2]?.price ?? ""), symbol, leverage: String(L), venue, units: u > 0 ? String(u) : "" })}`}>How to place it</Link>
             </div>
           </>
         )}

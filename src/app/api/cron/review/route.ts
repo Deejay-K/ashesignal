@@ -33,7 +33,7 @@ async function run(req: Request) {
     if (!force && u.preferences?.reviewSent === weekKey) continue;
     const { data: journal } = await sb.from("saved_setups").select("*").eq("user_id", u.id).eq("taken", true).gte("created_at", new Date(monday.getTime() - 60 * 86_400_000).toISOString());
     const r = buildWeeklyReview({ journal: (journal ?? []) as never, signals: (sig.data ?? []) as never, history: (hist.data ?? []) as never, tradingBalance: u.trading_balance ? Number(u.trading_balance) : null, riskPct: u.risk_pct ? Number(u.risk_pct) : null, from: monday, to });
-    await deliver(sb, { userId: u.id, alertId: null, symbol: "REVIEW", title: `Weekly review: ${r.journal.taken} trades, ${r.journal.winRate != null ? r.journal.winRate + "% win rate, " : ""}${r.journal.pnlUsd >= 0 ? "+" : ""}$${r.journal.pnlUsd.toFixed(2)}${r.journal.flags.length ? `, ${r.journal.flags.length} flag${r.journal.flags.length > 1 ? "s" : ""}` : ""}`, body: r.text, url: "/review" });
+    await deliver(sb, { userId: u.id, alertId: null, symbol: "REVIEW", kind: "review", title: `Weekly review: ${r.journal.taken} trades, ${r.journal.winRate != null ? r.journal.winRate + "% win rate, " : ""}${r.journal.pnlUsd >= 0 ? "+" : ""}$${r.journal.pnlUsd.toFixed(2)}${r.journal.flags.length ? `, ${r.journal.flags.length} flag${r.journal.flags.length > 1 ? "s" : ""}` : ""}`, body: r.text, url: "/review" });
     await sb.from("profiles").update({ preferences: { ...(u.preferences ?? {}), reviewSent: weekKey } }).eq("id", u.id);
     sent++;
   }

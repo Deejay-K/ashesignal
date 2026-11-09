@@ -35,6 +35,11 @@ export default function TodayPanel() {
   const tone = (v?: string) => (v === "avoid" || v === "stop" || v === "risk-off" ? "down" : v === "caution" || v === "choppy" || v === "transition" ? "text-amber" : v === "ok" || v === "risk-on" ? "up" : "");
   return (
     <div className="today">
+      <Link href="/plan" className="today-tile" style={{ borderColor: "var(--mint)" }}>
+        <span className="today-k">Today's plan</span>
+        <span className="today-v up">☀️</span>
+        <span className="today-s">stance, what to do with each open trade, setups in zone, risk budget</span>
+      </Link>
       <Link href="/glossary#trade-conditions" className="today-tile">
         <span className="today-k">Conditions</span>
         <span className={`today-v ${tone(cond?.verdict)}`}>{cond ? cond.verdict.toUpperCase() : "…"}</span>

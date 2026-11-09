@@ -8,6 +8,7 @@ import { buildGuide, guideToText, tradePageUrl, type Market } from "@/lib/guide/
 import { VENUE_IDS, VENUE_META, isVenueId, type VenueId } from "@/lib/venues";
 import { currentVenue, setVenue } from "@/lib/venue-pref";
 import { fmtUsd } from "@/lib/format";
+import OrderTicket from "@/components/OrderTicket";
 
 export default function GuidePage() {
   return <Suspense fallback={<div className="card h-40 animate-pulse" />}><GuideInner /></Suspense>;
@@ -57,6 +58,7 @@ function GuideInner() {
         </p>
       </div>
 
+      {hasSetup ? <OrderTicket venue={venue} symbol={setup.symbol} side={setup.side} entry={setup.entry} stop={setup.stop} tps={setup.tps} units={setup.units ?? (setup.riskUsd && Math.abs(setup.entry - setup.stop) > 0 ? setup.riskUsd / Math.abs(setup.entry - setup.stop) : null)} leverage={setup.leverage} /> : null}
       <div className="card space-y-3 p-3">
         <div>
           <div className="mb-1 text-[10px] uppercase tracking-wider text-fg-3">Exchange</div>

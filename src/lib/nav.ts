@@ -9,6 +9,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     id: "trade", label: "Trade", icon: "◆", href: "/opportunities",
     items: [
+      { href: "/plan", label: "Today's plan", hint: "Stance, open trades, setups in zone, budget" },
       { href: "/opportunities", label: "Trading Discovery", hint: "Confirmed, Watching, Speculative, Spot" },
       { href: "/screener", label: "Screener", hint: "Top 100 by any metric" },
       { href: "/scanner", label: "Scanner", hint: "Any token or contract address" },
@@ -23,6 +24,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/setups", label: "Journal", hint: "Trades you took" },
       { href: "/review", label: "Weekly review", hint: "Your week, flagged" },
       { href: "/performance", label: "Engine performance", hint: "Signal hit rates" },
+      { href: "/track-record", label: "Track record", hint: "Every signal, graded; your record too" },
       { href: "/watchlist", label: "Watchlist", hint: "Starred coins" },
     ],
   },

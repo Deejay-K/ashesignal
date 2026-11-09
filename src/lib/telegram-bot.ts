@@ -20,6 +20,8 @@ import { buildSpecDetail } from "./market/speculative";
 import { classifyAddress } from "./providers/chains";
 import { buildWeeklyReview } from "./review";
 import { digestShared, buildDigest } from "./digest";
+import { buildPlan } from "./plan";
+import { buildTrackRecord } from "./track-record";
 import { safe } from "./fetch";
 import type { Timeframe } from "./types";
 import type { Opportunity } from "./market/opportunities";
@@ -34,6 +36,7 @@ const MENU: Keyboard = [
   [{ text: "✅ Confirmed trades", callback_data: "cat:confirmed" }, { text: "👀 Watching", callback_data: "cat:watching" }],
   [{ text: "⚠️ Speculative", callback_data: "cat:speculative" }, { text: "🏦 Spot picks", callback_data: "cat:spot" }],
   [{ text: "🌡 Today", callback_data: "today" }, { text: "📊 Screener", callback_data: "screener:score" }],
+  [{ text: "☀️ Today's plan", callback_data: "plan" }, { text: "📈 Track record", callback_data: "record" }],
   [{ text: "🏆 Top 3 for me", callback_data: "top" }, { text: "⭐ Watchlist", callback_data: "watchlist" }],
   [{ text: "👤 My trades", callback_data: "me" }, { text: "🔔 Alerts", callback_data: "alerts" }],
   [{ text: "📅 Weekly review", callback_data: "review" }, { text: "☀️ Digest now", callback_data: "digest" }],
@@ -97,9 +100,15 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/journal": return journal(c);
     case "/take": return takeStart(c, arg);
     case "/exchange": return exchange(c, arg);
-    case "/watch": case "/star": return watchAdd(c, arg);
-    case "/unwatch": return watchRemove(c, arg);
-    case "/watchlist": return watchlist(c);
+    case "/watch": case "/star": return c.isGroup ? groupWatchAdd(c, arg) : watchAdd(c, arg);
+    case "/unwatch": return c.isGroup ? groupWatchRemove(c, arg) : watchRemove(c, arg);
+    case "/watchlist": return c.isGroup ? groupWatchlist(c) : watchlist(c);
+    case "/mywatch": return watchAdd(c, arg);
+    case "/plan": return plan(c);
+    case "/record": case "/trackrecord": return record(c);
+    case "/leaderboard": case "/lb": return leaderboard(c);
+    case "/optin": return optIn(c, true);
+    case "/optout": return optIn(c, false);
     case "/top": return top(c);
     case "/review": return review(c);
     case "/digest": return digestNow(c);
@@ -133,8 +142,12 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "alerttp": return alertFromSetup(c, a, (b as Timeframe) || "4h");
     case "confirmalert": return alertConfirm(c, a);
     case "zonealert": return alertZone(c, a, (b as Timeframe) || "4h");
-    case "watch": return a === "rm" ? watchRemove(c, b) : watchAdd(c, a);
-    case "watchlist": return watchlist(c);
+    case "watch": return a === "rm" ? (c.isGroup ? groupWatchRemove(c, b) : watchRemove(c, b)) : c.isGroup ? groupWatchAdd(c, a) : watchAdd(c, a);
+    case "watchlist": return c.isGroup ? groupWatchlist(c) : watchlist(c);
+    case "plan": return plan(c);
+    case "record": return record(c);
+    case "leaderboard": return leaderboard(c);
+    case "optin": return optIn(c, a !== "0");
     case "top": return top(c);
     case "review": return review(c);
     case "digest": return digestNow(c);
@@ -179,7 +192,11 @@ async function help(c: ChatCtx) {
     "/me, /journal - your trades, heat, record (linked)",
     "/take SOL - record a trade you placed (linked), guided",
     "/me then Cancel or Close - undo a recorded trade, or close it at your exit price",
+    "/plan - today's plan: stance, what to do with each open trade, confirmed setups in zone, events, risk budget",
+    "/record - the engine's public track record (and yours when linked)",
     "/top - the 3 best confirmed setups for your exchange right now",
+    "/leaderboard (groups) - who is up what in R this week; /optin to appear, /optout to leave",
+    "In groups, /watch, /unwatch and /watchlist manage the group's shared watchlist; /mywatch SOL adds to your own.",
     "/watch SOL, /unwatch SOL, /watchlist - your starred coins with status and zone",
     "/review - this week's review (linked)",
     "/digest - today's digest now (linked)",
@@ -347,10 +364,11 @@ async function setupCard(c: ChatCtx, id: string, tf: Timeframe, known?: { id: st
     kb.push([...(s.kind !== "confirmed" ? [{ text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }] : []), { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
     const guide = link(`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: cn.symbol, leverage: String(s.leverage.recommended), venue: c.venue })}`);
     kb.push([{ text: "📖 How to place it", url: guide ?? "https://t.me" }, { text: "📈 Chart", url: link(`/token/${cn.id}?tf=${tf}`) ?? "https://t.me" }]);
-    // share-card image when the site URL is known
+    // Candle chart with the setup drawn on it first (short caption: Telegram caps captions at 1024 chars), then the full card.
+    const chart = link(`/api/chart?${new URLSearchParams({ symbol: cn.symbol, id: cn.id, tf, side: s.side, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? "") })}`);
     const og = link(`/api/og?${new URLSearchParams({ symbol: cn.symbol, tf, side: s.side, kind: s.kind, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? s.stopLosses[0].price), rr: String(s.riskRewardTp2), lev: String(s.leverage.recommended), conf: String(s.confidence), style: s.style, theme: "foundry" })}`);
-    // Share card first (short caption: Telegram caps captions at 1024 chars), then the full card with buttons.
-    if (og) await tgPhoto(c.chatId, og, `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> · ${esc(s.kind)} · conf ${s.confidence}% · ${s.riskRewardTp2}R`);
+    if (chart) await tgPhoto(c.chatId, chart, `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> · ${esc(s.kind)} · conf ${s.confidence}% · ${s.riskRewardTp2}R`);
+    if (og) kb.push([{ text: "🖼 Share card", url: og }]);
   } else {
     body += `\n\nNo tradeable setup on ${tf}.`;
     kb.push([{ text: "📈 Chart", url: link(`/token/${cn.id}?tf=${tf}`) ?? "https://t.me" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }, { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
@@ -538,6 +556,7 @@ async function takeStep(c: ChatCtx, text: string): Promise<boolean> {
     const icon = (l: string) => (l === "ok" ? "✅" : l === "warn" ? "⚠️" : l === "fail" ? "⛔" : "▫️");
     const checks = pre.ok ? pre.data.checks.map((k) => `${icon(k.level)} <b>${esc(k.label)}.</b> ${esc(k.detail)}`).join("\n") : "Checklist unavailable right now.";
     const verdict = pre.ok ? (pre.data.verdict === "go" ? "🟢 GO" : pre.data.verdict === "careful" ? "🟡 CAREFUL" : "🔴 WAIT") : "";
+    st.verdict = pre.ok ? pre.data.verdict : null; await setState(c, st);
     await tgSend(c.chatId, `<b>Pre-trade check ${verdict}</b>\n${checks}\n\n${esc(st.coin.symbol)} ${st.setup.side}: fill ${fmtUsd(st.fill)}, ${lev > 1 ? `${lev}x, margin ${fmtUsd(usd)}, position ${fmtUsd(usd * lev)}` : fmtUsd(usd)}, ${fmtNum(units, 4)} units${riskUsd != null ? `, <b>${fmtUsd(riskUsd)}</b> at risk if the stop hits (${Math.round((riskUsd / usd) * 100)}% of your ${lev > 1 ? "margin" : "stake"})` : ""}.${liq != null ? ` Est. liquidation near ${fmtUsd(liq)}${liqBeforeStop ? " which is BEFORE your stop: lower the leverage." : "."}` : ""}\n${st.paper ? "Record this paper trade?" : "Did you place it? Record it in the journal?"}`, { html: true, keyboard: [[{ text: st.paper ? "🧪 Record paper trade" : "✅ Yes, I placed it", callback_data: "takesave:yes" }, { text: "✖ Cancel", callback_data: "takesave:no" }]] });
     return true;
   }
@@ -554,7 +573,7 @@ async function takeFinish(c: ChatCtx, yes: boolean) {
   const sl = st.setup.stopLosses[0]?.price;
   const riskUsd = sl ? Math.abs(st.fill - sl) * units : null;
   st.setup.leverage = { ...(st.setup.leverage ?? {}), recommended: lev, used: lev };
-  const row = { user_id: c.userId, asset_key: `cg:${st.coin.id}`, symbol: st.coin.symbol, timeframe: st.tf, side: st.setup.side, kind: st.setup.kind, entry_low: st.setup.entry.low, entry_high: st.setup.entry.high, tp1: st.setup.takeProfits[0]?.price ?? null, tp2: st.setup.takeProfits[1]?.price ?? null, tp3: st.setup.takeProfits[2]?.price ?? null, sl1: sl ?? null, sl2: st.setup.stopLosses[1]?.price ?? null, rr: st.setup.rr ?? null, leverage: lev, confidence: st.setup.confidence ?? null, payload: st.setup, taken: true, paper: !!st.paper, taken_at: new Date().toISOString(), exchange: st.paper ? "paper" : c.venue, fill_price: st.fill, size_units: units, size_usd: usd, risk_usd: riskUsd, notes: lev > 1 ? `Recorded via Telegram · ${lev}x leverage, margin ${fmtUsd(Number(st.margin))}` : "Recorded via Telegram" };
+  const row = { user_id: c.userId, asset_key: `cg:${st.coin.id}`, symbol: st.coin.symbol, timeframe: st.tf, side: st.setup.side, kind: st.setup.kind, entry_low: st.setup.entry.low, entry_high: st.setup.entry.high, tp1: st.setup.takeProfits[0]?.price ?? null, tp2: st.setup.takeProfits[1]?.price ?? null, tp3: st.setup.takeProfits[2]?.price ?? null, sl1: sl ?? null, sl2: st.setup.stopLosses[1]?.price ?? null, rr: st.setup.rr ?? null, leverage: lev, leverage_used: lev, pretrade_verdict: st.paper ? null : st.verdict ?? null, confidence: st.setup.confidence ?? null, payload: st.setup, taken: true, paper: !!st.paper, taken_at: new Date().toISOString(), exchange: st.paper ? "paper" : c.venue, fill_price: st.fill, size_units: units, size_usd: usd, risk_usd: riskUsd, notes: lev > 1 ? `Recorded via Telegram · ${lev}x leverage, margin ${fmtUsd(Number(st.margin))}` : "Recorded via Telegram" };
   const { data: ins, error } = await c.sb.from("saved_setups").insert(row).select("id").single();
   await setState(c, null);
   if (error) return tgSend(c.chatId, `Could not save: ${esc(error.message)}`, { html: true });
@@ -633,7 +652,7 @@ async function watchlist(c: ChatCtx) {
     safe(getMarketsByIds(ids)),
   ]);
   const price = new Map<string, { price: number; chg: number | null }>();
-  if (mk.ok) for (const m of mk.data as any[]) price.set(m.id, { price: m.current_price ?? m.price, chg: m.price_change_percentage_24h ?? m.change24h ?? null });
+  if (mk.ok) for (const m of mk.data as any[]) price.set(m.id, { price: m.priceUsd, chg: m.change24hPct ?? null });
   const lines = data.map((d) => {
     const mine = (rows ?? []).filter((r) => r.asset_key === `cg:${d.coingecko_id}`);
     const best = mine.find((r) => r.category === "confirmed") ?? mine.find((r) => r.category === "watching") ?? mine.find((r) => r.timeframe === "4h") ?? mine[0];
@@ -823,6 +842,117 @@ async function whaleAlert(c: ChatCtx, address: string) {
   return tgSend(c.chatId, ok ? `🔔 Whale alert set for ${esc(symbol)}: transfers of $10,000 or more.` : "Could not save the alert.", { html: true });
 }
 
+// ---------- plan and record ----------
+
+async function plan(c: ChatCtx) {
+  await tgTyping(c.chatId);
+  const p = await buildPlan(c.sb, c.userId, c.venue);
+  const vm = VENUE_META[c.venue];
+  const icon = p.market.verdict === "avoid" ? "🔴" : p.market.verdict === "caution" ? "🟡" : "🟢";
+  const lines = [
+    `${who(c)}<b>☀️ Today's plan</b> for ${esc(vm.label)}`,
+    `${icon} ${esc(p.market.stance)}`,
+    `<i>${esc(p.market.headline)}${p.market.regime ? ` Regime ${esc(p.market.regime)}.` : ""}</i>`,
+    "",
+    "<b>Do today</b>",
+    ...p.todo.map((t, i) => `${i + 1}. ${esc(t)}`),
+  ];
+  if (p.trades.length) { lines.push("", "<b>Your open trades</b>"); for (const t of p.trades) lines.push(`${t.tone === "up" ? "🟢" : t.tone === "down" ? "🔴" : t.tone === "amber" ? "🟡" : "▫️"} <b>${esc(t.symbol)}</b> ${t.side} ${esc(t.timeframe)}${t.paper ? " (paper)" : ""}${t.pnlPct != null ? ` ${t.pnlPct >= 0 ? "+" : ""}${t.pnlPct}%` : ""}: ${esc(t.action)}`); }
+  if (p.setups.length) { lines.push("", `<b>Confirmed on ${esc(vm.label)}</b>`); for (const sx of p.setups) lines.push(`• <b>${esc(sx.symbol)}</b> ${sx.side} ${esc(sx.timeframe)} conf ${sx.confidence}%${sx.entry ? ` · entry ${fmtUsd(sx.entry.low)} to ${fmtUsd(sx.entry.high)}` : ""}${sx.stop ? ` · SL ${fmtUsd(sx.stop)}` : ""} · ${sx.zone.state === "in" ? "🟢 in zone" : esc(sx.zone.label)}`); }
+  if (p.watching.length && !p.setups.length) { lines.push("", "<b>Closest to confirming</b>"); for (const sx of p.watching) lines.push(`• ${esc(sx.symbol)} ${sx.side} ${esc(sx.timeframe)}${sx.why ? `: ${esc(sx.why)}` : ""}`); }
+  if (p.heat) lines.push("", `<b>Risk budget</b>: heat ${p.heat.heatPct ?? "?"}% of ${p.heat.maxHeatPct}%, ${p.heat.openCount}/${p.heat.maxOpen} trades open${p.heat.budgetUsd != null ? `, ${fmtUsd(p.heat.budgetUsd)} left to risk` : ""}.`);
+  if (p.events.length) lines.push("", `<b>Events</b>: ${p.events.map((e) => `${esc(e.title)} ${new Date(e.time).toUTCString().slice(17, 22)} UTC`).join("; ")}`);
+  const kb: Keyboard = [];
+  if (p.setups.length) kb.push(p.setups.map((sx) => ({ text: `${sx.symbol} card`, callback_data: `setup:${ref({ id: sx.coingeckoId, symbol: sx.symbol })}:${sx.timeframe}` })));
+  kb.push([{ text: "My trades", callback_data: "me" }, { text: "Confirmed", callback_data: "cat:confirmed" }, { text: "Menu", callback_data: "menu" }]);
+  if (link("/")) kb.push([{ text: "Open the plan page", url: link("/plan")! }]);
+  const out = lines.join("\n");
+  return tgSend(c.chatId, out.length > 4000 ? out.slice(0, 3990) + "…" : out, { html: true, keyboard: kb });
+}
+
+async function record(c: ChatCtx) {
+  await tgTyping(c.chatId);
+  const r = await buildTrackRecord(c.sb, c.userId);
+  const t = r.signals.total;
+  const b = (x: { key: string; n: number; winRate: number | null; avgR: number | null; sumR: number }) => `${esc(x.key)}: ${x.n} · ${x.winRate != null ? `${x.winRate}% win` : "no result yet"} · ${x.avgR != null ? `${x.avgR > 0 ? "+" : ""}${x.avgR}R avg` : ""} · ${x.sumR > 0 ? "+" : ""}${x.sumR}R total`;
+  const lines = [
+    `${who(c)}<b>📈 Engine track record</b>${r.since ? ` since ${r.since.slice(0, 10)}` : ""}`,
+    `${t.n} signals, ${t.resolved} resolved: <b>${t.winRate != null ? `${t.winRate}% win rate` : "no results yet"}</b>, avg ${t.avgR != null ? `${t.avgR > 0 ? "+" : ""}${t.avgR}R` : "-"}, total <b>${t.sumR > 0 ? "+" : ""}${t.sumR}R</b>`,
+    `(${t.wins} wins, ${t.losses} stops, ${t.expired} expired. A stop is -1R; targets count their distance over the stop distance.)`,
+    "",
+    "<b>By kind</b>", ...r.signals.byKind.map(b),
+    "", "<b>By timeframe</b>", ...r.signals.byTimeframe.map(b),
+    "", `<b>Broadcast confirmed trades</b>: ${r.followups.total} sent, ${r.followups.open} open, TP1 ${r.followups.tp1}, TP2 ${r.followups.tp2}, stopped ${r.followups.sl}, lost before TP1 ${r.followups.lost}${r.followups.tp1Rate != null ? ` (TP1 rate ${r.followups.tp1Rate}% of closed)` : ""}`,
+  ];
+  if (r.journal) lines.push("", `<b>Your record</b>: ${r.journal.total.n} taken, ${r.journal.total.resolved} closed, ${r.journal.total.winRate != null ? `${r.journal.total.winRate}% win` : "no closed yet"}, real ${r.journal.real.sumR > 0 ? "+" : ""}${r.journal.real.sumR}R, paper ${r.journal.paper.sumR > 0 ? "+" : ""}${r.journal.paper.sumR}R`);
+  lines.push("", "<i>Nobody can edit these rows; the worker writes them from price outcomes.</i>");
+  return tgSend(c.chatId, lines.join("\n"), { html: true, keyboard: [[...(link("/") ? [{ text: "Full track record", url: link("/track-record")! }] : []), { text: "Menu", callback_data: "menu" }]] });
+}
+
+// ---------- groups: leaderboard and shared watchlist ----------
+
+export async function touchGroupMember(sb: SupabaseClient, chatId: string, tgUserId: string, firstName?: string) {
+  await sb.from("telegram_group_members").upsert({ chat_id: chatId, tg_user_id: tgUserId, first_name: firstName ?? null, updated_at: new Date().toISOString() }, { onConflict: "chat_id,tg_user_id", ignoreDuplicates: false }).then(() => {}, () => {});
+}
+async function optIn(c: ChatCtx, on: boolean) {
+  if (!c.isGroup) return tgSend(c.chatId, "The leaderboard lives in groups. In a group, send /optin to appear on it.");
+  if (!c.userId && on) return tgSend(c.chatId, `${who(c)}Link your account first (/link CODE in a private chat with me), then /optin here.`, { html: true });
+  await c.sb.from("telegram_group_members").upsert({ chat_id: c.chatId, tg_user_id: c.tgUserId, first_name: c.firstName ?? null, opt_in: on, updated_at: new Date().toISOString() }, { onConflict: "chat_id,tg_user_id" });
+  return tgSend(c.chatId, `${who(c)}${on ? "You are on this group's leaderboard. Only weekly R and trade counts are shown, never dollar amounts." : "Removed from the leaderboard."}`, { html: true, keyboard: [[{ text: "Leaderboard", callback_data: "leaderboard" }]] });
+}
+async function leaderboard(c: ChatCtx) {
+  if (!c.isGroup) return tgSend(c.chatId, "The leaderboard is a group feature. Add me to a group and send /leaderboard there.");
+  await tgTyping(c.chatId);
+  const { data: members } = await c.sb.from("telegram_group_members").select("tg_user_id, first_name").eq("chat_id", c.chatId).eq("opt_in", true);
+  if (!members?.length) return tgSend(c.chatId, `${who(c)}Nobody has opted in yet. Each member sends /optin (after linking their account) to appear. Shown: trades this week and R, never money.`, { html: true });
+  const { data: users } = await c.sb.from("telegram_users").select("tg_user_id, user_id").in("tg_user_id", members.map((m) => m.tg_user_id));
+  const monday = new Date(); monday.setUTCHours(0, 0, 0, 0); monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+  const ids = (users ?? []).map((u) => u.user_id).filter(Boolean) as string[];
+  const { data: trades } = ids.length ? await c.sb.from("saved_setups").select("user_id, realized_r, paper, exit_at, taken_at").in("user_id", ids).eq("taken", true).or(`exit_at.gte.${monday.toISOString()},taken_at.gte.${monday.toISOString()}`) : { data: [] as any[] };
+  const rows = members.map((m) => {
+    const uid = (users ?? []).find((u) => u.tg_user_id === m.tg_user_id)?.user_id;
+    const mine = (trades ?? []).filter((t) => t.user_id === uid);
+    const closed = mine.filter((t) => t.realized_r != null && t.exit_at && Date.parse(t.exit_at) >= monday.getTime());
+    const real = closed.filter((t) => !t.paper), paper = closed.filter((t) => t.paper);
+    const sum = (xs: any[]) => Math.round(xs.reduce((s, t) => s + Number(t.realized_r), 0) * 100) / 100;
+    return { name: m.first_name ?? "member", taken: mine.filter((t) => t.taken_at && Date.parse(t.taken_at) >= monday.getTime()).length, realR: sum(real), realN: real.length, paperR: sum(paper), paperN: paper.length, wins: closed.filter((t) => Number(t.realized_r) > 0).length, closed: closed.length };
+  }).sort((a, b) => b.realR + b.paperR * 0.001 - (a.realR + a.paperR * 0.001));
+  const medal = ["🥇", "🥈", "🥉"];
+  const lines = rows.map((r, i) => `${medal[i] ?? "•"} <b>${esc(r.name)}</b>: ${r.realN ? `${r.realR > 0 ? "+" : ""}${r.realR}R real (${r.realN})` : "no real closes"}${r.paperN ? ` · ${r.paperR > 0 ? "+" : ""}${r.paperR}R paper (${r.paperN})` : ""}${r.closed ? ` · ${Math.round((100 * r.wins) / r.closed)}% win` : ""} · ${r.taken} taken this week`);
+  return tgSend(c.chatId, `<b>🏅 Leaderboard, week of ${monday.toISOString().slice(0, 10)}</b>\n${lines.join("\n")}\n\n<i>R only, never dollars. Real and paper shown separately. /optin to join, /optout to leave.</i>`, { html: true, keyboard: [[{ text: "Refresh", callback_data: "leaderboard" }, { text: "Confirmed", callback_data: "cat:confirmed" }]] });
+}
+async function groupWatchAdd(c: ChatCtx, arg: string) {
+  const cn = await resolveCoin(arg.split(/\s+/)[0] ?? ""); if (!cn) return tgSend(c.chatId, "Which coin? /watch SOL");
+  await c.sb.from("telegram_group_watch").upsert({ chat_id: c.chatId, coingecko_id: cn.id, symbol: cn.symbol, added_by: c.firstName ?? c.tgUserId }, { onConflict: "chat_id,coingecko_id" });
+  return tgSend(c.chatId, `${who(c)}⭐ ${esc(cn.symbol)} added to the group watchlist.`, { html: true, keyboard: [[{ text: "Group watchlist", callback_data: "watchlist" }, { text: `${cn.symbol} card`, callback_data: `setup:${ref(cn)}:4h` }]] });
+}
+async function groupWatchRemove(c: ChatCtx, arg: string) {
+  const cn = await resolveCoin(arg.split(/\s+/)[0] ?? ""); if (!cn) return tgSend(c.chatId, "Which coin? /unwatch SOL");
+  await c.sb.from("telegram_group_watch").delete().eq("chat_id", c.chatId).eq("coingecko_id", cn.id);
+  return tgSend(c.chatId, `${who(c)}${esc(cn.symbol)} removed from the group watchlist.`, { html: true });
+}
+async function groupWatchlist(c: ChatCtx) {
+  await tgTyping(c.chatId);
+  const { data } = await c.sb.from("telegram_group_watch").select("coingecko_id, symbol, added_by").eq("chat_id", c.chatId).order("created_at", { ascending: false }).limit(20);
+  if (!data?.length) return tgSend(c.chatId, "The group watchlist is empty. Anyone can add with /watch SOL.");
+  const ids = data.map((d) => d.coingecko_id as string);
+  const [{ data: rows }, mk] = await Promise.all([
+    c.sb.from("coin_metrics").select("asset_key, timeframe, category, price, detail").in("asset_key", ids.map((i) => `cg:${i}`)).in("timeframe", ["4h", "1d"]),
+    safe(getMarketsByIds(ids)),
+  ]);
+  const px = new Map<string, { price: number | null; chg: number | null }>(); if (mk.ok) for (const m of mk.data) px.set(m.id, { price: m.priceUsd, chg: m.change24hPct ?? null });
+  const lines = data.map((d) => {
+    const mine = (rows ?? []).filter((r) => r.asset_key === `cg:${d.coingecko_id}`);
+    const best = mine.find((r) => r.category === "confirmed") ?? mine.find((r) => r.category === "watching") ?? mine[0];
+    const p = px.get(d.coingecko_id as string);
+    const st = best?.detail?.setup; const z = st && p?.price ? zoneStatus(p.price, st.entry, st.side) : null;
+    return `<b>${esc(d.symbol)}</b>${p?.price ? ` ${fmtUsd(p.price)}` : ""}${p?.chg != null ? ` (${p.chg >= 0 ? "+" : ""}${p.chg.toFixed(1)}%)` : ""}${best?.category === "confirmed" || best?.category === "watching" ? ` · ${best.category === "confirmed" ? "✅" : "👀"} ${esc(best.category)} ${st?.side ?? ""} ${esc(best.timeframe)}${z && z.state !== "unknown" ? ` · ${z.state === "in" ? "in zone" : esc(z.label)}` : ""}` : " · no setup"}${d.added_by ? ` · <i>${esc(d.added_by)}</i>` : ""}`;
+  });
+  const kb: Keyboard = [];
+  for (let k = 0; k < Math.min(data.length, 9); k += 3) kb.push(data.slice(k, k + 3).map((d) => ({ text: d.symbol, callback_data: `setup:${ref({ id: String(d.coingecko_id), symbol: d.symbol })}:4h` })));
+  return tgSend(c.chatId, `<b>⭐ Group watchlist</b> (${data.length})\n${lines.join("\n")}\n\n/watch SYM adds, /unwatch SYM removes. /mywatch SYM adds to your personal list instead.`, { html: true, keyboard: kb });
+}
+
 // ---------- free text ----------
 
 async function freeText(c: ChatCtx, text: string) {
@@ -839,9 +969,24 @@ async function freeText(c: ChatCtx, text: string) {
   try {
     const a = await answer({ question: text, venue: c.venue, userId: c.userId, sb: c.userId ? c.sb : null, adminSb: c.sb });
     const body = [esc(a.text), ...(a.bullets?.length ? ["", ...a.bullets.map((b) => `• ${esc(b)}`)] : [])].join("\n");
+    // Buttons that match what was asked, so the answer leads straight to the card or section it talks about.
     const kb: Keyboard = [];
-    if (a.context?.coin && (a.context.coin as any).id) kb.push([{ text: `${(a.context.coin as any).symbol} setup card`, callback_data: `setup:${ref(a.context.coin as any)}:4h` }]);
-    if (a.links[0] && link(a.links[0].href)) kb.push([{ text: a.links[0].label, url: link(a.links[0].href)! }, { text: "Menu", callback_data: "menu" }]);
+    const coinCtx = a.context?.coin as any;
+    if (coinCtx?.id) kb.push([{ text: `${coinCtx.symbol} card (4h)`, callback_data: `setup:${ref(coinCtx)}:4h` }, { text: `${coinCtx.symbol} 1d`, callback_data: `setup:${ref(coinCtx)}:1d` }, { text: "⭐ Watch", callback_data: `watch:${ref(coinCtx)}` }]);
+    const byIntent: Record<string, Keyboard[number]> = {
+      trades_for_me: [{ text: "✅ Confirmed", callback_data: "cat:confirmed" }, { text: "🏆 Top 3", callback_data: "top" }, { text: "☀️ Plan", callback_data: "plan" }],
+      today: [{ text: "🌡 Today", callback_data: "today" }, { text: "☀️ Plan", callback_data: "plan" }],
+      regime: [{ text: "🌡 Today", callback_data: "today" }, { text: "☀️ Plan", callback_data: "plan" }],
+      my_trades: [{ text: "👤 My trades", callback_data: "me" }, { text: "📅 Review", callback_data: "review" }],
+      risk: [{ text: "📐 /size ENTRY STOP", callback_data: "help" }, { text: "👤 My trades", callback_data: "me" }],
+      spot: [{ text: "🏦 Spot picks", callback_data: "cat:spot" }],
+      howto: [{ text: "📖 Guide", callback_data: "help" }, ...(link("/") ? [{ text: "Trade guide", url: link("/guide")! }] : [])],
+    };
+    if (byIntent[a.intent]) kb.push(byIntent[a.intent]);
+    const row: Keyboard[number] = [];
+    if (a.links[0] && link(a.links[0].href)) row.push({ text: a.links[0].label, url: link(a.links[0].href)! });
+    row.push({ text: "Menu", callback_data: "menu" });
+    kb.push(row);
     return tgSend(c.chatId, body + "\n\n<i>Not financial advice. Manual trading only.</i>", { html: true, keyboard: kb });
   } catch (e) {
     return tgSend(c.chatId, `Could not answer right now: ${esc((e as Error).message)}`, { html: true });

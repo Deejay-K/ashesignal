@@ -13,6 +13,27 @@ export interface Notification {
   url?: string;
   /** per-alert channel choice: "push" | "email" (inbox is always written) */
   channels?: string[];
+  /** what kind of message this is, so per-type preferences and quiet hours can apply: confirmed | trade | price | digest | review | spot | other */
+  kind?: NotifyKind;
+  /** bypass quiet hours and type toggles (test messages) */
+  force?: boolean;
+}
+export type NotifyKind = "confirmed" | "trade" | "price" | "digest" | "review" | "spot" | "other";
+export interface NotifyPrefs { quietStart?: number | null; quietEnd?: number | null; types?: Partial<Record<NotifyKind, boolean>>; quietAllowTrade?: boolean }
+
+/** Kind of an alert row by its type column. */
+export function kindOfAlertType(t: string): NotifyKind {
+  if (t === "new_confirmed") return "confirmed";
+  if (t === "trade_update") return "trade";
+  if (t === "spot_zone") return "spot";
+  if (/^price_|^tp$|^sl$|pct_move|entry_zone/.test(t)) return "price";
+  return "other";
+}
+/** True when the current UTC hour falls inside [start, end) (wrapping past midnight). */
+export function inQuietHours(p: NotifyPrefs | null | undefined, now = new Date()): boolean {
+  if (!p || p.quietStart == null || p.quietEnd == null || p.quietStart === p.quietEnd) return false;
+  const h = now.getUTCHours() + now.getUTCMinutes() / 60;
+  return p.quietStart < p.quietEnd ? h >= p.quietStart && h < p.quietEnd : h >= p.quietStart || h < p.quietEnd;
 }
 
 export const PUSH_ENABLED = Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
@@ -22,11 +43,17 @@ export async function deliver(sb: SupabaseClient, n: Notification): Promise<{ pu
   // always log it so the in-app bell can show it
   await sb.from("alert_events").insert({ user_id: n.userId, alert_id: n.alertId ?? null, symbol: n.symbol, title: n.title, body: n.body, url: n.url ?? null });
 
-  const { data: profile } = await sb.from("profiles").select("email, notify_email, notify_push, discord_webhook, telegram_chat_id").eq("id", n.userId).maybeSingle();
+  const { data: profile } = await sb.from("profiles").select("email, notify_email, notify_push, discord_webhook, telegram_chat_id, preferences").eq("id", n.userId).maybeSingle();
   let push = 0;
   let email = false;
   let discord = false;
   let telegram = false;
+
+  // Per-type toggles and quiet hours (Account > Notifications). The inbox row above is always written.
+  const prefs: NotifyPrefs | null = (profile?.preferences as { notify?: NotifyPrefs } | null)?.notify ?? null;
+  const kind = n.kind ?? "other";
+  if (!n.force && prefs?.types && prefs.types[kind] === false) return { push: 0, email: false, discord: false, telegram: false };
+  if (!n.force && inQuietHours(prefs) && !(prefs?.quietAllowTrade && kind === "trade")) return { push: 0, email: false, discord: false, telegram: false };
 
   const wantPush = n.channels ? n.channels.includes("push") : true;
   const wantEmail = n.channels ? n.channels.includes("email") : !!profile?.notify_email;

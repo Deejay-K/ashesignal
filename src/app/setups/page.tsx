@@ -6,6 +6,7 @@ import { fmtNum, fmtUsd, timeAgo } from "@/lib/format";
 import { Disclaimer, Empty, Section, StatCard } from "@/components/ui";
 import { downloadCsv } from "@/lib/csv";
 import { VENUE_META, isVenueId } from "@/lib/venues";
+import JournalAnalytics from "@/components/JournalAnalytics";
 
 interface Suggestion { setupId: string; symbol: string; side: "LONG" | "SHORT"; exchange: string; kind: "fill" | "exit"; price: number; units: number; usd: number; fees: number; fills: number; from: string; to: string; note: string }
 
@@ -24,7 +25,7 @@ const WIN = new Set(["tp1", "tp2", "tp3"]);
 export default function SetupsPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [state, setState] = useState<"loading" | "guest" | "ok" | "disabled">("loading");
-  const [tab, setTab] = useState<"journal" | "paper" | "saved">("journal");
+  const [tab, setTab] = useState<"journal" | "paper" | "saved" | "stats">("journal");
   const [closing, setClosing] = useState<Row | null>(null);
   const [heat, setHeat] = useState<{ level: string; messages: string[]; heatPct: number | null; openCount: number; limits: { maxHeatPct: number; maxOpen: number } } | null>(null);
   useEffect(() => { fetch("/api/me/heat").then((r) => (r.ok ? r.json() : null)).then((j) => setHeat(j?.current ?? null)).catch(() => {}); }, [rows]);
@@ -78,12 +79,19 @@ export default function SetupsPage() {
           <button className="btn-ghost text-xs" data-active={tab === "journal"} onClick={() => setTab("journal")}>Journal ({journal.length})</button>
           <button className="btn-ghost text-xs" data-active={tab === "paper"} onClick={() => setTab("paper")}>Paper ({paper.length})</button>
           <button className="btn-ghost text-xs" data-active={tab === "saved"} onClick={() => setTab("saved")}>Saved only ({saved.length})</button>
+          <button className="btn-ghost text-xs" data-active={tab === "stats"} onClick={() => setTab("stats")}>Stats</button>
         </div>
       </div>
       {state === "disabled" ? <Empty>Accounts are not configured on this deployment (see docs/SETUP.md).</Empty> : null}
       {state === "guest" ? <Empty><Link href="/login" className="link">Sign in</Link> to keep a journal. Guest mode does not store trades.</Empty> : null}
       {state === "loading" ? <div className="h-32 animate-pulse rounded-lg bg-bg-3" /> : null}
-      {state === "ok" && rows ? (
+      {state === "ok" && rows && tab === "stats" ? (
+        <Section title="Where your edge is" right={<Link className="link text-xs" href="/track-record">engine track record</Link>}>
+          <JournalAnalytics />
+          <div className="mt-4 border-t border-border pt-3"><div className="mb-2 text-xs font-semibold text-fg-2">Paper trades</div><JournalAnalytics paper /></div>
+        </Section>
+      ) : null}
+      {state === "ok" && rows && tab !== "stats" ? (
         <>
           <div className="num grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <StatCard label={tab === "journal" ? "Trades" : "Saved"} value={stats.total} sub={`${stats.open} open`} />
