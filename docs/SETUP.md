@@ -358,3 +358,10 @@ No typed command is required any more:
 ## 35. Stage 36.2 - organized bot menu
 
 The menu is now a short main menu (Today's plan, Confirmed, Market, My trading, Alerts & list, Tools, Settings, and Group in group chats). Each section opens its own sub-menu in the same message with a Back button, two buttons per row with short labels so every label is readable on a phone. The keyboard under the text box is 2 x 3: Plan, Trades, Coin, Me, Menu, Alerts.
+
+## 36. Stage 36.3 - AI chat in Telegram, share card images fixed
+
+Run `supabase/schema.sql` again (`telegram_users.ai_chat`). Re-open `/api/telegram/setup?secret=...` once (adds /ask to the command menu).
+
+- **AI chat**: "🤖 Ask AI" on the keyboard, "Ask the AI anything" at the top of the menu, or `/ask your question`. In a private chat just type; in a group reply to the bot or mention it. The bot remembers the last few turns per person for 3 hours (so "and its stop?" or "why?" work), and **replying to any card, signal or answer** makes the AI answer about that message. Live facts come only from the engine data; general crypto knowledge is explained in plain words. "🧹 New chat" starts over. Needs the AI provider configured (`AI_BASE_URL` / key, as for the website assistant); without it the bot answers from templates.
+- **Images fixed**: the chart image endpoint crashed (the renderer does not support SVG text), so Telegram never received a picture. It now renders, and coin cards and new-confirmed broadcasts send **the share card PNG (same as the website) and the chart with entry zone, TPs and SLs as one album**, uploaded by the server rather than fetched by Telegram. Broadcasts render each image once and reuse it for every recipient.

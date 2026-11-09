@@ -48,18 +48,20 @@ export async function GET(req: NextRequest) {
         </div>
         <svg width={W} height={H} style={{ position: "absolute", left: 0, top: 0 }}>
           {gridLines.map((g, i) => <line key={i} x1={padL} x2={W - padR} y1={y(g)} y2={y(g)} stroke={C.grid} strokeWidth={1} />)}
-          {gridLines.map((g, i) => <text key={`t${i}`} x={W - padR + 8} y={y(g) + 5} fill={C.fg2} fontSize={16}>{money(g)}</text>)}
           {eL != null && eH != null ? <rect x={padL} y={y(eH)} width={plotW} height={Math.max(2, y(eL) - y(eH))} fill={side === "LONG" ? C.zone : C.zoneS} /> : null}
           {candles.map((c, i) => {
             const x = padL + i * cw + cw * 0.15; const w = Math.max(2, cw * 0.7); const up = c.close >= c.open; const col = up ? C.up : C.down;
             return (<g key={i}><line x1={x + w / 2} x2={x + w / 2} y1={y(c.high)} y2={y(c.low)} stroke={col} strokeWidth={1.5} /><rect x={x} y={y(Math.max(c.open, c.close))} width={w} height={Math.max(1.5, Math.abs(y(c.open) - y(c.close)))} fill={col} /></g>);
           })}
-          {levels.filter((l) => l.k !== "entryLow" && l.k !== "entryHigh").map((l) => (
-            <g key={l.k}><line x1={padL} x2={W - padR} y1={y(l.v)} y2={y(l.v)} stroke={lineColor(l.k)} strokeWidth={2} strokeDasharray={l.k.startsWith("sl") ? "10 6" : "4 4"} /><rect x={W - padR - 150} y={y(l.v) - 14} width={142} height={26} rx={6} fill={lineColor(l.k)} /><text x={W - padR - 142} y={y(l.v) + 5} fill={C.bg} fontSize={16} fontWeight={700}>{l.k.toUpperCase()} {money(l.v)}</text></g>
-          ))}
-          {eL != null && eH != null ? <text x={padL + 8} y={y(eH) - 8} fill={C.amber} fontSize={16} fontWeight={700}>ENTRY {money(eL)} to {money(eH)}</text> : null}
-          {!candles.length ? <text x={W / 2 - 160} y={H / 2} fill={C.fg2} fontSize={24}>Candles unavailable right now</text> : null}
+          {levels.filter((l) => l.k !== "entryLow" && l.k !== "entryHigh").map((l) => <line key={l.k} x1={padL} x2={W - padR} y1={y(l.v)} y2={y(l.v)} stroke={lineColor(l.k)} strokeWidth={2} strokeDasharray={l.k.startsWith("sl") ? "10 6" : "4 4"} />)}
         </svg>
+        {/* Labels are HTML: the image renderer does not support SVG <text>. */}
+        {gridLines.map((g, i) => <div key={`g${i}`} style={{ position: "absolute", left: W - padR + 8, top: y(g) - 10, fontSize: 16, color: C.fg2, display: "flex" }}>{money(g)}</div>)}
+        {levels.filter((l) => l.k !== "entryLow" && l.k !== "entryHigh").map((l) => (
+          <div key={`l${l.k}`} style={{ position: "absolute", left: W - padR - 152, top: y(l.v) - 13, width: 146, height: 26, borderRadius: 6, background: lineColor(l.k), color: C.bg, fontSize: 16, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{`${l.k.toUpperCase()} ${money(l.v)}`}</div>
+        ))}
+        {eL != null && eH != null ? <div style={{ position: "absolute", left: padL + 8, top: y(eH) - 26, fontSize: 16, fontWeight: 700, color: C.amber, display: "flex" }}>{`ENTRY ${money(eL)} to ${money(eH)}`}</div> : null}
+        {!candles.length ? <div style={{ position: "absolute", left: 0, top: H / 2 - 16, width: W, fontSize: 24, color: C.fg2, display: "flex", justifyContent: "center" }}>Candles unavailable right now</div> : null}
       </div>
     ),
     { width: W, height: H },

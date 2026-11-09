@@ -51,6 +51,8 @@ export async function POST(req: NextRequest) {
     const chat = await loadActor(sb, tgUserId, chatId, { firstName: msg.from?.first_name, username: msg.from?.username, chatTitle: msg.chat.title });
     const ctx: ChatCtx = { sb, chatId, tgUserId, firstName: msg.from?.first_name, userId: chat.userId, venue: chat.venue, state: chat.state, isGroup, messageId: msg.message_id };
     if (isGroup) await touchGroupMember(sb, chatId, tgUserId, msg.from?.first_name);
+    // Replying to one of the bot's messages: hand its text to the AI so the answer is about that message.
+    if (msg.reply_to_message?.from?.is_bot) ctx.quoted = String(msg.reply_to_message.text ?? msg.reply_to_message.caption ?? "").slice(0, 2000) || null;
 
     // This user's guided flow (recording a trade) is waiting for a plain answer; the flow is per user, so in a
     // group only that person's messages are read as answers.

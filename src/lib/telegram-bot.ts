@@ -2,7 +2,7 @@
 // same engine functions the website uses. Nothing here places orders.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { tgSend, tgPhoto, tgEdit, tgAnswerCallback, tgTyping, esc, linkCode, REPLY_KEYBOARD, type Keyboard } from "./telegram";
+import { tgSend, tgPhoto, tgCardImages, fetchImage, tgEdit, tgAnswerCallback, tgTyping, esc, linkCode, REPLY_KEYBOARD, type Keyboard } from "./telegram";
 import { answer } from "./ai/assistant";
 import { globalConditions, summarize } from "./market/conditions";
 import { marketRegime } from "./market/regime";
@@ -32,7 +32,7 @@ import type { Opportunity } from "./market/opportunities";
 const SITE = () => (process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
 const link = (path: string) => (SITE() ? `${SITE()}${path}` : undefined);
 
-export interface ChatCtx { sb: SupabaseClient; chatId: string; tgUserId: string; firstName?: string; userId: string | null; venue: VenueId; isGroup: boolean; state: any; messageId?: number; fromButton?: boolean }
+export interface ChatCtx { sb: SupabaseClient; chatId: string; tgUserId: string; firstName?: string; userId: string | null; venue: VenueId; isGroup: boolean; state: any; messageId?: number; fromButton?: boolean; /** text of the bot message the user replied to */ quoted?: string | null }
 
 /**
  * Menus: a short main menu of sections, each opening a sub-menu in place (the same message is edited, so the chat
@@ -65,6 +65,7 @@ function menuFor(c: ChatCtx, id: MenuId = "main"): Keyboard {
     case "tools": return [
       [{ text: "🔍 Coin or token", callback_data: "ask:coin" }, { text: "⚖️ Compare", callback_data: "ask:compare" }],
       [{ text: "🧮 Simulator", callback_data: "simulate" }, { text: "📈 Track record", callback_data: "record" }],
+      [{ text: "🤖 Ask the AI", callback_data: "askai" }, { text: "🧹 New AI chat", callback_data: "newchat" }],
       BACK,
     ];
     case "group": return [
@@ -78,6 +79,7 @@ function menuFor(c: ChatCtx, id: MenuId = "main"): Keyboard {
       BACK,
     ];
     default: return [
+      [{ text: "🤖 Ask the AI anything", callback_data: "askai" }],
       [{ text: "☀️ Today's plan", callback_data: "plan" }, { text: "✅ Confirmed", callback_data: "cat:confirmed" }],
       [{ text: "📊 Market", callback_data: "sub:market" }, { text: "👤 My trading", callback_data: "sub:trading" }],
       [{ text: "🔔 Alerts & list", callback_data: "sub:alerts" }, { text: "🔍 Tools", callback_data: "sub:tools" }],
@@ -168,6 +170,8 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/watchlist": return c.isGroup ? groupWatchlist(c) : watchlist(c);
     case "/mywatch": return watchAdd(c, arg);
     case "/plan": return plan(c);
+    case "/ask": case "/ai": return arg ? aiChat(c, arg) : askAiPrompt(c);
+    case "/newchat": case "/forget": return aiReset(c);
     case "/simulate": case "/sim": return simulateCmd(c, arg);
     case "/compare": case "/vs": return arg.trim().split(/\s+/).filter(Boolean).length >= 2 ? compare(c, arg) : askStart(c, "compare");
     case "/events": case "/calendar": return events(c);
@@ -228,6 +232,8 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "watch": return a === "rm" ? (c.isGroup ? groupWatchRemove(c, b) : watchRemove(c, b)) : c.isGroup ? groupWatchAdd(c, a) : watchAdd(c, a);
     case "watchlist": return c.isGroup ? groupWatchlist(c) : watchlist(c);
     case "plan": return plan(c);
+    case "askai": return askAiPrompt(c);
+    case "newchat": return aiReset(c);
     case "simulate": return simulateCmd(c, a ? `${a} ${b ?? ""}` : "");
     case "events": return events(c);
     case "heat": return heat(c);
@@ -261,7 +267,7 @@ export async function handleStateReply(c: ChatCtx, text: string): Promise<boolea
 const LABELS: Record<string, string> = {
   "☀️ plan": "/plan", plan: "/plan", "✅ trades": "/trades", trades: "/trades", confirmed: "/trades", "👀 watching": "/watching", watching: "/watching",
   "🔍 coin": "/askcoin", coin: "/askcoin", scan: "/askcoin", "📐 size": "/asksize", size: "/asksize", "👤 me": "/me", me: "/me", "my trades": "/me",
-  "📋 menu": "/menu", menu: "/menu", "⭐ watchlist": "/watchlist", watchlist: "/watchlist", "🔔 alerts": "/alerts", alerts: "/alerts",
+  "📋 menu": "/menu", menu: "/menu", "🤖 ask ai": "/ask", "ask ai": "/ask", "⭐ watchlist": "/watchlist", watchlist: "/watchlist", "🔔 alerts": "/alerts", alerts: "/alerts",
   today: "/today", spot: "/spot", spec: "/spec", speculative: "/spec", top: "/top", screener: "/screener", record: "/record", events: "/events", heat: "/heat",
   review: "/review", digest: "/digest", settings: "/settings", help: "/help", journal: "/journal", guide: "/guide", exchange: "/exchange", simulate: "/simulate", simulator: "/simulate",
 };
@@ -509,8 +515,10 @@ async function setupCard(c: ChatCtx, id: string, tf: Timeframe, known?: { id: st
     // Candle chart with the setup drawn on it first (short caption: Telegram caps captions at 1024 chars), then the full card.
     const chart = link(`/api/chart?${new URLSearchParams({ symbol: cn.symbol, id: cn.id, tf, side: s.side, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? "") })}`);
     const og = link(`/api/og?${new URLSearchParams({ symbol: cn.symbol, tf, side: s.side, kind: s.kind, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? s.stopLosses[0].price), rr: String(s.riskRewardTp2), lev: String(s.leverage.recommended), conf: String(s.confidence), style: s.style, theme: "foundry" })}`);
-    if (chart) await tgPhoto(c.chatId, chart, `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> · ${esc(s.kind)} · conf ${s.confidence}% · ${s.riskRewardTp2}R`);
-    if (og) kb.push([{ text: "🖼 Share card", url: og }]);
+    // The share card (same PNG as the website's share button) and the chart with levels, as one album above the card text.
+    const [cardImg, chartImg] = await Promise.all([og ? fetchImage(og) : null, chart ? fetchImage(chart) : null]);
+    await tgCardImages(c.chatId, { card: cardImg, chart: chartImg }, `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> · ${esc(s.kind)} · conf ${s.confidence}% · ${s.riskRewardTp2}R`);
+    if (og) kb.push([{ text: "🖼 Open share card", url: og }]);
   } else {
     body += `\n\nNo tradeable setup on ${tf}.`;
     kb.push([{ text: "🌐 Full page", url: link(`/s/${cn.id}/${tf}`) ?? "https://t.me" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }, { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
@@ -1167,38 +1175,69 @@ async function groupWatchlist(c: ChatCtx) {
 // ---------- free text ----------
 
 async function freeText(c: ChatCtx, text: string) {
-  // A contract address on any chain opens the scanner card.
-  const addr = text.trim().split(/\s+/)[0];
-  if (addr && classifyAddress(addr) !== "unknown") return scanCard(c, addr);
-  // A bare ticker ("SOL", "$btc", "link 1d") opens the coin card directly.
-  const m = text.trim().match(/^\$?([a-z0-9]{2,10})(?:\s+(1h|4h|1d))?$/i);
-  if (m && !/^(hi|hey|yo|ok|yes|no|thanks|thank|help|menu|start|today|trades)$/i.test(m[1])) {
-    const cn = await resolveCoin(m[1]);
-    if (cn && cn.symbol.toUpperCase() === m[1].toUpperCase()) return setupCard(c, cn.id, (m[2] as Timeframe) || "4h", cn);
+  // Replying to one of the bot's messages is always conversation, even when the reply is a single word.
+  if (!c.quoted) {
+    // A contract address on any chain opens the scanner card.
+    const addr = text.trim().split(/\s+/)[0];
+    if (addr && classifyAddress(addr) !== "unknown") return scanCard(c, addr);
+    // A bare ticker ("SOL", "$btc", "link 1d") opens the coin card directly.
+    const m = text.trim().match(/^\$?([a-z0-9]{2,10})(?:\s+(1h|4h|1d))?$/i);
+    if (m && !/^(hi|hey|yo|ok|okay|yes|no|nope|why|how|thanks|thank|thx|cool|nice|help|menu|start|today|trades|more|and)$/i.test(m[1])) {
+      const cn = await resolveCoin(m[1]);
+      if (cn && cn.symbol.toUpperCase() === m[1].toUpperCase()) return setupCard(c, cn.id, (m[2] as Timeframe) || "4h", cn);
+    }
   }
+  return aiChat(c, text);
+}
+
+// ---------- AI chat: a real conversation, per person, with memory and reply context ----------
+
+interface AiTurn { role: "user" | "assistant"; text: string }
+interface AiMemory { turns: AiTurn[]; coin?: { id: string; symbol: string; name: string } | null; at: number }
+const AI_TTL_MS = 3 * 3_600_000;
+
+async function loadMemory(c: ChatCtx): Promise<AiMemory> {
+  const { data } = await c.sb.from("telegram_users").select("ai_chat").eq("tg_user_id", c.tgUserId).maybeSingle();
+  const m = data?.ai_chat as AiMemory | null;
+  return m && Date.now() - (m.at ?? 0) < AI_TTL_MS ? { turns: m.turns ?? [], coin: m.coin ?? null, at: m.at } : { turns: [], coin: null, at: Date.now() };
+}
+async function saveMemory(c: ChatCtx, m: AiMemory) {
+  await c.sb.from("telegram_users").update({ ai_chat: { turns: m.turns.slice(-10), coin: m.coin ?? null, at: Date.now() } }).eq("tg_user_id", c.tgUserId).then(() => {}, () => {});
+}
+async function aiReset(c: ChatCtx) {
+  await c.sb.from("telegram_users").update({ ai_chat: null }).eq("tg_user_id", c.tgUserId).then(() => {}, () => {});
+  return tgSend(c.chatId, `${who(c)}🧹 Fresh conversation. Ask me anything about the market.`, { html: true, keyboard: [[{ text: "Menu", callback_data: "menu" }]] });
+}
+async function askAiPrompt(c: ChatCtx) {
+  const examples = ["Is BTC still bullish on the 4h?", "What can I trade today on my exchange?", "Why is SOL only watching and not confirmed?", "Explain a stop-limit order like I'm new", "How are my trades doing?"];
+  return tgSend(c.chatId, `${who(c)}<b>🤖 Ask me anything</b> about the crypto market, a coin, your trades or how to trade.\n${c.isGroup ? "In a group, <b>reply to this message</b> (or mention me) with your question." : "Just type your question."} You can also reply to any card or signal I send to ask about it, and keep replying to my answers to continue the conversation.\n\nTry:\n${examples.map((e) => `• ${esc(e)}`).join("\n")}`, { html: true, keyboard: [[{ text: "🧹 New chat", callback_data: "newchat" }, { text: "Menu", callback_data: "menu" }]] });
+}
+
+async function aiChat(c: ChatCtx, text: string) {
   await tgTyping(c.chatId);
+  const mem = await loadMemory(c);
   try {
-    const a = await answer({ question: text, venue: c.venue, userId: c.userId, sb: c.userId ? c.sb : null, adminSb: c.sb });
+    const a = await answer({ question: text, venue: c.venue, userId: c.userId, sb: c.userId ? c.sb : null, adminSb: c.sb, history: mem.turns, quoted: c.quoted ?? null, lastCoin: mem.coin ?? null });
+    const cc = a.context?.coin as any;
+    const coinNow = cc?.id ? { id: String(cc.id), symbol: String(cc.symbol), name: String(cc.name ?? cc.symbol) } : null;
+    await saveMemory(c, { turns: [...mem.turns, { role: "user", text: text.slice(0, 600) }, { role: "assistant", text: [a.text, ...(a.bullets ?? [])].join(" ").slice(0, 900) }], coin: coinNow ?? mem.coin ?? null, at: Date.now() });
     const body = [esc(a.text), ...(a.bullets?.length ? ["", ...a.bullets.map((b) => `• ${esc(b)}`)] : [])].join("\n");
     // Buttons that match what was asked, so the answer leads straight to the card or section it talks about.
     const kb: Keyboard = [];
-    const coinCtx = a.context?.coin as any;
-    if (coinCtx?.id) kb.push([{ text: `${coinCtx.symbol} card (4h)`, callback_data: `setup:${ref(coinCtx)}:4h` }, { text: `${coinCtx.symbol} 1d`, callback_data: `setup:${ref(coinCtx)}:1d` }, { text: "⭐ Watch", callback_data: `watch:${ref(coinCtx)}` }]);
+    if (coinNow) kb.push([{ text: `📊 ${coinNow.symbol} card`, callback_data: `setup:${ref(coinNow)}:4h` }, { text: `⭐ Watch ${coinNow.symbol}`, callback_data: `watch:${ref(coinNow)}` }]);
     const byIntent: Record<string, Keyboard[number]> = {
-      trades_for_me: [{ text: "✅ Confirmed", callback_data: "cat:confirmed" }, { text: "🏆 Top 3", callback_data: "top" }, { text: "☀️ Plan", callback_data: "plan" }],
-      today: [{ text: "🌡 Today", callback_data: "today" }, { text: "☀️ Plan", callback_data: "plan" }],
-      regime: [{ text: "🌡 Today", callback_data: "today" }, { text: "☀️ Plan", callback_data: "plan" }],
-      my_trades: [{ text: "👤 My trades", callback_data: "me" }, { text: "📅 Review", callback_data: "review" }],
-      risk: [{ text: "📐 /size ENTRY STOP", callback_data: "help" }, { text: "👤 My trades", callback_data: "me" }],
+      trades_for_me: [{ text: "✅ Confirmed", callback_data: "cat:confirmed" }, { text: "☀️ Plan", callback_data: "plan" }],
+      today: [{ text: "🌡 Market today", callback_data: "today" }, { text: "☀️ Plan", callback_data: "plan" }],
+      regime: [{ text: "🌡 Market today", callback_data: "today" }, { text: "☀️ Plan", callback_data: "plan" }],
+      my_trades: [{ text: "👤 My trades", callback_data: "me" }, { text: "📅 Week review", callback_data: "review" }],
+      risk: [{ text: "📐 Size a trade", callback_data: "ask:size" }, { text: "🌡 My risk", callback_data: "heat" }],
       spot: [{ text: "🏦 Spot picks", callback_data: "cat:spot" }],
-      howto: [{ text: "📖 Guide", callback_data: "help" }, ...(link("/") ? [{ text: "Trade guide", url: link("/guide")! }] : [])],
+      howto: [{ text: "📖 Trade guide", callback_data: "guide" }],
     };
     if (byIntent[a.intent]) kb.push(byIntent[a.intent]);
-    const row: Keyboard[number] = [];
-    if (a.links[0] && link(a.links[0].href)) row.push({ text: a.links[0].label, url: link(a.links[0].href)! });
-    row.push({ text: "Menu", callback_data: "menu" });
-    kb.push(row);
-    return tgSend(c.chatId, body + "\n\n<i>Not financial advice. Manual trading only.</i>", { html: true, keyboard: kb });
+    kb.push([{ text: "🧹 New chat", callback_data: "newchat" }, { text: "Menu", callback_data: "menu" }]);
+    const foot = `\n\n<i>${c.isGroup ? "Reply to this message to keep talking." : "Keep typing, or reply to this message, to continue."} Not financial advice.</i>`;
+    return tgSend(c.chatId, body + foot, { html: true, keyboard: kb, replyTo: c.isGroup && !c.fromButton ? c.messageId : undefined });
   } catch (e) {
     return tgSend(c.chatId, `Could not answer right now: ${esc((e as Error).message)}`, { html: true });
   }

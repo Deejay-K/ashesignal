@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Telegram bot: delivery channel + a full mirror of the app (menus, cards, actions). Free: create a bot with
 // @BotFather, put the token in TELEGRAM_BOT_TOKEN, open /api/telegram/setup?secret=CRON_SECRET once.
 
@@ -18,11 +19,12 @@ async function call<T = unknown>(method: string, body: Record<string, unknown>):
 export const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** Persistent buttons under the text box (Telegram "reply keyboard"); their labels arrive as plain messages. */
-export const REPLY_KEYBOARD: string[][] = [["☀️ Plan", "✅ Trades"], ["🔍 Coin", "👤 Me"], ["📋 Menu", "🔔 Alerts"]];
+export const REPLY_KEYBOARD: string[][] = [["☀️ Plan", "✅ Trades"], ["🔍 Coin", "👤 Me"], ["🤖 Ask AI", "📋 Menu"]];
 
-export async function tgSend(chatId: string, text: string, opts: { url?: string; label?: string; keyboard?: Keyboard; html?: boolean; replyKeyboard?: string[][] | "remove" } = {}): Promise<boolean> {
+export async function tgSend(chatId: string, text: string, opts: { url?: string; label?: string; keyboard?: Keyboard; html?: boolean; replyKeyboard?: string[][] | "remove"; replyTo?: number } = {}): Promise<boolean> {
   if (!TELEGRAM_ENABLED()) return false;
   const body: Record<string, unknown> = { chat_id: chatId, text: text.slice(0, 4000), disable_web_page_preview: true };
+  if (opts.replyTo) body.reply_parameters = { message_id: opts.replyTo, allow_sending_without_reply: true };
   if (opts.html) body.parse_mode = "HTML";
   const kb: Keyboard = opts.keyboard ?? (opts.url ? [[{ text: opts.label ?? "Open in AsheSignal", url: opts.url }]] : []);
   if (opts.replyKeyboard === "remove") body.reply_markup = { remove_keyboard: true };
@@ -35,9 +37,66 @@ export async function tgSend(chatId: string, text: string, opts: { url?: string;
   return r.ok;
 }
 
-export async function tgPhoto(chatId: string, photoUrl: string, caption: string, keyboard?: Keyboard): Promise<boolean> {
-  const r = await call("sendPhoto", { chat_id: chatId, photo: photoUrl, caption: caption.slice(0, 1000), parse_mode: "HTML", ...(keyboard?.length ? { reply_markup: { inline_keyboard: keyboard } } : {}) });
-  return r.ok;
+/** Download one of our own images (share card, chart) so we can upload it; Telegram's own fetch of a slow
+ *  generated image times out. Null when it is not an image. */
+export async function fetchImage(url: string, timeoutMs = 20_000): Promise<Blob | null> {
+  try {
+    const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(timeoutMs) });
+    if (!r.ok || !(r.headers.get("content-type") ?? "").startsWith("image/")) return null;
+    return await r.blob();
+  } catch { return null; }
+}
+async function upload(method: string, form: FormData): Promise<{ ok: boolean; result?: any; description?: string }> {
+  try { const res = await fetch(`${API()}/${method}`, { method: "POST", body: form, cache: "no-store" }); return await res.json(); }
+  catch (e) { return { ok: false, description: String(e) }; }
+}
+const largest = (r: any): string | null => { const ph = r?.photo; return Array.isArray(ph) && ph.length ? ph[ph.length - 1].file_id : null; };
+
+/**
+ * Send a photo. `photo` is a URL, a Telegram file_id, or a Blob. URLs are downloaded and uploaded by us first
+ * (more reliable than letting Telegram fetch them). Returns the file_id so it can be reused for other chats.
+ */
+export async function tgPhoto(chatId: string, photo: string | Blob, caption: string, keyboard?: Keyboard): Promise<string | null> {
+  if (!TELEGRAM_ENABLED()) return null;
+  const blob = typeof photo === "string" && /^https?:/.test(photo) ? await fetchImage(photo) : photo instanceof Blob ? photo : null;
+  if (blob) {
+    const f = new FormData();
+    f.append("chat_id", chatId); f.append("photo", blob, "card.png");
+    if (caption) { f.append("caption", caption.slice(0, 1000)); f.append("parse_mode", "HTML"); }
+    if (keyboard?.length) f.append("reply_markup", JSON.stringify({ inline_keyboard: keyboard }));
+    const r = await upload("sendPhoto", f);
+    if (r.ok) return largest(r.result);
+  }
+  if (typeof photo !== "string") return null;
+  const r = await call<any>("sendPhoto", { chat_id: chatId, photo, caption: caption.slice(0, 1000), parse_mode: "HTML", ...(keyboard?.length ? { reply_markup: { inline_keyboard: keyboard } } : {}) });
+  return r.ok ? largest(r.result) : null;
+}
+
+/** Several images in one bubble (Telegram album). Items are Blobs or file_ids. Returns the file_ids in order. */
+export async function tgAlbum(chatId: string, items: (Blob | string)[], caption?: string): Promise<string[] | null> {
+  if (!TELEGRAM_ENABLED() || !items.length) return null;
+  const f = new FormData();
+  f.append("chat_id", chatId);
+  const media = items.map((it, i) => {
+    const m: Record<string, unknown> = { type: "photo", media: typeof it === "string" ? it : `attach://p${i}` };
+    if (i === 0 && caption) { m.caption = caption.slice(0, 1000); m.parse_mode = "HTML"; }
+    if (typeof it !== "string") f.append(`p${i}`, it, `p${i}.png`);
+    return m;
+  });
+  f.append("media", JSON.stringify(media));
+  const r = await upload("sendMediaGroup", f);
+  return r.ok && Array.isArray(r.result) ? r.result.map((m: any) => largest(m) ?? "") : null;
+}
+
+/** Share card + chart as one album (falls back to whichever image rendered). Returns reusable file_ids. */
+export async function tgCardImages(chatId: string, imgs: { card?: Blob | string | null; chart?: Blob | string | null }, caption?: string): Promise<{ card?: string; chart?: string } | null> {
+  const list = [imgs.card, imgs.chart].filter(Boolean) as (Blob | string)[];
+  if (!list.length) return null;
+  if (list.length === 1) { const id = await tgPhoto(chatId, list[0], caption ?? ""); return id ? (imgs.card ? { card: id } : { chart: id }) : null; }
+  const ids = await tgAlbum(chatId, list, caption);
+  if (ids) return { card: ids[0], chart: ids[1] };
+  const id = await tgPhoto(chatId, list[0], caption ?? "");
+  return id ? { card: id } : null;
 }
 
 export async function tgEdit(chatId: string, messageId: number, text: string, keyboard?: Keyboard): Promise<boolean> {
@@ -73,6 +132,7 @@ export const COMMANDS = [
   { command: "watching", description: "Setups that are close but not confirmed" },
   { command: "spec", description: "Speculative opportunities (high risk)" },
   { command: "spot", description: "Long-term spot picks and their zones" },
+  { command: "ask", description: "Ask the AI anything about the market: /ask is BTC still bullish?" },
   { command: "plan", description: "Today's plan: stance, open trades, setups in zone, budget" },
   { command: "top", description: "The 3 best confirmed setups for your exchange" },
   { command: "record", description: "The engine's public track record" },

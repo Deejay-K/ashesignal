@@ -15,7 +15,14 @@ import { fmtUsd } from "@/lib/format";
 import { safe } from "@/lib/fetch";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-export interface AssistantInput { question: string; venue: VenueId; userId?: string | null; sb?: SupabaseClient | null; adminSb?: SupabaseClient | null; history?: { role: "user" | "assistant"; text: string }[] }
+export interface AssistantInput {
+  question: string; venue: VenueId; userId?: string | null; sb?: SupabaseClient | null; adminSb?: SupabaseClient | null;
+  history?: { role: "user" | "assistant"; text: string }[];
+  /** Text of the message the user replied to (a bot card, a signal, an earlier answer). */
+  quoted?: string | null;
+  /** Coin the conversation was last about, for follow-ups like "and its stop?". */
+  lastCoin?: { id: string; symbol: string; name: string } | null;
+}
 export interface AssistantAnswer { text: string; bullets?: string[]; links: { label: string; href: string }[]; intent: string; model: string; context: Record<string, unknown> }
 
 type Intent = "coin" | "today" | "trades_for_me" | "my_trades" | "risk" | "regime" | "howto" | "spot" | "general";
@@ -32,6 +39,13 @@ function detectIntent(q: string): Intent {
   if (/what (should|can) i trade|trades? (for me|today|right now)|confirmed|setups?|watching|opportunit/.test(s)) return "trades_for_me";
   if (/today|conditions|news|weekend|safe to trade|good time/.test(s)) return "today";
   return "general";
+}
+
+/** The coin a quoted bot message is about: "SOL LONG 4h", "Solana (SOL)", "NEW CONFIRMED: SOL ...". */
+async function coinFromQuoted(t: string): Promise<{ id: string; symbol: string; name: string } | null> {
+  const m = t.match(/\b([A-Z0-9]{2,10})\s+(?:🟢\s*|🔴\s*)?(?:LONG|SHORT)\b/) ?? t.match(/\(([A-Z0-9]{2,10})\)/) ?? t.match(/CONFIRMED:\s*([A-Z0-9]{2,10})/);
+  if (!m) return null;
+  return detectCoin(m[1]);
 }
 
 /** Try to find a coin ticker or name in the question. */
@@ -53,11 +67,14 @@ async function detectCoin(q: string): Promise<{ id: string; symbol: string; name
 }
 
 export async function answer(input: AssistantInput): Promise<AssistantAnswer> {
-  const q = input.question.trim().slice(0, 500);
+  const q = input.question.trim().slice(0, 800);
   const venue = input.venue;
   const vm = VENUE_META[venue];
   let intent = detectIntent(q);
-  const coin = intent !== "my_trades" && intent !== "risk" ? await detectCoin(q) : null;
+  let coin = intent !== "my_trades" && intent !== "risk" ? await detectCoin(q) : null;
+  // Follow-ups: a reply to a card or signal is about that coin; otherwise keep talking about the last coin.
+  if (!coin && input.quoted && intent !== "my_trades") coin = await coinFromQuoted(input.quoted);
+  if (!coin && input.lastCoin && (intent === "general" || intent === "risk" || intent === "howto") && /\b(it|its|it's|this|that|the (stop|entry|target|trade|setup|coin)|stop|entry|target|tp\d?|sl|leverage|zone|hold|buy|sell|now|still|why)\b/i.test(q)) coin = input.lastCoin;
   if (coin && (intent === "general" || intent === "today" || intent === "trades_for_me")) intent = "coin";
 
   const ctx: Record<string, unknown> = { venue: vm.label, canShort: vm.canShort };
@@ -120,8 +137,12 @@ export async function answer(input: AssistantInput): Promise<AssistantAnswer> {
   const local = localAnswer(intent, q, ctx);
   if (aiProvider() === "local") return { ...local, links, intent, model: "engine-writer", context: ctx };
   try {
-    const sys = `You are the assistant inside AsheSignal, a crypto analysis app. Answer the user's question using ONLY the JSON context provided (it comes from the app's engine). Never invent prices, levels or statistics; if the context lacks something, say so and point to the linked page. Be concrete and short: 2 to 5 sentences, then optional bullets (max 5). Plain language for a beginner. Never give financial advice or tell the user to buy or sell; describe what the engine shows and what the app's rules say. The user trades manually on ${vm.label}${vm.canShort ? "" : ", which is spot only (no shorts)"}. Never use em dashes or en dashes; use plain hyphens or commas. Return JSON: {"text": string, "bullets": string[]}.`;
-    const r = await askJson<{ text: string; bullets?: string[] }>(sys, `Question: ${q}\n\nIntent: ${intent}\n\nContext JSON:\n${JSON.stringify(ctx).slice(0, 12000)}${input.history?.length ? `\n\nRecent conversation:\n${input.history.slice(-4).map((h) => `${h.role}: ${h.text}`).join("\n")}` : ""}`, 700);
+    const sys = `You are AsheSignal's chat assistant, talking with a trader in a chat (website or Telegram). Hold a natural conversation: answer what they actually asked, use the recent conversation and any quoted message to understand follow-ups ("and its stop?", "why?", "what about ETH?"), and you may ask one short clarifying question when the request is ambiguous.
+Facts about the market right now (prices, levels, setups, categories, regime, the user's trades) must come ONLY from the JSON context, which is the app's live engine data; never invent or estimate them, and say so when the context lacks something. General crypto and trading knowledge (what a stop-limit is, how staking works, what RSI means, risk management) you may explain from your own knowledge.
+Be concrete and short: 1 to 5 sentences, then optional bullets (max 5). Plain language for a beginner. Never tell the user to buy or sell and never promise outcomes; describe what the engine shows and what the app's rules say. The user trades manually on ${vm.label}${vm.canShort ? "" : ", which is spot only (no shorts)"}. Never use em dashes or en dashes; use plain hyphens or commas. Return JSON: {"text": string, "bullets": string[]}.`;
+    const convo = input.history?.length ? `\n\nRecent conversation (oldest first):\n${input.history.slice(-8).map((h) => `${h.role}: ${h.text.slice(0, 600)}`).join("\n")}` : "";
+    const quoted = input.quoted ? `\n\nThe user is replying to this message you sent earlier:\n"""${input.quoted.slice(0, 1500)}"""` : "";
+    const r = await askJson<{ text: string; bullets?: string[] }>(sys, `${convo}${quoted}\n\nUser: ${q}\n\nIntent guess: ${intent}\n\nContext JSON:\n${JSON.stringify(ctx).slice(0, 12000)}`, 800);
     const d = stripDashes(r.data);
     if (d && typeof d.text === "string" && d.text.length > 10) return { text: d.text, bullets: Array.isArray(d.bullets) ? d.bullets.slice(0, 5) : undefined, links, intent, model: r.model || AI_MODEL(), context: ctx };
   } catch { /* fall back */ }

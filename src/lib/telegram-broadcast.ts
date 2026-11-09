@@ -3,7 +3,7 @@
 // their exchange (spot-only exchanges never receive SHORTs). Nothing here places orders.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { TELEGRAM_ENABLED, tgPhoto, tgSend, esc, type Keyboard } from "./telegram";
+import { TELEGRAM_ENABLED, tgSend, tgCardImages, fetchImage, esc, type Keyboard } from "./telegram";
 import { venueListings, venuesFor, tradeLink, VENUE_META, VENUE_IDS, isVenueId, type VenueId } from "./venues";
 import { fmtUsd } from "./format";
 import type { Setup } from "./ta/analysis";
@@ -108,6 +108,9 @@ export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedS
     const listed = listingsUnknown ? ([...VENUE_IDS] as VenueId[]) : venuesFor(sig.symbol, listings, null);
     const chart = link(`/api/chart?${new URLSearchParams({ symbol: sig.symbol, id: sig.coingeckoId, tf: sig.timeframe, side: sig.setup.side, entryLow: String(sig.setup.entry.low), entryHigh: String(sig.setup.entry.high), tp1: String(sig.setup.takeProfits[0]?.price ?? ""), tp2: String(sig.setup.takeProfits[1]?.price ?? ""), tp3: String(sig.setup.takeProfits[2]?.price ?? ""), sl1: String(sig.setup.stopLosses[0].price), sl2: String(sig.setup.stopLosses[1]?.price ?? "") })}`);
     const og = link(`/api/og?${new URLSearchParams({ symbol: sig.symbol, tf: sig.timeframe, side: sig.setup.side, kind: "confirmed", entryLow: String(sig.setup.entry.low), entryHigh: String(sig.setup.entry.high), tp1: String(sig.setup.takeProfits[0]?.price ?? ""), tp2: String(sig.setup.takeProfits[1]?.price ?? ""), tp3: String(sig.setup.takeProfits[2]?.price ?? ""), sl1: String(sig.setup.stopLosses[0].price), sl2: String(sig.setup.stopLosses[1]?.price ?? sig.setup.stopLosses[0].price), rr: String(sig.setup.riskRewardTp2), lev: String(sig.setup.leverage.recommended), conf: String(sig.setup.confidence), style: sig.setup.style, theme: "foundry" })}`);
+    // Render both images once per signal; after the first upload Telegram's file_ids are reused for everyone else.
+    const [cardBlob, chartBlob] = await Promise.all([og ? fetchImage(og) : null, chart ? fetchImage(chart) : null]);
+    let imgs: { card?: Blob | string | null; chart?: Blob | string | null } = { card: cardBlob, chart: chartBlob };
     for (const r of recipients) {
       if (sent >= max) return { sent, recipients: recipients.length, skipped };
       if (!r.group) {
@@ -117,10 +120,10 @@ export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedS
       const venue = r.group ? (listed[0] ?? "binance") : r.venue;
       const text = caption(sig, venue, listed, r.group);
       const kb = keyboard(sig, venue, listed);
-      if (og) kb.push([{ text: "🖼 Share card", url: og }]);
-      let ok = chart ? await tgPhoto(r.chatId, chart, text, kb) : false;
-      if (!ok && og) ok = await tgPhoto(r.chatId, og, text, kb);
-      if (!ok) ok = await tgSend(r.chatId, text, { html: true, keyboard: kb });
+      if (og) kb.push([{ text: "🖼 Open share card", url: og }]);
+      const ids = await tgCardImages(r.chatId, imgs, `✅ <b>NEW CONFIRMED: ${esc(sig.symbol)} ${sig.setup.side} ${esc(sig.timeframe)}</b>`);
+      if (ids) imgs = { card: ids.card ?? imgs.card, chart: ids.chart ?? imgs.chart };
+      const ok = await tgSend(r.chatId, text, { html: true, keyboard: kb });
       if (ok) sent++;
       await new Promise((res) => setTimeout(res, 60)); // stay under Telegram's ~30 msg/s
     }
