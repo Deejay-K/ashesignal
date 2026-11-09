@@ -13,6 +13,7 @@ import { portfolioHeat } from "@/lib/risk/heat";
 import { venueListings, venuesFor, VENUE_META, type VenueId } from "@/lib/venues";
 import { fmtUsd } from "@/lib/format";
 import { safe } from "@/lib/fetch";
+import { zoneStatus } from "@/lib/trade-check";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface AssistantInput {
@@ -39,6 +40,19 @@ function detectIntent(q: string): Intent {
   if (/what (should|can) i trade|trades? (for me|today|right now)|confirmed|setups?|watching|opportunit/.test(s)) return "trades_for_me";
   if (/today|conditions|news|weekend|safe to trade|good time/.test(s)) return "today";
   return "general";
+}
+
+/** What the question asks for: a side, timeframes (and ones it rules out), and whether it is about "approaching". */
+export interface Request { side: "LONG" | "SHORT" | null; tfs: string[]; excluded: string[]; approaching: boolean }
+export function parseRequest(q: string): Request {
+  const s = q.toLowerCase();
+  const side = /\b(long|longs|buy|buying|bullish|calls?)\b/.test(s) ? "LONG" : /\b(short|shorts|shorting|sell|bearish|puts?)\b/.test(s) ? "SHORT" : null;
+  const all = ["15m", "1h", "4h", "1d", "1w"];
+  const norm = (t: string) => t.replace(/^(\d+)\s*(m|min|mins|minute|minutes)$/, "$1m").replace(/^(\d+)\s*(h|hr|hrs|hour|hours)$/, "$1h").replace(/^(\d+)\s*(d|day|days|daily)$/, "$1d").replace(/^daily$/, "1d").replace(/^hourly$/, "1h").replace(/^weekly$/, "1w").replace(/^(\d+)\s*(w|week)$/, "$1w");
+  const found = [...s.matchAll(/(?:^|[^a-z0-9])(\d+\s*(?:m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week)|daily|hourly|weekly)(?![a-z])/g)].map((m) => norm(m[1].replace(/\s+/g, ""))).filter((t) => all.includes(t));
+  const excluded = [...s.matchAll(/(?:not|no|without|except|exclude|ignore|skip)\s+(?:on\s+|the\s+|a\s+|in\s+)*(\d+\s*(?:m|h|d|w|min|hour|day|week)s?|daily|hourly|weekly)/g)].map((m) => norm(m[1].replace(/\s+/g, "").replace(/s$/, ""))).filter((t) => all.includes(t));
+  const tfs = [...new Set(found.filter((t) => !excluded.includes(t)))];
+  return { side, tfs, excluded, approaching: /approach|close to|near|getting close|about to|soon|coming|nearly|almost/.test(s) };
 }
 
 /** The coin a quoted bot message is about: "SOL LONG 4h", "Solana (SOL)", "NEW CONFIRMED: SOL ...". */
@@ -97,20 +111,30 @@ export async function answer(input: AssistantInput): Promise<AssistantAnswer> {
   ctx.conditions = cond;
   ctx.regime = regime ? { label: regime.label, headline: regime.headline, advice: regime.advice, breadth: regime.breadth.above50, altSeason: regime.alts.altSeason, btcTrend: regime.btc.trend } : null;
 
+  const req = parseRequest(q);
+  ctx.request = req;
   if (intent === "coin" && coin) {
-    const a = await safe(analyzeAsset({ symbol: coin.symbol, coingeckoId: coin.id, venue }, ["1h", "4h", "1d"]));
+    const tfsWanted = (req.tfs.length ? req.tfs : ["1h", "4h", "1d"].filter((t) => !req.excluded.includes(t))) as ("15m" | "1h" | "4h" | "1d" | "1w")[];
+    const a = await safe(analyzeAsset({ symbol: coin.symbol, coingeckoId: coin.id, venue }, tfsWanted.length ? tfsWanted : ["1h", "4h"]));
     const listings = await venueListings();
     const vs = venuesFor(coin.symbol, listings, venue);
     if (a.ok) {
       const tfs = Object.entries(a.data.timeframes).filter(([, t]) => !("unavailable" in t)).map(([tf, t]) => {
         const x = t as Exclude<typeof t, { unavailable: true }>;
-        return { tf, outlook: x.outlook, score: x.score, trend: x.trend.direction, rsi: +x.momentum.rsi.toFixed(0), setup: x.setup ? { side: x.setup.side, kind: x.setup.kind, entry: `${fmtUsd(x.setup.entry.low)} to ${fmtUsd(x.setup.entry.high)}`, tp1: fmtUsd(x.setup.takeProfits[0]?.price), tp2: fmtUsd(x.setup.takeProfits[1]?.price), sl1: fmtUsd(x.setup.stopLosses[0]?.price), rr: x.setup.riskRewardTp2, confidence: x.setup.confidence, gaps: x.setup.quality.confirmGaps.slice(0, 3), issues: x.setup.quality.issues.slice(0, 2) } : null, levels: x.levels.slice(0, 4).map((l) => `${l.kind} ${fmtUsd(l.price)}`), patterns: [...x.patterns.confirmed.map((p) => `${p.name} (confirmed)`), ...x.patterns.forming.map((p) => `${p.name} (forming)`)].slice(0, 4) };
+        const above = x.levels.filter((l) => l.price > x.price).sort((p, r) => p.price - r.price)[0];
+        const below = x.levels.filter((l) => l.price < x.price).sort((p, r) => r.price - p.price)[0];
+        const z = x.setup ? zoneStatus(x.price, x.setup.entry, x.setup.side) : null;
+        return { tf, priceNum: x.price, outlook: x.outlook, score: x.score, trend: x.trend.direction, rsi: +x.momentum.rsi.toFixed(0),
+          nearestResistance: above ? { price: fmtUsd(above.price), pct: +(((above.price - x.price) / x.price) * 100).toFixed(2) } : null,
+          nearestSupport: below ? { price: fmtUsd(below.price), pct: +(((x.price - below.price) / x.price) * 100).toFixed(2) } : null,
+          zone: z ? { state: z.state, label: z.label, pct: z.pct } : null,
+          setup: x.setup ? { side: x.setup.side, kind: x.setup.kind, entry: `${fmtUsd(x.setup.entry.low)} to ${fmtUsd(x.setup.entry.high)}`, tp1: fmtUsd(x.setup.takeProfits[0]?.price), tp2: fmtUsd(x.setup.takeProfits[1]?.price), sl1: fmtUsd(x.setup.stopLosses[0]?.price), rr: x.setup.riskRewardTp2, confidence: x.setup.confidence, gaps: x.setup.quality.confirmGaps.slice(0, 3), issues: x.setup.quality.issues.slice(0, 2) } : null, levels: x.levels.slice(0, 4).map((l) => `${l.kind} ${fmtUsd(l.price)}`), patterns: [...x.patterns.confirmed.map((p) => `${p.name} (confirmed)`), ...x.patterns.forming.map((p) => `${p.name} (forming)`)].slice(0, 4) };
       });
       ctx.coin = { ...coin, price: tfs[0] ? fmtUsd((a.data.timeframes[tfs[0].tf] as { price: number }).price) : null, consensus: a.data.consensus.summary, alignment: a.data.consensus.alignment, timeframes: tfs, listedOn: vs.map((v) => VENUE_META[v].label), tradeable: vs.includes(venue) };
     } else ctx.coin = { ...coin, error: a.error };
     links.push({ label: `${coin.symbol} full analysis`, href: `/token/${coin.id}` });
   }
-  if (intent === "trades_for_me" || intent === "today" || intent === "general") {
+  if (intent === "trades_for_me" || intent === "today" || (intent === "general" && !coin)) {
     const live = await safe(liveTaCategories(40, venue));
     const listings = await venueListings();
     const items = live.ok ? live.data : [];
@@ -149,20 +173,61 @@ export async function answer(input: AssistantInput): Promise<AssistantAnswer> {
   try {
     const sys = `You are AsheSignal's chat assistant, talking with a trader in a chat (website or Telegram). Hold a natural conversation: answer what they actually asked, use the recent conversation and any quoted message to understand follow-ups ("and its stop?", "why?", "what about ETH?"), and you may ask one short clarifying question when the request is ambiguous.
 Facts about the market right now (prices, levels, setups, categories, regime, the user's trades) must come ONLY from the JSON context, which is the app's live engine data; never invent or estimate them, and say so when the context lacks something. General crypto and trading knowledge (what a stop-limit is, how staking works, what RSI means, risk management) you may explain from your own knowledge.
-Be concrete and short: 1 to 5 sentences, then optional bullets (max 5). Plain language for a beginner. Never tell the user to buy or sell and never promise outcomes; describe what the engine shows and what the app's rules say. The user trades manually on ${vm.label}${vm.canShort ? "" : ", which is spot only (no shorts)"}. Never use em dashes or en dashes; use plain hyphens or commas. Write coin tickers in capitals (SOL, BTC). A coin only counts as mentioned when the user writes its ticker in capitals, a $ticker, or its well-known name; ordinary words like "trade" or "today" are never coins, so never answer as if they were. Return JSON: {"text": string, "bullets": string[]}.`;
+Be concrete and short: 1 to 5 sentences, then optional bullets (max 5). Plain language for a beginner. Never tell the user to buy or sell and never promise outcomes; describe what the engine shows and what the app's rules say. The user trades manually on ${vm.label}${vm.canShort ? "" : ", which is spot only (no shorts)"}. Never use em dashes or en dashes; use plain hyphens or commas. Answer exactly what was asked: context.request holds the side (LONG/SHORT) and timeframes the user wants and the ones they ruled out; talk only about those, and for "anything approaching?" use each timeframe's zone and nearest support/resistance distances. Write coin tickers in capitals (SOL, BTC). A coin only counts as mentioned when the user writes its ticker in capitals, a $ticker, or its well-known name; ordinary words like "trade" or "today" are never coins, so never answer as if they were. Return JSON: {"text": string, "bullets": string[]}.`;
     const convo = input.history?.length ? `\n\nRecent conversation (oldest first):\n${input.history.slice(-8).map((h) => `${h.role}: ${h.text.slice(0, 600)}`).join("\n")}` : "";
     const quoted = input.quoted ? `\n\nThe user is replying to this message you sent earlier:\n"""${input.quoted.slice(0, 1500)}"""` : "";
     const r = await askJson<{ text: string; bullets?: string[] }>(sys, `${convo}${quoted}\n\nUser: ${q}\n\nIntent guess: ${intent}\n\nContext JSON:\n${JSON.stringify(ctx).slice(0, 12000)}`, 800);
     const d = stripDashes(r.data);
     if (d && typeof d.text === "string" && d.text.length > 10) return { text: d.text, bullets: Array.isArray(d.bullets) ? d.bullets.slice(0, 5) : undefined, links, intent, model: r.model || AI_MODEL(), context: ctx };
-  } catch { /* fall back */ }
+  } catch (e) { console.error("[ai] assistant fell back to the template writer:", (e as Error).message); }
   return { ...local, links, intent, model: "engine-writer", context: ctx };
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+/** Answer a specific coin question ("longs on INJ 1h/4h, anything approaching?") timeframe by timeframe. */
+/** Engine gap messages in plain words, without a trailing period. */
+function plainGap(g: string | undefined): string {
+  if (!g) return "";
+  const m = g.match(/Score ([+-]?\d+) is inside the .(\d+) confirmation band/i);
+  if (m) return `stronger momentum: the signal score is ${m[1]} and must reach ${Number(m[1]) >= 0 ? "+" : "-"}${m[2]} to confirm`;
+  return g.replace(/\.\s*$/, "").replace(/^./, (x) => x.toLowerCase());
+}
+export function requestAnswer(c: any, req: Request, ctx: any): { text: string; bullets?: string[] } {
+  const side = req.side;
+  const tfs: any[] = c.timeframes ?? [];
+  const label = tfs.map((t) => t.tf).join(" and ");
+  const bullets = tfs.map((t) => {
+    const st = t.setup;
+    if (st && (!side || st.side === side)) {
+      const where = t.zone ? (t.zone.state === "in" ? "price is IN the entry zone" : t.zone.label) : "";
+      return `${t.tf}: ${st.side} setup is ${st.kind} (confidence ${st.confidence}%), entry ${st.entry}, stop ${st.sl1}, TP1 ${st.tp1}, ${st.rr}R. ${where ? `Now ${where}.` : ""}${st.kind !== "confirmed" && st.gaps?.length ? ` To confirm it needs ${plainGap(st.gaps[0])}.` : ""}`;
+    }
+    const lean = `${t.outlook} (score ${t.score > 0 ? "+" : ""}${t.score}), trend ${t.trend}, RSI ${t.rsi}`;
+    if (side === "LONG") return `${t.tf}: no long setup. ${lean}.${t.nearestResistance ? ` A long would need a break above ${t.nearestResistance.price} (${t.nearestResistance.pct}% above).` : ""}${t.nearestSupport ? ` Support ${t.nearestSupport.price} (${t.nearestSupport.pct}% below) is where a pullback long could form.` : ""}${st ? ` The engine sees a ${st.side} ${st.kind} instead.` : ""}`;
+    if (side === "SHORT") return `${t.tf}: no short setup. ${lean}.${t.nearestSupport ? ` A short would need a break below ${t.nearestSupport.price} (${t.nearestSupport.pct}% below).` : ""}${t.nearestResistance ? ` Resistance ${t.nearestResistance.price} (${t.nearestResistance.pct}% above) is where a rejection short could form.` : ""}${st ? ` The engine sees a ${st.side} ${st.kind} instead.` : ""}`;
+    return `${t.tf}: ${lean}, no setup.`;
+  });
+  const matching = tfs.filter((t) => t.setup && (!side || t.setup.side === side));
+  const confirmed = matching.filter((t) => t.setup.kind === "confirmed");
+  const close = matching.filter((t) => t.zone && (t.zone.state === "in" || (t.zone.pct != null && t.zone.pct <= 2)));
+  const sideWord = side ? side.toLowerCase() : "";
+  let text: string;
+  if (confirmed.length) text = `Yes: ${c.symbol} has a confirmed ${sideWord} setup on ${confirmed.map((t) => t.tf).join(" and ")}${close.length ? `, and price is ${close[0].zone.state === "in" ? "inside" : "close to"} the entry zone` : ""}.`;
+  else if (matching.length) text = `Nothing confirmed yet for ${c.symbol} ${sideWord}s on ${label}. Closest: the ${matching[0].tf} ${matching[0].setup.side} setup, still ${matching[0].setup.kind}${matching[0].zone ? `, price ${matching[0].zone.state === "in" ? "in" : matching[0].zone.label.replace("the zone", "its entry zone")}` : ""}${matching[0].setup.gaps?.[0] ? `; to confirm it needs ${plainGap(matching[0].setup.gaps[0])}` : ""}.`;
+  else text = `No ${sideWord ? `${sideWord} ` : ""}setup on ${c.symbol} ${label} right now; nothing is approaching a ${sideWord || "trade"} entry yet. The levels to watch are below.`;
+  if (req.excluded.length) text += ` (Left out ${req.excluded.join(", ")} as you asked.)`;
+  if (c.tradeable === false) text += ` Note: ${c.symbol} is not listed on ${ctx.venue}${c.listedOn?.length ? `; it trades on ${c.listedOn.join(", ")}` : ""}.`;
+  if (ctx.conditions?.verdict && ctx.conditions.verdict !== "ok") text += ` Conditions: ${ctx.conditions.headline}.`;
+  bullets.push(`Tip: tap "When it confirms" on the ${c.symbol} card to be told the moment a setup turns Confirmed.`);
+  return { text, bullets };
+}
+
 function localAnswer(intent: Intent, q: string, ctx: any): { text: string; bullets?: string[] } {
   const cond = ctx.conditions ? `Conditions: ${ctx.conditions.headline}.` : "";
   const reg = ctx.regime ? ` Regime: ${ctx.regime.label} (${ctx.regime.advice})` : "";
+  if (intent === "coin" && ctx.coin && !ctx.coin.error && (ctx.request?.side || ctx.request?.tfs?.length || ctx.request?.approaching)) {
+    return requestAnswer(ctx.coin, ctx.request, ctx);
+  }
   if (intent === "coin" && ctx.coin) {
     const c = ctx.coin;
     if (c.error) return { text: `I could not load ${c.symbol} right now (${c.error}). Open its page for the chart.` };

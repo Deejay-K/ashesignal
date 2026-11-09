@@ -111,7 +111,7 @@ With **no key at all**, briefings are written by the built-in engine writer - sa
 
 Optional upgrade to a real language model for richer prose - two free options (no card needed):
 - **Groq**: https://console.groq.com/keys → create key. Vercel env: `AI_BASE_URL=https://api.groq.com/openai/v1`, `AI_API_KEY=<key>`, `AI_MODEL=llama-3.3-70b-versatile`.
-- **Google Gemini**: https://aistudio.google.com/apikey → create key. Vercel env: `AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`, `AI_API_KEY=<key>`, `AI_MODEL=gemini-2.0-flash`.
+- **Google Gemini**: https://aistudio.google.com/apikey → create key. Vercel env: `AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai`, `AI_API_KEY=<key>`, `AI_MODEL=gemini-3.6-flash`.
 - (Paid) **Claude**: `ANTHROPIC_API_KEY` from console.anthropic.com; default model `claude-haiku-5-5`.
 
 If a remote model errors or you hit its free quota, the app silently falls back to the engine writer. `/api/health` shows which provider is active. Briefings are cached 15 min per asset (1 h for the market one) and only signed-in users can generate.
@@ -365,3 +365,9 @@ Run `supabase/schema.sql` again (`telegram_users.ai_chat`). Re-open `/api/telegr
 
 - **AI chat**: "🤖 Ask AI" on the keyboard, "Ask the AI anything" at the top of the menu, or `/ask your question`. In a private chat just type; in a group reply to the bot or mention it. The bot remembers the last few turns per person for 3 hours (so "and its stop?" or "why?" work), and **replying to any card, signal or answer** makes the AI answer about that message. Live facts come only from the engine data; general crypto knowledge is explained in plain words. "🧹 New chat" starts over. Needs the AI provider configured (`AI_BASE_URL` / key, as for the website assistant); without it the bot answers from templates.
 - **Images fixed**: the chart image endpoint crashed (the renderer does not support SVG text), so Telegram never received a picture. It now renders, and coin cards and new-confirmed broadcasts send **the share card PNG (same as the website) and the chart with entry zone, TPs and SLs as one album**, uploaded by the server rather than fetched by Telegram. Broadcasts render each image once and reuse it for every recipient.
+
+## 37. Stage 36.4 - AI model retired: automatic fallback and health check
+
+`gemini-2.0-flash` was shut down by Google on 2026-06-01, so every AI call failed and the app quietly used its template writer. Now a retired or missing model makes the app try current models in order (Gemini: `gemini-3.6-flash`, `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `gemini-2.5-flash`; Groq: `llama-3.3-70b-versatile`, `openai/gpt-oss-120b`) and remember the one that works. Calls time out after 25 s, and every fallback is logged in Vercel's function logs.
+
+Recommended: set `AI_MODEL=gemini-3.6-flash` in Vercel. Check the setup any time at `https://<your-url>/api/ai/health?secret=<CRON_SECRET>`: it shows the provider, whether a key is set (never the key), the models tried, which one answered, and the exact error if none did.

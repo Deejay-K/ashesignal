@@ -16,6 +16,16 @@ export function aiProvider(): AiProvider {
 export const AI_ENABLED = () => true; // local writer always works
 export const AI_MODEL = () => process.env.AI_MODEL ?? (aiProvider() === "anthropic" ? "claude-haiku-5-5" : aiProvider() === "openai-compatible" ? "llama-3.3-70b-versatile" : "engine-writer");
 
+/** Model that answered last (reused first next time). */
+let workingModel: string | null = null;
+/** Configured model first, then current models for the provider behind AI_BASE_URL. */
+export function modelChain(base = process.env.AI_BASE_URL ?? ""): string[] {
+  const configured = process.env.AI_MODEL;
+  const fallbacks = /generativelanguage\.googleapis\.com/.test(base) ? ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash"]
+    : /groq\.com/.test(base) ? ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"] : [];
+  return [...new Set([workingModel, configured, ...fallbacks].filter(Boolean) as string[])];
+}
+
 export interface ClaudeResult<T> {
   data: T;
   model: string;
@@ -58,18 +68,33 @@ export async function askJson<T>(system: string, user: string, maxTokens = 1800)
     return { data, model: j.model, inputTokens: j.usage.input_tokens, outputTokens: j.usage.output_tokens };
   }
 
-  // OpenAI-compatible
+  // OpenAI-compatible (Groq, Gemini, ...). Models get retired (gemini-2.0-flash was shut down on 2026-06-01), so on
+  // "model not found" the call moves through a list of current models and remembers the first one that works.
   const base = process.env.AI_BASE_URL!.replace(/\/$/, "");
+  const models = modelChain(base);
   const call = async (extra = "") => {
-    const res = await fetch(`${base}/chat/completions`, {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${process.env.AI_API_KEY}` },
-      body: JSON.stringify({ model: AI_MODEL(), max_tokens: maxTokens, temperature: 0.4, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user + extra }] }),
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error(`LLM HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    const j = (await res.json()) as { choices: { message: { content: string } }[]; usage?: { prompt_tokens: number; completion_tokens: number }; model?: string };
-    return { text: j.choices[0]?.message?.content ?? "", j };
+    let lastErr = "";
+    for (const model of models) {
+      const res = await fetch(`${base}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${process.env.AI_API_KEY}` },
+        body: JSON.stringify({ model, max_tokens: maxTokens, temperature: 0.4, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user + extra }] }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(25_000),
+      });
+      if (res.ok) {
+        workingModel = model;
+        const j = (await res.json()) as { choices: { message: { content: string } }[]; usage?: { prompt_tokens: number; completion_tokens: number }; model?: string };
+        return { text: j.choices[0]?.message?.content ?? "", j: { ...j, model: j.model ?? model } };
+      }
+      const body = (await res.text()).slice(0, 300);
+      lastErr = `LLM HTTP ${res.status} (${model}): ${body}`;
+      // Only a missing or retired model is worth trying the next one; auth, quota and other errors stop here.
+      const modelGone = res.status === 404 || (res.status === 400 && /model|not found|not supported|deprecat|retired|unknown/i.test(body));
+      if (!modelGone) break;
+      console.error("[ai] model unavailable, trying next:", lastErr);
+    }
+    throw new Error(lastErr || "LLM call failed");
   };
   let { text, j } = await call();
   let data: T;
