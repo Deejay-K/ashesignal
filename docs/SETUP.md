@@ -305,3 +305,17 @@ Every time the screener worker moves a coin into Confirmed Trades, the bot sends
 `/scan ADDRESS` (or just paste a contract address, or `/coin ADDRESS`) runs the same scanner as the website for any token on any supported chain: Solana, Ethereum, Base, BNB Chain, Polygon, Arbitrum, Avalanche, Optimism, Sui, TON and the other DexScreener chains. The card shows chain, risk verdict, price and changes, liquidity, volume, market cap or FDV, age, GoPlus security summary and flags, TA outlook, speculative TP/SL levels when the engine can justify them, why it has attention, risks and trading flags, the address in a copyable block, and buttons for DexScreener, the explorer, the full scan and a one-tap whale alert (transfers of $10k or more).
 
 Inline mode handles addresses too: `@AsheSignalBot <address>` in any chat posts the scanner summary with a link. Re-open `/api/telegram/setup?secret=...` once so `/scan` appears in the command menu.
+
+## 30. Stage 34 - one source of truth, leverage, bot fixes
+
+No schema change. Re-open `/api/telegram/setup?secret=...` is not needed.
+
+- **Website and bot now agree.** Trading Discovery is loaded by one function (`src/lib/market/discovery.ts`: worker rows, live fallback, live re-verification of Confirmed rows, exchange tagging) used by `/api/opportunities`, the bot's /trades, /watching, /spec, /spot and /top, and the digest. The Opportunities page now defaults to "Only what I can trade on <exchange>" (remembered), with tab counts that match that filter, which is exactly what the bot shows.
+- **Leverage is editable** in "I took this trade": set the leverage you used; margin, position value, units, money at risk (as % of margin), TP2 payout and an estimated liquidation price all recompute. The dialog warns when the liquidation would come before your stop and when you exceed the engine's suggested leverage. Spot-only exchanges (Coinbase) lock it at 1x. Leverage is saved on the journal row. The bot's guided /take asks for leverage too (except on spot-only exchanges).
+- **Bot buttons fixed.** Telegram rejects any button whose data is over 64 bytes, so cards for coins with long CoinGecko ids (e.g. wrapped or staked tokens) silently failed to send; buttons now use a short reference. Coin lookups by id ("binancecoin") no longer fail. Share-card images are sent with a short caption and the full card follows, so long cards are never cut mid-tag. If a command or button does error, the bot now tells you instead of staying silent.
+- In groups, "I took it" hands over to a private chat with one tap (a deep link), so numbers are never typed into the group.
+
+## 31. Stage 34.1 - undo, cancel and close a recorded trade
+
+- Website: right after "Record in journal" the card shows "Recorded in journal · Undo" (one click removes it). In the Journal every open trade has "Close at my exit" (exit price, P&L and R computed), "Didn't take it / cancel" (the order never filled or you changed your mind: the setup goes back to Saved and does not count in your stats) and "✕ Delete" (with confirmation).
+- Telegram: the confirmation after /take has an "↩ Undo" button. /me lists each open trade with "🏁 Close SYM" (asks your exit price, computes P&L and R) and "✖ Cancel SYM" (back to Saved, out of the stats).

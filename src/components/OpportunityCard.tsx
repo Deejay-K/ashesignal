@@ -67,6 +67,8 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
   const [copied, setCopied] = useState(false);
   const [hist, setHist] = useState<any[] | null>(null);
   const [taking, setTaking] = useState(false);
+  const [recorded, setRecorded] = useState<{ id: string | null; undone?: boolean } | null>(null);
+  const undo = async () => { if (!recorded?.id) return; await fetch(`/api/me/setups?id=${recorded.id}`, { method: "DELETE" }).catch(() => {}); setRecorded({ id: null, undone: true }); };
   const copy = async () => { try { await navigator.clipboard.writeText(copyTradeText(o)); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {} };
   const loadHist = async () => { if (hist) { setHist(null); return; } const r = await fetch(`/api/opportunities/history?asset=${encodeURIComponent(o.assetKey)}`); setHist((await r.json()).rows ?? []); };
   const tone = o.category === "confirmed" ? "opp-card-green" : o.category === "speculative" ? "opp-card-amber" : o.category === "spot" ? "opp-card-violet" : "opp-card-blue";
@@ -105,7 +107,10 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
         {/* primary actions */}
         <div className="flex flex-wrap items-center gap-2">
           <button className="btn-ghost" onClick={() => setOpen((v) => !v)}>{open ? "Less" : "Details and why"}</button>
-          {s || spec || o.spot ? <button className={o.category === "confirmed" ? "btn" : "btn-ghost"} onClick={() => setTaking(true)} title="Record the trade you placed on your exchange in the journal. Nothing is sent to any exchange.">{o.spot ? "I bought (spot)" : "I took this trade"}</button> : null}
+          {recorded ? (
+            recorded.undone ? <span className="text-xs text-fg-3">Removed from journal.</span>
+            : <span className="inline-flex items-center gap-2 text-xs"><span className="pill pill-mint">Recorded in journal</span>{recorded.id ? <button className="link" onClick={undo}>Undo</button> : null}<Link className="link" href="/setups">Open journal</Link></span>
+          ) : s || spec || o.spot ? <button className={o.category === "confirmed" ? "btn" : "btn-ghost"} onClick={() => setTaking(true)} title="Record the trade you placed on your exchange in the journal. Nothing is sent to any exchange.">{o.spot ? "I bought (spot)" : "I took this trade"}</button> : null}
           <button className="btn-ghost" onClick={copy} title="Copies direction, entry, TPs, SLs, sizing to your clipboard. Nothing is sent to any exchange.">{copied ? "Copied" : "Copy Trade Setup"}</button>
           {o.category === "spot" ? <Link className="btn-ghost" href={`/alerts?symbol=${encodeURIComponent(o.symbol)}&asset=${encodeURIComponent(o.assetKey)}&type=spot_zone`}>Alert me in the zone</Link> : null}
           <span className="ml-auto text-fg-3">{timeAgo(Date.parse(o.updatedAt))}</span>
@@ -120,9 +125,9 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
           <span className="text-fg-3">in category {timeAgo(Date.parse(o.firstSeen))}</span>
         </div>
       </footer>
-      {taking && s ? <TakeTradeDialog setup={{ side: s.side, kind: o.category === "confirmed" ? "confirmed" : s.kind === "confirmed" ? "watch" : s.kind, entry: s.entry, takeProfits: s.takeProfits, stopLosses: s.stopLosses, rr: s.rr, confidence: s.confidence, leverage: s.leverage }} symbol={o.symbol} timeframe={o.timeframe ?? "4h"} assetKey={o.assetKey} score={d?.score ?? null} onClose={() => setTaking(false)} /> : null}
-      {taking && o.spot ? <TakeTradeDialog setup={{ side: "LONG", kind: "spot", entry: { low: o.spot.analysis.accumulation.low, high: o.spot.analysis.accumulation.high, mid: o.price ?? o.spot.analysis.price }, takeProfits: o.spot.analysis.profitTaking.slice(0, 3).map((t) => ({ price: t.price })), stopLosses: [{ price: o.spot.analysis.accumulation.low * 0.85 }], rr: null as unknown as number, confidence: o.spot.score, leverage: null }} symbol={o.symbol} timeframe="1w" assetKey={o.assetKey} score={o.spot.score} onClose={() => setTaking(false)} /> : null}
-      {taking && !s && !o.spot && spec ? <TakeTradeDialog setup={{ side: spec.targets.side ?? "LONG", kind: "speculative", entry: { low: o.price ?? 0, high: o.price ?? 0, mid: o.price ?? 0 }, takeProfits: spec.targets.justified ? spec.targets.tp.map((t) => ({ price: t.price })) : [], stopLosses: spec.targets.justified ? spec.targets.sl.map((t) => ({ price: t.price })) : [], rr: null as unknown as number, confidence: o.confidence ?? 0, leverage: null }} symbol={o.symbol} timeframe={spec.ta?.timeframe ?? "1h"} assetKey={o.assetKey} score={spec.ta?.score ?? null} onClose={() => setTaking(false)} /> : null}
+      {taking && s ? <TakeTradeDialog setup={{ side: s.side, kind: o.category === "confirmed" ? "confirmed" : s.kind === "confirmed" ? "watch" : s.kind, entry: s.entry, takeProfits: s.takeProfits, stopLosses: s.stopLosses, rr: s.rr, confidence: s.confidence, leverage: s.leverage }} symbol={o.symbol} timeframe={o.timeframe ?? "4h"} assetKey={o.assetKey} score={d?.score ?? null} onClose={() => setTaking(false)} onSaved={(id) => setRecorded({ id })} /> : null}
+      {taking && o.spot ? <TakeTradeDialog setup={{ side: "LONG", kind: "spot", entry: { low: o.spot.analysis.accumulation.low, high: o.spot.analysis.accumulation.high, mid: o.price ?? o.spot.analysis.price }, takeProfits: o.spot.analysis.profitTaking.slice(0, 3).map((t) => ({ price: t.price })), stopLosses: [{ price: o.spot.analysis.accumulation.low * 0.85 }], rr: null as unknown as number, confidence: o.spot.score, leverage: null }} symbol={o.symbol} timeframe="1w" assetKey={o.assetKey} score={o.spot.score} onClose={() => setTaking(false)} onSaved={(id) => setRecorded({ id })} /> : null}
+      {taking && !s && !o.spot && spec ? <TakeTradeDialog setup={{ side: spec.targets.side ?? "LONG", kind: "speculative", entry: { low: o.price ?? 0, high: o.price ?? 0, mid: o.price ?? 0 }, takeProfits: spec.targets.justified ? spec.targets.tp.map((t) => ({ price: t.price })) : [], stopLosses: spec.targets.justified ? spec.targets.sl.map((t) => ({ price: t.price })) : [], rr: null as unknown as number, confidence: o.confidence ?? 0, leverage: null }} symbol={o.symbol} timeframe={spec.ta?.timeframe ?? "1h"} assetKey={o.assetKey} score={spec.ta?.score ?? null} onClose={() => setTaking(false)} onSaved={(id) => setRecorded({ id })} /> : null}
       {hist ? (
         <div className="border-t border-border px-3 py-2 text-xs">
           {!hist.length ? <span className="text-fg-3">No category changes recorded yet.</span> : (

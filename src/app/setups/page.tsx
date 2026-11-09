@@ -171,13 +171,14 @@ function TradeRow({ r, onPatch, onClose, onDelete }: { r: Row; onPatch: (b: Reco
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         {r.taken && !r.exit_price ? <button className="btn" onClick={onClose}>{r.paper ? "Close paper trade" : "Close at my exit"}</button> : null}
+        {r.taken && !r.exit_price ? <button className="btn-ghost" title="The order never filled or you changed your mind: the setup goes back to Saved and nothing counts in your stats." onClick={() => onPatch({ id: r.id, taken: false, status: "open" })}>Didn't take it / cancel</button> : null}
         {r.taken && r.exit_price ? <button className="btn-ghost" onClick={() => onPatch({ id: r.id, reopen: true })}>Reopen</button> : null}
         {!r.taken ? <button className="btn-ghost" onClick={() => onPatch({ id: r.id, taken: true })}>Mark as taken</button> : null}
         <label className="flex items-center gap-1 text-fg-3">Status
           <select className="!w-auto !py-1" value={r.status} onChange={(e) => onPatch({ id: r.id, status: e.target.value })}>{STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
         </label>
         <button className="btn-ghost" onClick={() => setOpen((v) => !v)}>{open ? "Hide notes" : r.notes ? "Notes" : "Add note"}</button>
-        <button className="btn-ghost ml-auto" onClick={onDelete} aria-label="Delete">✕</button>
+        <button className="btn-ghost ml-auto" onClick={() => { if (confirm(`Delete ${r.symbol} ${r.side} ${r.timeframe} from the journal? This cannot be undone.`)) onDelete(); }} aria-label="Delete">✕ Delete</button>
       </div>
       {open ? (
         <div className="mt-2 flex gap-2">

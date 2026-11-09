@@ -122,3 +122,4 @@ All tables have RLS: `auth.uid() = user_id`.
 | 32.2 | Telegram full mirror: `telegram_chats`, `src/lib/telegram-bot.ts` (menu, categories, coin cards with OG image, screener, size, alerts, journal, guided /take, per-chat exchange), webhook handles `callback_query` |
 | 33 | `src/lib/trade-check.ts` (zoneStatus, preTradeChecks), `/api/pretrade`, `entry_zone` alert type, ZoneBadge / PreTradeChecklist / ConfirmAlertButton components, watchlist status, Nav command palette, `src/lib/digest.ts` shared by cron and bot; bot: /top /watch /watchlist /review /digest /settings, inline mode, pre-trade confirm step |
 | 33.1 | `src/lib/telegram-broadcast.ts` broadcastConfirmed (called from cron/screen on promotion), `/api/telegram/test-signal`, `/signals` command, `broadcast` columns |
+| 34 | `src/lib/market/discovery.ts` loadDiscovery/tradeableOn shared by API and bot; leverage in TakeTradeDialog and bot /take; 64-byte-safe callback refs; error replies |

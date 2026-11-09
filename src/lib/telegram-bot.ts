@@ -9,7 +9,7 @@ import { marketRegime } from "./market/regime";
 import { analyzeAsset } from "./market/analyze";
 import { search as cgSearch, getMarketsByIds } from "./providers/coingecko";
 import { getFearGreed } from "./providers/feargreed";
-import { liveTaCategories, liveSpeculative, liveSpot } from "./market/live-opportunities";
+import { loadDiscovery, tradeableOn } from "./market/discovery";
 import { sizePosition } from "./risk/position";
 import { portfolioHeat } from "./risk/heat";
 import { venueListings, venuesFor, VENUE_IDS, VENUE_META, isVenueId, type VenueId } from "./venues";
@@ -54,6 +54,14 @@ export async function loadActor(sb: SupabaseClient, tgUserId: string, chatId: st
   return { userId: p?.id ?? null, venue, state: null };
 }
 const setState = (c: ChatCtx, state: any) => c.sb.from("telegram_users").update({ state, updated_at: new Date().toISOString() }).eq("tg_user_id", c.tgUserId);
+let botUser: string | null | undefined;
+async function botUsername(): Promise<string | null> {
+  if (botUser !== undefined) return botUser;
+  const { tgMe } = await import("./telegram");
+  const me: any = await tgMe().catch(() => null);
+  botUser = (me?.username ?? me?.result?.username ?? null) as string | null;
+  return botUser ?? null;
+}
 const who = (c: ChatCtx) => (c.isGroup && c.firstName ? `${esc(c.firstName)}: ` : "");
 
 const pct = (a: number, b: number) => `${(((a - b) / b) * 100) >= 0 ? "+" : ""}${(((a - b) / b) * 100).toFixed(2)}%`;
@@ -63,7 +71,13 @@ const pct = (a: number, b: number) => `${(((a - b) / b) * 100) >= 0 ? "+" : ""}$
 export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, fullText: string) {
   const cmd = cmdRaw.toLowerCase().replace(/@.*$/, "");
   switch (cmd) {
-    case "/start": case "/menu": return sendMenu(c);
+    case "/start": {
+      // Deep links from groups: /start take_<ref>_<tf>_<real|paper>
+      const m = arg.match(/^take_(.+)_(1h|4h|1d|15m|1w)_(real|paper)$/i);
+      if (m) return takeStart(c, m[1], m[2] as Timeframe, m[3].toLowerCase() === "paper");
+      return sendMenu(c);
+    }
+    case "/menu": return sendMenu(c);
     case "/help": return help(c);
     case "/link": return linkAccount(c, arg);
     case "/unlink": return unlink(c);
@@ -93,6 +107,7 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/signals": return signals(c, arg);
     case "/guide": return tgSend(c.chatId, `<b>How to place a trade on ${esc(VENUE_META[c.venue].label)}</b>\nShort version: limit order inside the entry zone, stop loss attached, take-profits in parts (30/30/40), stop to break-even after TP1. The full click-by-click guide with your numbers opens from any setup card.${VENUE_META[c.venue].canShort ? "" : `\n\n${esc(VENUE_META[c.venue].label)} is spot only: SHORT setups cannot be opened there.`}`, { html: true, keyboard: [[{ text: "Open the trade guide", url: link(`/guide?venue=${c.venue}`) ?? "https://t.me" }]] });
     case "/cancel": await setState(c, null); return tgSend(c.chatId, "Cancelled.");
+    case "/untake": case "/close": return me(c);
     default: return freeText(c, fullText);
   }
 }
@@ -126,6 +141,9 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "settings": return a ? settingsSet(c, a, b) : settings(c);
     case "signals": return signals(c, a ?? "");
     case "takesave": return takeFinish(c, a === "yes");
+    case "rm": return removeTrade(c, a, true);
+    case "untake": return removeTrade(c, a, false);
+    case "closeq": return closeStart(c, a);
     case "size": return size(c, `${a} ${b}`);
     default: return sendMenu(c);
   }
@@ -135,6 +153,7 @@ export async function handleStateReply(c: ChatCtx, text: string): Promise<boolea
   const st = c.state;
   if (!st?.flow) return false;
   if (st.flow === "take") return takeStep(c, text);
+  if (st.flow === "close") return closeStep(c, text);
   return false;
 }
 
@@ -159,6 +178,7 @@ async function help(c: ChatCtx) {
     "/alerts - your rules and inbox (linked)",
     "/me, /journal - your trades, heat, record (linked)",
     "/take SOL - record a trade you placed (linked), guided",
+    "/me then Cancel or Close - undo a recorded trade, or close it at your exit price",
     "/top - the 3 best confirmed setups for your exchange right now",
     "/watch SOL, /unwatch SOL, /watchlist - your starred coins with status and zone",
     "/review - this week's review (linked)",
@@ -223,24 +243,11 @@ async function today(c: ChatCtx) {
 }
 
 async function loadCategory(c: ChatCtx, cat: "confirmed" | "watching" | "speculative" | "spot"): Promise<Opportunity[]> {
-  // Prefer worker rows (richer, cover all coins), fall back to live snapshot
-  const items: Opportunity[] = [];
-  if (cat === "confirmed" || cat === "watching") {
-    const { data } = await c.sb.from("coin_metrics").select("asset_key, symbol, name, timeframe, price, market_cap, volume_24h, detail, category, category_since, updated_at, outlook").eq("category", cat).order("updated_at", { ascending: false }).limit(300);
-    for (const r of data ?? []) { const s = r.detail?.setup; items.push({ id: `${r.asset_key}|${r.timeframe}`, assetKey: r.asset_key, category: cat, symbol: r.symbol, name: r.name ?? r.symbol, chain: null, price: r.price, marketCap: r.market_cap, volume24h: r.volume_24h, liquidity: r.volume_24h, side: s?.side ?? null, bias: "neutral", risk: "medium", timeframe: r.timeframe, rr: s?.rr ?? null, confidence: s?.confidence ?? null, upsidePct: null, tokenCategories: [], venues: [], firstSeen: r.category_since ?? r.updated_at, updatedAt: r.updated_at, href: "", detail: r.detail, spec: null, spot: null, tier: null, liquidityNote: null }); }
-    if (!items.length) { const live = await safe(liveTaCategories(40, c.venue)); if (live.ok) items.push(...live.data.filter((i) => i.category === cat)); }
-    const listings = await venueListings();
-    for (const i of items) i.venues = venuesFor(i.symbol, listings, c.venue);
-    return items.filter((i) => i.venues.includes(c.venue) && (VENUE_META[c.venue].canShort || i.side !== "SHORT")).sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
-  }
-  if (cat === "speculative") {
-    const { data } = await c.sb.from("spec_opportunities").select("*").order("updated_at", { ascending: false }).limit(30);
-    if (data?.length) return data.map((r: any) => ({ id: r.asset_key, assetKey: r.asset_key, category: "speculative", symbol: r.symbol, name: r.name, chain: r.chain, price: r.price, marketCap: r.market_cap ?? r.fdv, volume24h: r.volume_24h, liquidity: r.liquidity_usd, side: r.detail?.targets?.side ?? null, bias: "neutral", risk: r.risk_level, timeframe: null, rr: null, confidence: null, upsidePct: null, tokenCategories: [], venues: [], firstSeen: r.first_seen, updatedAt: r.updated_at, href: `/scanner?address=${r.address}`, detail: null, spec: r.detail, spot: null, tier: null, liquidityNote: null }) as Opportunity);
-    const live = await safe(liveSpeculative(4)); return live.ok ? live.data : [];
-  }
-  const { data } = await c.sb.from("spot_picks").select("*").order("spot_score", { ascending: false }).limit(30);
-  if (data?.length) return data.map((r: any) => ({ id: r.asset_key, assetKey: r.asset_key, category: "spot", symbol: r.symbol, name: r.name, chain: null, price: r.price, marketCap: r.market_cap, volume24h: r.volume_24h, liquidity: null, side: null, bias: "neutral", risk: "medium", timeframe: "1w", rr: null, confidence: r.spot_score, upsidePct: null, tokenCategories: [], venues: [], firstSeen: r.updated_at, updatedAt: r.updated_at, href: `/token/${String(r.asset_key).replace(/^cg:/, "")}`, detail: null, spec: null, spot: r.detail, tier: r.tier, liquidityNote: null }) as Opportunity);
-  const live = await safe(liveSpot(6)); return live.ok ? live.data : [];
+  // Same loader as the website's /api/opportunities (worker rows, live fallback, live re-verification), then the
+  // same "can I place this on my exchange" filter the website applies. The two can no longer disagree.
+  const r = await loadDiscovery(c.sb, { cat, venue: c.venue, verifyBudgetMs: 15_000 });
+  const items = tradeableOn(r.items.filter((i) => i.category === cat), c.venue);
+  return items.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
 }
 
 async function category(c: ChatCtx, cat: "confirmed" | "watching" | "speculative" | "spot", page = 0) {
@@ -271,15 +278,29 @@ async function category(c: ChatCtx, cat: "confirmed" | "watching" | "speculative
   return tgSend(c.chatId, `${head}\n\n${lines.join("\n\n")}${cat !== "speculative" ? "\n\nTap a coin for the full card." : ""}`, { html: true, keyboard: kb });
 }
 
+/**
+ * Resolves what a user or a button gave us: a ticker ("SOL", "$sol"), a CoinGecko id ("solana", "binancecoin")
+ * or a short button ref ("~SOL" = symbol, used when the id is too long for Telegram's 64-byte callback data).
+ */
 async function resolveCoin(q: string): Promise<{ id: string; symbol: string; name: string } | null> {
-  const t = q.trim().replace(/^\$/, "");
+  let t = q.trim();
   if (!t) return null;
+  const bySymbol = t.startsWith("~") || t.startsWith("$");
+  t = t.replace(/^[~$]/, "");
+  if (!bySymbol && /^[a-z0-9][a-z0-9-]{1,80}$/.test(t) && (t.includes("-") || t.length > 6 || t === t.toLowerCase())) {
+    // Looks like an id: ask for it directly first (search does not find every id, e.g. "binancecoin").
+    const m = await safe(getMarketsByIds([t]));
+    if (m.ok && m.data[0]) { const x: any = m.data[0]; return { id: x.id, symbol: String(x.symbol).toUpperCase(), name: x.name }; }
+  }
   const r = await safe(cgSearch(t));
   if (!r.ok || !r.data.length) return null;
   const up = t.toUpperCase();
   const hit = r.data.find((x) => x.symbol.toUpperCase() === up) ?? r.data.find((x) => x.id === t.toLowerCase() || x.name.toUpperCase() === up) ?? r.data[0];
   return { id: hit.id, symbol: hit.symbol.toUpperCase(), name: hit.name };
 }
+/** Button-safe reference: the id when short enough, else "~SYMBOL". Telegram rejects callback_data over 64 bytes. */
+const ref = (cn: { id: string; symbol: string }) => (cn.id.length <= 36 ? cn.id : `~${cn.symbol}`);
+const refKey = (assetKey: string, symbol: string) => ref({ id: assetKey.replace(/^cg:/, ""), symbol });
 
 async function coin(c: ChatCtx, arg: string, tfArg?: Timeframe) {
   const parts = arg.trim().split(/\s+/);
@@ -303,7 +324,7 @@ async function setupCard(c: ChatCtx, id: string, tf: Timeframe, known?: { id: st
   const listings = await venueListings();
   const vs = venuesFor(cn.symbol, listings, c.venue);
   const where = vs.includes(c.venue) ? `Listed on ${VENUE_META[c.venue].label}` : vs.length ? `Not on ${VENUE_META[c.venue].label}; on ${vs.map((v) => VENUE_META[v].label).join(", ")}` : "DEX only";
-  const tfRow: Keyboard[number] = (["1h", "4h", "1d"] as Timeframe[]).map((x) => ({ text: (x === tf ? "• " : "") + x, callback_data: `coin:${cn.id}:${x}` }));
+  const tfRow: Keyboard[number] = (["1h", "4h", "1d"] as Timeframe[]).map((x) => ({ text: (x === tf ? "• " : "") + x, callback_data: `coin:${ref(cn)}:${x}` }));
   if (!t || "unavailable" in t) return tgSend(c.chatId, `<b>${esc(cn.name)} (${esc(cn.symbol)})</b> ${tf}: no data. ${esc(a.data.consensus.summary)}`, { html: true, keyboard: [tfRow, [{ text: "Menu", callback_data: "menu" }]] });
   const s = t.setup;
   const head = `<b>${esc(cn.name)} (${esc(cn.symbol)})</b> · ${fmtUsd(t.price)} · ${tf}\n${t.outlook === "strongly bullish" || t.outlook === "bullish" ? "🟢" : t.outlook.includes("bear") ? "🔴" : "🟡"} ${esc(t.outlook)} (score ${t.score > 0 ? "+" : ""}${t.score}) · trend ${esc(t.trend.direction)} · RSI ${t.momentum.rsi.toFixed(0)} · vol ${t.volume.ratio.toFixed(2)}x\n${esc(a.data.consensus.summary)}\n${esc(where)}`;
@@ -320,18 +341,19 @@ async function setupCard(c: ChatCtx, id: string, tf: Timeframe, known?: { id: st
     const z = zoneStatus(t.price, s.entry, s.side);
     if (z.state !== "unknown") body += `\n<b>${z.state === "in" ? "🟢" : z.tone === "down" ? "🔴" : "🟡"} Now:</b> ${esc(z.label)}. ${esc(z.advice)}`;
     if (s.side === "SHORT" && !VENUE_META[c.venue].canShort) body += `\n\n${esc(VENUE_META[c.venue].label)} is spot only: treat this SHORT as a sell/reduce signal if you hold ${esc(cn.symbol)}.`;
-    kb.push([{ text: "📋 Copy setup", callback_data: `copy:${cn.id}:${tf}` }, { text: "📐 Size it", callback_data: `size:${s.entry.mid}:${s.stopLosses[0].price}` }]);
-    kb.push([{ text: "✍️ I took it", callback_data: `take:${cn.id}:${tf}:real` }, { text: "🧪 Paper trade", callback_data: `take:${cn.id}:${tf}:paper` }]);
-    kb.push([{ text: "🔔 Alert at TP1/SL", callback_data: `alerttp:${cn.id}:${tf}` }, { text: "🔔 Entering zone", callback_data: `zonealert:${cn.id}:${tf}` }]);
-    kb.push([...(s.kind !== "confirmed" ? [{ text: "🔔 When it confirms", callback_data: `confirmalert:${cn.id}` }] : []), { text: "⭐ Watch", callback_data: `watch:${cn.id}` }]);
+    kb.push([{ text: "📋 Copy setup", callback_data: `copy:${ref(cn)}:${tf}` }, { text: "📐 Size it", callback_data: `size:${s.entry.mid}:${s.stopLosses[0].price}` }]);
+    kb.push([{ text: "✍️ I took it", callback_data: `take:${ref(cn)}:${tf}:real` }, { text: "🧪 Paper trade", callback_data: `take:${ref(cn)}:${tf}:paper` }]);
+    kb.push([{ text: "🔔 Alert at TP1/SL", callback_data: `alerttp:${ref(cn)}:${tf}` }, { text: "🔔 Entering zone", callback_data: `zonealert:${ref(cn)}:${tf}` }]);
+    kb.push([...(s.kind !== "confirmed" ? [{ text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }] : []), { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
     const guide = link(`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: cn.symbol, leverage: String(s.leverage.recommended), venue: c.venue })}`);
     kb.push([{ text: "📖 How to place it", url: guide ?? "https://t.me" }, { text: "📈 Chart", url: link(`/token/${cn.id}?tf=${tf}`) ?? "https://t.me" }]);
     // share-card image when the site URL is known
     const og = link(`/api/og?${new URLSearchParams({ symbol: cn.symbol, tf, side: s.side, kind: s.kind, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? s.stopLosses[0].price), rr: String(s.riskRewardTp2), lev: String(s.leverage.recommended), conf: String(s.confidence), style: s.style, theme: "foundry" })}`);
-    if (og) { const ok = await tgPhoto(c.chatId, og, head + body, kb); if (ok) return true; }
+    // Share card first (short caption: Telegram caps captions at 1024 chars), then the full card with buttons.
+    if (og) await tgPhoto(c.chatId, og, `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> · ${esc(s.kind)} · conf ${s.confidence}% · ${s.riskRewardTp2}R`);
   } else {
     body += `\n\nNo tradeable setup on ${tf}.`;
-    kb.push([{ text: "📈 Chart", url: link(`/token/${cn.id}?tf=${tf}`) ?? "https://t.me" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${cn.id}` }, { text: "⭐ Watch", callback_data: `watch:${cn.id}` }]);
+    kb.push([{ text: "📈 Chart", url: link(`/token/${cn.id}?tf=${tf}`) ?? "https://t.me" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }, { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
   }
   kb.push([{ text: "Menu", callback_data: "menu" }]);
   return tgSend(c.chatId, head + body, { html: true, keyboard: kb });
@@ -355,7 +377,7 @@ async function screener(c: ChatCtx, mode: string) {
   const title = { score: "Top by opportunity score", rsi: "Highest RSI", oversold: "Most oversold (RSI)", overbought: "Most overbought (RSI)", volume: "Highest volume vs average" }[mode] ?? "Top by opportunity score";
   rows = mode === "oversold" ? rows.sort((a, b) => a.rsi - b.rsi) : mode === "overbought" || mode === "rsi" ? rows.sort((a, b) => b.rsi - a.rsi) : mode === "volume" ? rows.sort((a, b) => b.vol_ratio - a.vol_ratio) : rows.sort((a, b) => (b.opportunity ?? 0) - (a.opportunity ?? 0));
   const lines = rows.slice(0, 10).map((r, i) => `${i + 1}. <b>${esc(r.symbol)}</b> ${fmtUsd(r.price)} · ${esc(r.outlook)} ${r.score > 0 ? "+" : ""}${r.score} · RSI ${Number(r.rsi).toFixed(0)} · vol ${Number(r.vol_ratio).toFixed(1)}x${r.setup_kind && r.setup_kind !== "watch" ? ` · ${esc(r.setup_side)} ${esc(r.setup_kind)}` : ""}`);
-  return tgSend(c.chatId, `<b>📊 Screener (4h): ${esc(title)}</b>\n\n${lines.join("\n")}`, { html: true, keyboard: [[{ text: "Score", callback_data: "screener:score" }, { text: "Oversold", callback_data: "screener:oversold" }, { text: "Overbought", callback_data: "screener:overbought" }, { text: "Volume", callback_data: "screener:volume" }], ...rows.slice(0, 6).reduce<Keyboard>((acc, r, i) => { if (i % 3 === 0) acc.push([]); acc[acc.length - 1].push({ text: r.symbol, callback_data: `setup:${String(r.asset_key).replace(/^cg:/, "")}:4h` }); return acc; }, []), [{ text: "Full screener", url: link("/screener") ?? "https://t.me" }, { text: "Menu", callback_data: "menu" }]] });
+  return tgSend(c.chatId, `<b>📊 Screener (4h): ${esc(title)}</b>\n\n${lines.join("\n")}`, { html: true, keyboard: [[{ text: "Score", callback_data: "screener:score" }, { text: "Oversold", callback_data: "screener:oversold" }, { text: "Overbought", callback_data: "screener:overbought" }, { text: "Volume", callback_data: "screener:volume" }], ...rows.slice(0, 6).reduce<Keyboard>((acc, r, i) => { if (i % 3 === 0) acc.push([]); acc[acc.length - 1].push({ text: r.symbol, callback_data: `setup:${refKey(String(r.asset_key), r.symbol)}:4h` }); return acc; }, []), [{ text: "Full screener", url: link("/screener") ?? "https://t.me" }, { text: "Menu", callback_data: "menu" }]] });
 }
 
 async function size(c: ChatCtx, arg: string) {
@@ -379,7 +401,7 @@ async function me(c: ChatCtx) {
   if (!c.userId) return needLink(c);
   await tgTyping(c.chatId);
   const [{ data: open }, { data: prof }, { data: closed }] = await Promise.all([
-    c.sb.from("saved_setups").select("symbol, side, timeframe, status, risk_usd, max_favorable_pct, max_adverse_pct, kind, paper, fill_price").eq("user_id", c.userId).eq("taken", true).is("exit_price", null),
+    c.sb.from("saved_setups").select("id, symbol, side, timeframe, status, risk_usd, max_favorable_pct, max_adverse_pct, kind, paper, fill_price").eq("user_id", c.userId).eq("taken", true).is("exit_price", null),
     c.sb.from("profiles").select("trading_balance, risk_pct, preferences").eq("id", c.userId).maybeSingle(),
     c.sb.from("saved_setups").select("realized_r, realized_usd").eq("user_id", c.userId).eq("taken", true).eq("paper", false).not("exit_price", "is", null).order("exit_at", { ascending: false }).limit(30),
   ]);
@@ -394,7 +416,9 @@ async function me(c: ChatCtx) {
     ...real.map((t) => `- <b>${esc(t.symbol)}</b> ${t.side} ${esc(t.timeframe)}: ${esc(t.status)}${t.max_favorable_pct != null ? `, best +${t.max_favorable_pct}% / worst -${t.max_adverse_pct}%` : ""}${t.risk_usd ? `, ${fmtUsd(Number(t.risk_usd))} at risk` : ""}`),
     closed?.length ? `\nLast ${closed.length} closed: ${Math.round((100 * wins) / closed.length)}% winners, ${pnl >= 0 ? "+" : ""}${fmtUsd(pnl)}` : "\nNo closed trades yet.",
   ];
-  return tgSend(c.chatId, lines.join("\n"), { html: true, keyboard: [[{ text: "Journal", url: link("/setups") ?? "https://t.me" }, { text: "Weekly review", url: link("/review") ?? "https://t.me" }], [{ text: "Menu", callback_data: "menu" }]] });
+  const perTrade: Keyboard = (open ?? []).slice(0, 6).map((t) => [{ text: `🏁 Close ${t.symbol}`, callback_data: `closeq:${t.id}` }, { text: `✖ Cancel ${t.symbol}`, callback_data: `untake:${t.id}` }]);
+  if (open?.length) lines.push("\n<i>Close = you exited on the exchange (I ask the exit price). Cancel = the order never filled or you changed your mind; it goes back to Saved and does not count.</i>");
+  return tgSend(c.chatId, lines.join("\n"), { html: true, keyboard: [...perTrade, [{ text: "Journal", url: link("/setups") ?? "https://t.me" }, { text: "Weekly review", url: link("/review") ?? "https://t.me" }], [{ text: "Menu", callback_data: "menu" }]] });
 }
 
 async function journal(c: ChatCtx) {
@@ -464,6 +488,12 @@ async function takeStart(c: ChatCtx, arg: string, tf: Timeframe = "4h", paper = 
   const q = arg.trim().split(/\s+/)[0];
   if (!q) return tgSend(c.chatId, "Which coin? /take SOL (or tap ✍️ on a setup card).");
   const cn = await resolveCoin(q); if (!cn) return tgSend(c.chatId, `Coin "${esc(q)}" not found.`, { html: true });
+  if (c.isGroup) {
+    // Plain-number answers in a group would be noise (and are hidden from the bot by privacy mode): continue privately.
+    const me = await botUsername();
+    const deep = me ? `https://t.me/${me}?start=take_${encodeURIComponent(ref(cn))}_${tf}_${paper ? "paper" : "real"}` : null;
+    return tgSend(c.chatId, `${who(c)}Let's record ${esc(cn.symbol)} in private so the group stays clean.`, { html: true, keyboard: deep ? [[{ text: "✍️ Continue in private chat", url: deep }]] : undefined });
+  }
   const a = await safe(analyzeAsset({ symbol: cn.symbol, coingeckoId: cn.id, venue: c.venue }, [tf]));
   const t = a.ok ? a.data.timeframes[tf] : null; const s = t && !("unavailable" in t) ? t.setup : null;
   const state = { flow: "take", step: "fill", coin: cn, tf, paper, setup: s ? { side: s.side, kind: s.kind, entry: s.entry, takeProfits: s.takeProfits.map((x) => ({ price: x.price })), stopLosses: s.stopLosses.map((x) => ({ price: x.price })), rr: s.riskRewardTp2, confidence: s.confidence, leverage: s.leverage } : null, price: t && !("unavailable" in t) ? t.price : null };
@@ -479,18 +509,28 @@ async function takeStep(c: ChatCtx, text: string): Promise<boolean> {
     if (!fill) { await tgSend(c.chatId, "Send the fill price as a number (or . for the current price)."); return true; }
     st.fill = fill;
     if (!st.setup) { st.step = "stop"; await setState(c, st); await tgSend(c.chatId, `Step 2 of 3: your <b>stop loss</b> price? (no engine setup for this coin, so I need yours)`, { html: true }); return true; }
-    st.step = "size"; await setState(c, st); await tgSend(c.chatId, `Step 2 of 3: <b>size in USD</b>? (e.g. 50)${st.paper ? " Pretend size is fine." : ""}`, { html: true }); return true;
+    if (VENUE_META[c.venue].canShort) { st.step = "lev"; await setState(c, st); await tgSend(c.chatId, `Step 2 of 4: <b>leverage</b> used? (engine suggests ${st.setup.leverage?.recommended ?? 1}x, max ${st.setup.leverage?.maxSafe ?? 3}x; send 1 for spot)`, { html: true }); return true; }
+    st.lev = 1; st.step = "size"; await setState(c, st); await tgSend(c.chatId, `Step 2 of 3: <b>size in USD</b>? (e.g. 50)${st.paper ? " Pretend size is fine." : ""}`, { html: true }); return true;
+  }
+  if (st.step === "lev") {
+    const lv = num(text); if (!lv || lv > 125) { await tgSend(c.chatId, "Send the leverage as a number between 1 and 125."); return true; }
+    st.lev = lv; st.step = "size"; await setState(c, st);
+    await tgSend(c.chatId, `Step 3 of 4: ${lv > 1 ? "<b>margin in USD</b> (the money you put in; position = margin x " + lv + ")" : "<b>size in USD</b>"}?`, { html: true }); return true;
   }
   if (st.step === "stop") {
     const stop = num(text); if (!stop) { await tgSend(c.chatId, "Send the stop price as a number."); return true; }
     st.setup = { side: stop < st.fill ? "LONG" : "SHORT", kind: "speculative", entry: { low: st.fill, high: st.fill, mid: st.fill }, takeProfits: [], stopLosses: [{ price: stop }], rr: 0, confidence: 0, leverage: null };
-    st.step = "size"; await setState(c, st); await tgSend(c.chatId, `Step 3 of 3: <b>size in USD</b>?`, { html: true }); return true;
+    st.lev = 1; st.step = "size"; await setState(c, st); await tgSend(c.chatId, `Step 3 of 3: <b>size in USD</b>?`, { html: true }); return true;
   }
   if (st.step === "size") {
     const usd = num(text); if (!usd) { await tgSend(c.chatId, "Send the size in USD as a number."); return true; }
-    st.usd = usd; st.step = "confirm"; await setState(c, st);
+    const lev = Number(st.lev) || 1;
+    st.margin = usd; st.usd = usd * lev; st.step = "confirm"; await setState(c, st);
     await tgTyping(c.chatId);
-    const units = usd / st.fill;
+    const units = (usd * lev) / st.fill;
+    const liq = lev > 1 ? (st.setup.side === "LONG" ? st.fill * (1 - 0.95 / lev) : st.fill * (1 + 0.95 / lev)) : null;
+    const slp = st.setup.stopLosses[0]?.price ?? null;
+    const liqBeforeStop = liq != null && slp != null && (st.setup.side === "LONG" ? liq >= slp : liq <= slp);
     const sl = st.setup.stopLosses[0]?.price ?? null;
     const riskUsd = sl ? Math.abs(st.fill - sl) * units : null;
     const account = c.userId ? await accountForChecks(c.sb, c.userId) : null;
@@ -498,7 +538,7 @@ async function takeStep(c: ChatCtx, text: string): Promise<boolean> {
     const icon = (l: string) => (l === "ok" ? "✅" : l === "warn" ? "⚠️" : l === "fail" ? "⛔" : "▫️");
     const checks = pre.ok ? pre.data.checks.map((k) => `${icon(k.level)} <b>${esc(k.label)}.</b> ${esc(k.detail)}`).join("\n") : "Checklist unavailable right now.";
     const verdict = pre.ok ? (pre.data.verdict === "go" ? "🟢 GO" : pre.data.verdict === "careful" ? "🟡 CAREFUL" : "🔴 WAIT") : "";
-    await tgSend(c.chatId, `<b>Pre-trade check ${verdict}</b>\n${checks}\n\n${esc(st.coin.symbol)} ${st.setup.side}: fill ${fmtUsd(st.fill)}, ${fmtNum(units, 4)} units (${fmtUsd(usd)})${riskUsd != null ? `, <b>${fmtUsd(riskUsd)}</b> at risk if the stop hits` : ""}.\n${st.paper ? "Record this paper trade?" : "Did you place it? Record it in the journal?"}`, { html: true, keyboard: [[{ text: st.paper ? "🧪 Record paper trade" : "✅ Yes, I placed it", callback_data: "takesave:yes" }, { text: "✖ Cancel", callback_data: "takesave:no" }]] });
+    await tgSend(c.chatId, `<b>Pre-trade check ${verdict}</b>\n${checks}\n\n${esc(st.coin.symbol)} ${st.setup.side}: fill ${fmtUsd(st.fill)}, ${lev > 1 ? `${lev}x, margin ${fmtUsd(usd)}, position ${fmtUsd(usd * lev)}` : fmtUsd(usd)}, ${fmtNum(units, 4)} units${riskUsd != null ? `, <b>${fmtUsd(riskUsd)}</b> at risk if the stop hits (${Math.round((riskUsd / usd) * 100)}% of your ${lev > 1 ? "margin" : "stake"})` : ""}.${liq != null ? ` Est. liquidation near ${fmtUsd(liq)}${liqBeforeStop ? " which is BEFORE your stop: lower the leverage." : "."}` : ""}\n${st.paper ? "Record this paper trade?" : "Did you place it? Record it in the journal?"}`, { html: true, keyboard: [[{ text: st.paper ? "🧪 Record paper trade" : "✅ Yes, I placed it", callback_data: "takesave:yes" }, { text: "✖ Cancel", callback_data: "takesave:no" }]] });
     return true;
   }
   return false;
@@ -509,14 +549,55 @@ async function takeFinish(c: ChatCtx, yes: boolean) {
   if (!st?.flow || st.step !== "confirm") return tgSend(c.chatId, "Nothing to record. Start with /take SOL or the ✍️ button.");
   if (!yes) { await setState(c, null); return tgSend(c.chatId, "Cancelled, nothing recorded."); }
   const usd = Number(st.usd);
+  const lev = Number(st.lev) || 1;
   const units = usd / st.fill;
   const sl = st.setup.stopLosses[0]?.price;
   const riskUsd = sl ? Math.abs(st.fill - sl) * units : null;
-  const row = { user_id: c.userId, asset_key: `cg:${st.coin.id}`, symbol: st.coin.symbol, timeframe: st.tf, side: st.setup.side, kind: st.setup.kind, entry_low: st.setup.entry.low, entry_high: st.setup.entry.high, tp1: st.setup.takeProfits[0]?.price ?? null, tp2: st.setup.takeProfits[1]?.price ?? null, tp3: st.setup.takeProfits[2]?.price ?? null, sl1: sl ?? null, sl2: st.setup.stopLosses[1]?.price ?? null, rr: st.setup.rr ?? null, leverage: st.setup.leverage?.recommended ?? null, confidence: st.setup.confidence ?? null, payload: st.setup, taken: true, paper: !!st.paper, taken_at: new Date().toISOString(), exchange: st.paper ? "paper" : c.venue, fill_price: st.fill, size_units: units, size_usd: usd, risk_usd: riskUsd, notes: "Recorded via Telegram" };
-  const { error } = await c.sb.from("saved_setups").insert(row);
+  st.setup.leverage = { ...(st.setup.leverage ?? {}), recommended: lev, used: lev };
+  const row = { user_id: c.userId, asset_key: `cg:${st.coin.id}`, symbol: st.coin.symbol, timeframe: st.tf, side: st.setup.side, kind: st.setup.kind, entry_low: st.setup.entry.low, entry_high: st.setup.entry.high, tp1: st.setup.takeProfits[0]?.price ?? null, tp2: st.setup.takeProfits[1]?.price ?? null, tp3: st.setup.takeProfits[2]?.price ?? null, sl1: sl ?? null, sl2: st.setup.stopLosses[1]?.price ?? null, rr: st.setup.rr ?? null, leverage: lev, confidence: st.setup.confidence ?? null, payload: st.setup, taken: true, paper: !!st.paper, taken_at: new Date().toISOString(), exchange: st.paper ? "paper" : c.venue, fill_price: st.fill, size_units: units, size_usd: usd, risk_usd: riskUsd, notes: lev > 1 ? `Recorded via Telegram · ${lev}x leverage, margin ${fmtUsd(Number(st.margin))}` : "Recorded via Telegram" };
+  const { data: ins, error } = await c.sb.from("saved_setups").insert(row).select("id").single();
   await setState(c, null);
   if (error) return tgSend(c.chatId, `Could not save: ${esc(error.message)}`, { html: true });
-  return tgSend(c.chatId, `${st.paper ? "🧪 Paper trade" : "✅ Trade"} recorded: ${esc(st.coin.symbol)} ${st.setup.side} ${esc(st.tf)}, fill ${fmtUsd(st.fill)}, ${fmtNum(units, 4)} units (${fmtUsd(usd)})${riskUsd != null ? `, ${fmtUsd(riskUsd)} at risk if the stop hits` : ""}.\nI will message you when it reaches a target or the stop.`, { html: true, keyboard: [[{ text: "My trades", callback_data: "me" }, { text: "Journal", url: link("/setups") ?? "https://t.me" }]] });
+  return tgSend(c.chatId, `${st.paper ? "🧪 Paper trade" : "✅ Trade"} recorded: ${esc(st.coin.symbol)} ${st.setup.side} ${esc(st.tf)}, fill ${fmtUsd(st.fill)}, ${fmtNum(units, 4)} units (${fmtUsd(usd)})${riskUsd != null ? `, ${fmtUsd(riskUsd)} at risk if the stop hits` : ""}.\nI will message you when it reaches a target or the stop. Pressed by mistake or the order never filled? Undo removes it.`, { html: true, keyboard: [[{ text: "↩ Undo", callback_data: `rm:${ins?.id ?? ""}` }, { text: "My trades", callback_data: "me" }], [{ text: "Journal", url: link("/setups") ?? "https://t.me" }]] });
+}
+
+/** Undo (delete) a trade recorded by mistake, or cancel it (never filled): back to Saved, out of the stats. */
+async function removeTrade(c: ChatCtx, id: string, hardDelete: boolean) {
+  if (!c.userId) return needLink(c);
+  if (!id) return tgSend(c.chatId, "Nothing to remove.");
+  const { data: row } = await c.sb.from("saved_setups").select("id, symbol, side, timeframe").eq("id", id).eq("user_id", c.userId).maybeSingle();
+  if (!row) return tgSend(c.chatId, "That trade is no longer in your journal.");
+  if (hardDelete) await c.sb.from("saved_setups").delete().eq("id", id).eq("user_id", c.userId);
+  else await c.sb.from("saved_setups").update({ taken: false, taken_at: null, status: "open", resolved_at: null, fill_price: null, size_units: null, size_usd: null, risk_usd: null }).eq("id", id).eq("user_id", c.userId);
+  return tgSend(c.chatId, `${who(c)}${hardDelete ? "↩ Removed" : "✖ Cancelled"}: ${esc(row.symbol)} ${row.side} ${esc(row.timeframe)}${hardDelete ? " is out of your journal." : " went back to Saved setups; it will not count in your stats."}`, { html: true, keyboard: [[{ text: "My trades", callback_data: "me" }, { text: "Menu", callback_data: "menu" }]] });
+}
+async function closeStart(c: ChatCtx, id: string) {
+  if (!c.userId) return needLink(c);
+  const { data: row } = await c.sb.from("saved_setups").select("id, symbol, side, timeframe, fill_price, size_units, sl1, paper").eq("id", id).eq("user_id", c.userId).is("exit_price", null).maybeSingle();
+  if (!row) return tgSend(c.chatId, "That trade is already closed or gone.");
+  if (c.isGroup) return tgSend(c.chatId, `${who(c)}Let's close ${esc(row.symbol)} in private chat: open @${esc((await botUsername()) ?? "AsheSignalBot")} and press 🏁 Close there.`, { html: true });
+  await setState(c, { flow: "close", id: row.id, symbol: row.symbol, side: row.side, tf: row.timeframe });
+  return tgSend(c.chatId, `🏁 Closing ${esc(row.symbol)} ${row.side} ${esc(row.timeframe)}. What was your <b>exit price</b>? (average if you exited in parts)\nSend /cancel to keep it open.`, { html: true });
+}
+async function closeStep(c: ChatCtx, text: string): Promise<boolean> {
+  const st = c.state;
+  const exit = Number(String(text).replace(",", ".").replace(/[$,]/g, ""));
+  if (!Number.isFinite(exit) || exit <= 0) { await tgSend(c.chatId, "Send the exit price as a number, or /cancel."); return true; }
+  const { data: row } = await c.sb.from("saved_setups").select("*").eq("id", st.id).eq("user_id", c.userId).maybeSingle();
+  await setState(c, null);
+  if (!row) { await tgSend(c.chatId, "That trade is gone."); return true; }
+  const fill = Number(row.fill_price ?? (Number(row.entry_low) + Number(row.entry_high)) / 2);
+  const units = Number(row.size_units ?? 0);
+  const fees = Number(row.fees_usd ?? 0);
+  const dir = row.side === "LONG" ? 1 : -1;
+  const pnl = units > 0 ? (exit - fill) * dir * units - fees : null;
+  const riskPerUnit = Math.abs(fill - Number(row.sl1 ?? fill));
+  const riskUsd = Number(row.risk_usd ?? (units > 0 && riskPerUnit > 0 ? units * riskPerUnit : 0));
+  const r = pnl != null && riskUsd > 0 ? Math.round((pnl / riskUsd) * 100) / 100 : riskPerUnit > 0 ? Math.round((((exit - fill) * dir) / riskPerUnit) * 100) / 100 : null;
+  const now = new Date().toISOString();
+  await c.sb.from("saved_setups").update({ exit_price: exit, exit_at: now, exit_reason: "manual", realized_usd: pnl, realized_r: r, ...(row.resolved_at ? {} : { status: "closed", resolved_at: now }) }).eq("id", row.id);
+  await tgSend(c.chatId, `🏁 Closed ${esc(row.symbol)} ${row.side} at ${fmtUsd(exit)}${pnl != null ? `: <b>${pnl >= 0 ? "+" : ""}${fmtUsd(pnl)}</b>` : ""}${r != null ? ` (${r > 0 ? "+" : ""}${r}R)` : ""}. ${pnl != null && pnl >= 0 ? "Nice." : "Logged; losses that respect the stop are part of the plan."}`, { html: true, keyboard: [[{ text: "My trades", callback_data: "me" }, { text: "Weekly review", callback_data: "review" }]] });
+  return true;
 }
 
 // ---------- watchlist ----------
@@ -533,7 +614,7 @@ async function watchAdd(c: ChatCtx, arg: string) {
   const wid = await watchlistId(c); if (!wid) return tgSend(c.chatId, "Could not open your watchlist.");
   const { error } = await c.sb.from("watchlist_items").upsert({ watchlist_id: wid, user_id: c.userId, coingecko_id: cn.id, chain: null, address: null, symbol: cn.symbol, name: cn.name }, { onConflict: "watchlist_id,coingecko_id,chain,address", ignoreDuplicates: true });
   if (error) return tgSend(c.chatId, `Could not save: ${esc(error.message)}`, { html: true });
-  return tgSend(c.chatId, `${who(c)}⭐ ${esc(cn.symbol)} added to your watchlist (synced with the website).`, { html: true, keyboard: [[{ text: "Watchlist", callback_data: "watchlist" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${cn.id}` }]] });
+  return tgSend(c.chatId, `${who(c)}⭐ ${esc(cn.symbol)} added to your watchlist (synced with the website).`, { html: true, keyboard: [[{ text: "Watchlist", callback_data: "watchlist" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }]] });
 }
 async function watchRemove(c: ChatCtx, arg: string) {
   if (!c.userId) return needLink(c);
@@ -567,7 +648,7 @@ async function watchlist(c: ChatCtx) {
     return line;
   });
   const kb: Keyboard = [];
-  for (let k = 0; k < Math.min(data.length, 9); k += 3) kb.push(data.slice(k, k + 3).map((d) => ({ text: d.symbol, callback_data: `setup:${d.coingecko_id}:4h` })));
+  for (let k = 0; k < Math.min(data.length, 9); k += 3) kb.push(data.slice(k, k + 3).map((d) => ({ text: d.symbol, callback_data: `setup:${ref({ id: String(d.coingecko_id), symbol: d.symbol })}:4h` })));
   kb.push([{ text: "Open watchlist", url: link("/watchlist") ?? "https://t.me" }, { text: "Menu", callback_data: "menu" }]);
   return tgSend(c.chatId, `${who(c)}<b>⭐ Watchlist</b> (${data.length})\n${lines.join("\n")}\n\nTap a coin for its card. /unwatch SYM removes one.`, { html: true, keyboard: kb });
 }
@@ -580,7 +661,7 @@ async function top(c: ChatCtx) {
   const vm = VENUE_META[c.venue];
   if (!items.length) { const w = (await loadCategory(c, "watching")).slice(0, 3); return tgSend(c.chatId, `${who(c)}<b>🏆 Top for ${esc(vm.label)}</b>\nNo confirmed setup you can place right now${vm.canShort ? "" : " (longs only)"}. Closest to confirming:\n${w.map((i) => { const st = (i.detail as any)?.setup; const need = (i.detail as any)?.watch?.[0]?.needs; return `• <b>${esc(i.symbol)}</b> ${st?.side ?? ""} ${esc(i.timeframe ?? "")}${need ? `: needs ${esc(need)}` : ""}`; }).join("\n") || "nothing close."}`, { html: true, keyboard: [[{ text: "Watching", callback_data: "cat:watching" }, { text: "Menu", callback_data: "menu" }]] }); }
   const lines = items.map((i, n) => { const st = (i.detail as any)?.setup; const z = zoneStatus(i.price, st?.entry, st?.side); return `${["🥇", "🥈", "🥉"][n]} <b>${esc(i.symbol)}</b> ${st.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} ${esc(i.timeframe)} · conf ${st.confidence}% · ${st.rr}R\n   entry ${fmtUsd(st.entry.low)} to ${fmtUsd(st.entry.high)} · SL ${fmtUsd(st.stopLosses[0]?.price)} · TP1 ${fmtUsd(st.takeProfits[0]?.price)}${z.state !== "unknown" ? `\n   ${z.state === "in" ? "🟢 price in zone" : `${z.tone === "down" ? "🔴" : "🟡"} ${esc(z.label)}`}` : ""}${(i.detail as any)?.qualifies?.[0] ? `\n   ${esc((i.detail as any).qualifies[0])}` : ""}`; });
-  return tgSend(c.chatId, `${who(c)}<b>🏆 Top ${items.length} confirmed for ${esc(vm.label)}</b>\nRanked by confidence. Confirmed is a gate, not a promise: size by the stop.\n\n${lines.join("\n\n")}`, { html: true, keyboard: [items.map((i) => ({ text: i.symbol, callback_data: `setup:${i.assetKey.replace(/^cg:/, "")}:${i.timeframe ?? "4h"}` })), [{ text: "All confirmed", callback_data: "cat:confirmed" }, { text: "Menu", callback_data: "menu" }]] });
+  return tgSend(c.chatId, `${who(c)}<b>🏆 Top ${items.length} confirmed for ${esc(vm.label)}</b>\nRanked by confidence. Confirmed is a gate, not a promise: size by the stop.\n\n${lines.join("\n\n")}`, { html: true, keyboard: [items.map((i) => ({ text: i.symbol, callback_data: `setup:${refKey(i.assetKey, i.symbol)}:${i.timeframe ?? "4h"}` })), [{ text: "All confirmed", callback_data: "cat:confirmed" }, { text: "Menu", callback_data: "menu" }]] });
 }
 
 async function review(c: ChatCtx) {
@@ -759,7 +840,7 @@ async function freeText(c: ChatCtx, text: string) {
     const a = await answer({ question: text, venue: c.venue, userId: c.userId, sb: c.userId ? c.sb : null, adminSb: c.sb });
     const body = [esc(a.text), ...(a.bullets?.length ? ["", ...a.bullets.map((b) => `• ${esc(b)}`)] : [])].join("\n");
     const kb: Keyboard = [];
-    if (a.context?.coin && (a.context.coin as any).id) kb.push([{ text: `${(a.context.coin as any).symbol} setup card`, callback_data: `setup:${(a.context.coin as any).id}:4h` }]);
+    if (a.context?.coin && (a.context.coin as any).id) kb.push([{ text: `${(a.context.coin as any).symbol} setup card`, callback_data: `setup:${ref(a.context.coin as any)}:4h` }]);
     if (a.links[0] && link(a.links[0].href)) kb.push([{ text: a.links[0].label, url: link(a.links[0].href)! }, { text: "Menu", callback_data: "menu" }]);
     return tgSend(c.chatId, body + "\n\n<i>Not financial advice. Manual trading only.</i>", { html: true, keyboard: kb });
   } catch (e) {

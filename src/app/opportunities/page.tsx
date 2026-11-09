@@ -39,7 +39,10 @@ function OpportunitiesInner() {
   const [f, setF] = useState<Filters>(EMPTY);
   const [sort, setSort] = useState<SortKey>("confidence");
   const [showHistory, setShowHistory] = useState(false);
-  const [mine, setMine] = useState(false);
+  // Default to what the user can actually place on their exchange (same filter the Telegram bot uses); remembered.
+  const [mine, setMineState] = useState(true);
+  useEffect(() => { try { const v = localStorage.getItem("as_opp_mine"); if (v != null) setMineState(v === "1"); } catch {} }, []);
+  const setMine = (v: boolean) => { setMineState(v); try { localStorage.setItem("as_opp_mine", v ? "1" : "0"); } catch {} };
   const [venue, setVenueState] = useState<VenueId>("binance");
   useEffect(() => { setVenueState(currentVenue()); const on = () => setVenueState(currentVenue()); window.addEventListener(VENUE_EVENT, on); return () => window.removeEventListener(VENUE_EVENT, on); }, []);
   useEffect(() => {
@@ -108,7 +111,8 @@ function OpportunitiesInner() {
     </label>
   );
   const active = TABS.find((t) => t.key === tab)!;
-  const count = (k: OppCategory) => d?.counts?.[k] ?? (d?.items ?? []).filter((i) => i.category === k).length;
+  const tradeable = (i: Opportunity) => !mine || i.category === "speculative" || (i.venues?.includes(venue) && (VENUE_META[venue].canShort || i.side !== "SHORT"));
+  const count = (k: OppCategory) => mine ? all.filter((i) => i.category === k && tradeable(i)).length : (d?.counts?.[k] ?? all.filter((i) => i.category === k).length);
 
   return (
     <div className="space-y-4">

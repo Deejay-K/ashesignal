@@ -33,7 +33,7 @@ export function signalCopyText(sig: ConfirmedSignal, venue: VenueId, listed: Ven
 }
 
 function keyboard(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[]): Keyboard {
-  const s = sig.setup; const id = sig.coingeckoId; const tf = sig.timeframe;
+  const s = sig.setup; const id = sig.coingeckoId.length <= 36 ? sig.coingeckoId : `~${sig.symbol}`; const tf = sig.timeframe;
   const guide = link(`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: sig.symbol, leverage: String(s.leverage.recommended), venue })}`);
   const tv = listed.includes(venue) ? venue : listed[0];
   const kb: Keyboard = [

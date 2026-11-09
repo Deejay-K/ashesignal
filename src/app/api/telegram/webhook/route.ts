@@ -35,7 +35,8 @@ export async function POST(req: NextRequest) {
       const tgUserId = String(cb.from?.id ?? chatId);
       const chat = await loadActor(sb, tgUserId, chatId, { firstName: cb.from?.first_name, username: cb.from?.username, chatTitle: cb.message.chat.title });
       const ctx: ChatCtx = { sb, chatId, tgUserId, firstName: cb.from?.first_name, userId: chat.userId, venue: chat.venue, state: chat.state, isGroup: cb.message.chat.type !== "private", messageId: cb.message.message_id };
-      await handleCallback(ctx, cb.data, cb.id);
+      try { await handleCallback(ctx, cb.data, cb.id); }
+      catch (e) { console.error("telegram callback", cb.data, e); await tgSend(chatId, `That button hit an error (${String((e as Error).message).slice(0, 120)}). Try /menu.`); }
       return NextResponse.json({ ok: true });
     }
 
@@ -63,7 +64,8 @@ export async function POST(req: NextRequest) {
     }
     const [cmd, ...rest] = text.split(/\s+/);
     const arg = rest.join(" ").trim();
-    await handleCommand(ctx, text.startsWith("/") ? cmd : "", arg, text);
+    try { await handleCommand(ctx, text.startsWith("/") ? cmd : "", arg, text); }
+    catch (e) { console.error("telegram command", text, e); await tgSend(chatId, `That command hit an error (${String((e as Error).message).slice(0, 120)}). Try /menu.`); }
   } catch (e) {
     console.error("telegram webhook", e);
   }
