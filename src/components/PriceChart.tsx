@@ -91,7 +91,7 @@ export default function PriceChart({
       layout: { background: { color: "transparent" }, textColor: pal.fg2, fontFamily: "ui-monospace, monospace", fontSize: 11 },
       grid: { vertLines: { color: pal.bg3 }, horzLines: { color: pal.bg3 } },
       rightPriceScale: { borderColor: pal.border },
-      timeScale: { borderColor: pal.border, timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: pal.border, timeVisible: true, secondsVisible: false, rightOffset: 14 },
       crosshair: { mode: 0 },
       autoSize: true,
     });
@@ -192,7 +192,11 @@ export default function PriceChart({
       }
     }
 
-    chart.timeScale().fitContent();
+    // Leave empty space after the last candle (about 15% of the view) so the newest candles, pattern lines and the
+    // TP / SL / level labels on the right never cover each other.
+    const n = candles.length;
+    if (n > 1) { const pad = Math.max(8, Math.round(n * 0.15)); chart.timeScale().setVisibleLogicalRange({ from: 0, to: n - 1 + pad }); }
+    else chart.timeScale().fitContent();
     return () => {
       chart.remove();
       chartRef.current = null;
