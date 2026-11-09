@@ -354,3 +354,7 @@ No typed command is required any more:
 - Every command that needed an argument now has a **guided prompt** when pressed as a button or sent bare: Coin / scan, Size, Price alert (coin, then Above/Below buttons, then price), Record a trade, Add to watchlist, Compare, Link account. Each prompt has a Cancel button.
 - The main menu gained Compare, Simulator, Events, Heat, Record a trade, Price alert, Add to watchlist.
 - Plain words work too: "menu", "plan", "trades", "me", "heat", "events" and so on.
+
+## 35. Stage 36.2 - organized bot menu
+
+The menu is now a short main menu (Today's plan, Confirmed, Market, My trading, Alerts & list, Tools, Settings, and Group in group chats). Each section opens its own sub-menu in the same message with a Back button, two buttons per row with short labels so every label is readable on a phone. The keyboard under the text box is 2 x 3: Plan, Trades, Coin, Me, Menu, Alerts.

@@ -18,7 +18,7 @@ async function call<T = unknown>(method: string, body: Record<string, unknown>):
 export const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** Persistent buttons under the text box (Telegram "reply keyboard"); their labels arrive as plain messages. */
-export const REPLY_KEYBOARD: string[][] = [["☀️ Plan", "✅ Trades", "👀 Watching"], ["🔍 Coin", "📐 Size", "👤 Me"], ["📋 Menu", "⭐ Watchlist", "🔔 Alerts"]];
+export const REPLY_KEYBOARD: string[][] = [["☀️ Plan", "✅ Trades"], ["🔍 Coin", "👤 Me"], ["📋 Menu", "🔔 Alerts"]];
 
 export async function tgSend(chatId: string, text: string, opts: { url?: string; label?: string; keyboard?: Keyboard; html?: boolean; replyKeyboard?: string[][] | "remove" } = {}): Promise<boolean> {
   if (!TELEGRAM_ENABLED()) return false;

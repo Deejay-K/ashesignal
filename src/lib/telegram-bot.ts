@@ -32,26 +32,77 @@ import type { Opportunity } from "./market/opportunities";
 const SITE = () => (process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
 const link = (path: string) => (SITE() ? `${SITE()}${path}` : undefined);
 
-export interface ChatCtx { sb: SupabaseClient; chatId: string; tgUserId: string; firstName?: string; userId: string | null; venue: VenueId; isGroup: boolean; state: any; messageId?: number }
+export interface ChatCtx { sb: SupabaseClient; chatId: string; tgUserId: string; firstName?: string; userId: string | null; venue: VenueId; isGroup: boolean; state: any; messageId?: number; fromButton?: boolean }
 
-/** The main menu covers every command. It adapts to the chat: group-only rows in groups, account rows when linked. */
-function menuFor(c: ChatCtx): Keyboard {
-  const kb: Keyboard = [
-    [{ text: "✅ Confirmed trades", callback_data: "cat:confirmed" }, { text: "👀 Watching", callback_data: "cat:watching" }],
-    [{ text: "⚠️ Speculative", callback_data: "cat:speculative" }, { text: "🏦 Spot picks", callback_data: "cat:spot" }],
-    [{ text: "☀️ Today's plan", callback_data: "plan" }, { text: "🏆 Top 3 for me", callback_data: "top" }],
-    [{ text: "🌡 Today", callback_data: "today" }, { text: "📊 Screener", callback_data: "screener:score" }],
-    [{ text: "📈 Track record", callback_data: "record" }, { text: c.isGroup ? "⭐ Group watchlist" : "⭐ Watchlist", callback_data: "watchlist" }],
-    [{ text: "🔍 Coin / scan", callback_data: "ask:coin" }, { text: "⚖️ Compare", callback_data: "ask:compare" }, { text: "📐 Size a trade", callback_data: "ask:size" }],
-    [{ text: "🧮 Simulator", callback_data: "simulate" }, { text: "📆 Events", callback_data: "events" }, { text: "🌡 Heat", callback_data: "heat" }],
-  ];
-  if (c.isGroup) kb.push([{ text: "🏅 Leaderboard", callback_data: "leaderboard" }, { text: "🙋 Join leaderboard", callback_data: "optin:1" }]);
-  kb.push([{ text: "👤 My trades", callback_data: "me" }, { text: "📒 Journal", callback_data: "journal" }, { text: "✍️ Record a trade", callback_data: "ask:take" }]);
-  kb.push([{ text: "🔔 Alerts", callback_data: "alerts" }, { text: "➕ Price alert", callback_data: "ask:alert" }, { text: "⭐ Add to watchlist", callback_data: "ask:watch" }]);
-  kb.push([{ text: "📅 Weekly review", callback_data: "review" }, { text: "☀️ Digest now", callback_data: "digest" }]);
-  kb.push([{ text: "📣 Signals on/off", callback_data: "signals" }, { text: "⚙️ Exchange", callback_data: "exchange" }, { text: "⚙️ Settings", callback_data: "settings" }]);
-  kb.push([{ text: "📖 Trade guide", callback_data: "guide" }, { text: c.userId ? "🔓 Unlink" : "🔗 Link account", callback_data: c.userId ? "settings:unlink" : "ask:link" }, { text: "❓ Help", callback_data: "help" }]);
-  return kb;
+/**
+ * Menus: a short main menu of sections, each opening a sub-menu in place (the same message is edited, so the chat
+ * does not fill up). At most two buttons per row with short labels, so every label fits on a phone.
+ */
+type MenuId = "main" | "market" | "trading" | "alerts" | "tools" | "group" | "settings";
+const BACK: Keyboard[number] = [{ text: "⬅️ Back", callback_data: "menu" }];
+function menuFor(c: ChatCtx, id: MenuId = "main"): Keyboard {
+  switch (id) {
+    case "market": return [
+      [{ text: "✅ Confirmed", callback_data: "cat:confirmed" }, { text: "👀 Watching", callback_data: "cat:watching" }],
+      [{ text: "⚠️ Speculative", callback_data: "cat:speculative" }, { text: "🏦 Spot picks", callback_data: "cat:spot" }],
+      [{ text: "🏆 Top 3", callback_data: "top" }, { text: "📊 Screener", callback_data: "screener:score" }],
+      [{ text: "🌡 Market today", callback_data: "today" }, { text: "📆 Events", callback_data: "events" }],
+      BACK,
+    ];
+    case "trading": return [
+      [{ text: "👤 My trades", callback_data: "me" }, { text: "✍️ Record trade", callback_data: "ask:take" }],
+      [{ text: "📒 Journal", callback_data: "journal" }, { text: "🌡 My risk", callback_data: "heat" }],
+      [{ text: "📅 Week review", callback_data: "review" }, { text: "📐 Size a trade", callback_data: "ask:size" }],
+      [{ text: "📖 Trade guide", callback_data: "guide" }],
+      BACK,
+    ];
+    case "alerts": return [
+      [{ text: "🔔 My alerts", callback_data: "alerts" }, { text: "➕ Price alert", callback_data: "ask:alert" }],
+      [{ text: c.isGroup ? "⭐ Group list" : "⭐ Watchlist", callback_data: "watchlist" }, { text: "➕ Watch a coin", callback_data: "ask:watch" }],
+      [{ text: "📣 Auto signals", callback_data: "signals" }, { text: "☀️ Digest now", callback_data: "digest" }],
+      BACK,
+    ];
+    case "tools": return [
+      [{ text: "🔍 Coin or token", callback_data: "ask:coin" }, { text: "⚖️ Compare", callback_data: "ask:compare" }],
+      [{ text: "🧮 Simulator", callback_data: "simulate" }, { text: "📈 Track record", callback_data: "record" }],
+      BACK,
+    ];
+    case "group": return [
+      [{ text: "🏅 Leaderboard", callback_data: "leaderboard" }, { text: "🙋 Join board", callback_data: "optin:1" }],
+      [{ text: "⭐ Group list", callback_data: "watchlist" }, { text: "➕ Add to list", callback_data: "ask:watch" }],
+      BACK,
+    ];
+    case "settings": return [
+      [{ text: "🏦 Exchange", callback_data: "exchange" }, { text: "⚙️ Settings", callback_data: "settings" }],
+      [{ text: c.userId ? "🔓 Unlink" : "🔗 Link account", callback_data: c.userId ? "settings:unlink" : "ask:link" }, { text: "❓ Help", callback_data: "help" }],
+      BACK,
+    ];
+    default: return [
+      [{ text: "☀️ Today's plan", callback_data: "plan" }, { text: "✅ Confirmed", callback_data: "cat:confirmed" }],
+      [{ text: "📊 Market", callback_data: "sub:market" }, { text: "👤 My trading", callback_data: "sub:trading" }],
+      [{ text: "🔔 Alerts & list", callback_data: "sub:alerts" }, { text: "🔍 Tools", callback_data: "sub:tools" }],
+      ...(c.isGroup ? [[{ text: "👥 Group", callback_data: "sub:group" }, { text: "⚙️ Settings", callback_data: "sub:settings" }]] : [[{ text: "⚙️ Settings", callback_data: "sub:settings" }, { text: "❓ Help", callback_data: "help" }]]),
+    ];
+  }
+}
+const MENU_TITLE: Record<MenuId, string> = {
+  main: "Pick a section:",
+  market: "<b>📊 Market</b>\nWhat the engine sees right now.",
+  trading: "<b>👤 My trading</b>\nYour open trades, journal and risk.",
+  alerts: "<b>🔔 Alerts & watchlist</b>\nWhat to tell you, and which coins to follow.",
+  tools: "<b>🔍 Tools</b>\nLook up any coin or token, compare, test the rules.",
+  group: "<b>👥 Group</b>\nLeaderboard and the shared watchlist.",
+  settings: "<b>⚙️ Settings</b>\nExchange, account link, help.",
+};
+async function showSub(c: ChatCtx, id: MenuId) {
+  const text = id === "main" ? menuHeader(c) : MENU_TITLE[id];
+  // From a button: edit the menu in place. From a command: send it.
+  if (c.messageId && c.fromButton && (await tgEdit(c.chatId, c.messageId, text, menuFor(c, id)))) return true;
+  return tgSend(c.chatId, text, { html: true, keyboard: menuFor(c, id) });
+}
+function menuHeader(c: ChatCtx) {
+  const vm = VENUE_META[c.venue];
+  return `<b>AsheSignal</b>${c.isGroup && c.firstName ? ` for ${esc(c.firstName)}` : ""}\nExchange: <b>${esc(vm.label)}</b>${vm.canShort ? "" : " (spot, longs only)"}${c.userId ? "" : "\nNot linked yet: Settings, then Link account."}\n\nPick a section:`;
 }
 
 /**
@@ -144,10 +195,12 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
 }
 
 export async function handleCallback(c: ChatCtx, data: string, callbackId: string) {
+  c.fromButton = true;
   await tgAnswerCallback(callbackId);
   const [kind, a, b, d] = data.split(":");
   switch (kind) {
-    case "menu": return sendMenu(c);
+    case "menu": return showSub(c, "main");
+    case "sub": return showSub(c, (a as MenuId) || "main");
     case "journal": return journal(c);
     case "guide": return handleCommand(c, "/guide", "", "/guide");
     case "ask": return askStart(c, a);
@@ -272,7 +325,8 @@ async function askStep(c: ChatCtx, text: string): Promise<boolean> {
 async function sendMenu(c: ChatCtx, withReplyKeyboard = false) {
   const vm = VENUE_META[c.venue];
   if (withReplyKeyboard && !c.isGroup) await tgSend(c.chatId, "Buttons are under the text box: Plan, Trades, Coin, Size, Me, Menu and more. You never have to type a command.", { replyKeyboard: REPLY_KEYBOARD });
-  return tgSend(c.chatId, `<b>AsheSignal</b>${c.isGroup && c.firstName ? ` for ${esc(c.firstName)}` : ""}\nYour exchange: <b>${esc(vm.label)}</b>${vm.canShort ? "" : " (spot only, longs)"}${c.userId ? "" : "\nNot linked to an account: /link CODE from the Account page for journal, alerts and digest."}\n\nPick a section:`, { html: true, keyboard: menuFor(c) });
+  void vm;
+  return showSub(c, "main");
 }
 
 async function help(c: ChatCtx) {
