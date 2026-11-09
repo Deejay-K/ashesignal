@@ -36,6 +36,7 @@ export interface ClaudeResult<T> {
 function parseJson<T>(text: string): T {
   const a = text.indexOf("{");
   const b = text.lastIndexOf("}");
+  if (a < 0 || b <= a) throw new Error(`model reply was not JSON: ${JSON.stringify(text.slice(0, 120))}`);
   return JSON.parse(text.slice(a, b + 1)) as T;
 }
 
@@ -74,25 +75,36 @@ export async function askJson<T>(system: string, user: string, maxTokens = 1800)
   const models = modelChain(base);
   const call = async (extra = "") => {
     let lastErr = "";
+    const google = /generativelanguage\.googleapis\.com/.test(base);
     for (const model of models) {
-      const res = await fetch(`${base}/chat/completions`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${process.env.AI_API_KEY}` },
-        body: JSON.stringify({ model, max_tokens: maxTokens, temperature: 0.4, response_format: { type: "json_object" }, messages: [{ role: "system", content: system }, { role: "user", content: user + extra }] }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(25_000),
-      });
-      if (res.ok) {
-        workingModel = model;
-        const j = (await res.json()) as { choices: { message: { content: string } }[]; usage?: { prompt_tokens: number; completion_tokens: number }; model?: string };
-        return { text: j.choices[0]?.message?.content ?? "", j: { ...j, model: j.model ?? model } };
+      // Thinking models (Gemini 2.5+/3.x) spend tokens reasoning before they write; give them room and ask for low
+      // reasoning effort, or the visible answer comes back empty.
+      let effort: string | null = google ? "low" : null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await fetch(`${base}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${process.env.AI_API_KEY}` },
+          body: JSON.stringify({ model, max_tokens: google ? Math.max(maxTokens, 4096) : maxTokens, temperature: 0.4, response_format: { type: "json_object" }, ...(effort ? { reasoning_effort: effort } : {}), messages: [{ role: "system", content: system }, { role: "user", content: user + extra }] }),
+          cache: "no-store",
+          signal: AbortSignal.timeout(25_000),
+        });
+        if (res.ok) {
+          const j = (await res.json()) as { choices: { message: { content: string | null }; finish_reason?: string }[]; usage?: { prompt_tokens: number; completion_tokens: number }; model?: string };
+          const text = j.choices?.[0]?.message?.content ?? "";
+          if (!text.trim()) { lastErr = `LLM (${model}) returned an empty answer (finish_reason: ${j.choices?.[0]?.finish_reason ?? "?"})`; break; }
+          workingModel = model;
+          return { text, j: { ...j, model: j.model ?? model } };
+        }
+        const body = (await res.text()).slice(0, 300);
+        lastErr = `LLM HTTP ${res.status} (${model}): ${body}`;
+        // This model does not accept reasoning_effort: same model again without it.
+        if (effort && res.status === 400 && /reasoning/i.test(body)) { effort = null; continue; }
+        // Only a missing or retired model is worth trying the next one; auth, quota and other errors stop here.
+        const modelGone = res.status === 404 || (res.status === 400 && /model|not found|not supported|deprecat|retired|unknown/i.test(body));
+        if (!modelGone) throw new Error(lastErr);
+        console.error("[ai] model unavailable, trying next:", lastErr);
+        break;
       }
-      const body = (await res.text()).slice(0, 300);
-      lastErr = `LLM HTTP ${res.status} (${model}): ${body}`;
-      // Only a missing or retired model is worth trying the next one; auth, quota and other errors stop here.
-      const modelGone = res.status === 404 || (res.status === 400 && /model|not found|not supported|deprecat|retired|unknown/i.test(body));
-      if (!modelGone) break;
-      console.error("[ai] model unavailable, trying next:", lastErr);
     }
     throw new Error(lastErr || "LLM call failed");
   };

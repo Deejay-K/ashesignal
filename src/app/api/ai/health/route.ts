@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   if (provider === "local") return NextResponse.json({ ok: false, ...info, problem: "No AI configured: set AI_BASE_URL + AI_API_KEY (or ANTHROPIC_API_KEY) in Vercel and redeploy." });
   const t = Date.now();
   try {
-    const r = await askJson<{ reply: string }>("Reply with JSON only.", 'Return {"reply":"pong"}', 30);
+    const r = await askJson<{ reply: string }>("Reply with JSON only.", 'Return {"reply":"pong"}', 200);
     return NextResponse.json({ ok: true, ...info, answeredBy: r.model, reply: r.data?.reply ?? null, ms: Date.now() - t, tip: info.configuredModel && r.model && !r.model.includes(info.configuredModel) ? `Your AI_MODEL (${info.configuredModel}) is unavailable; set AI_MODEL=${r.model} in Vercel to skip the retry.` : undefined });
   } catch (e) {
     return NextResponse.json({ ok: false, ...info, error: (e as Error).message, ms: Date.now() - t });
