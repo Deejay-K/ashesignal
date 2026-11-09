@@ -125,3 +125,7 @@ All tables have RLS: `auth.uid() = user_id`.
 | 34 | `src/lib/market/discovery.ts` loadDiscovery/tradeableOn shared by API and bot; leverage in TakeTradeDialog and bot /take; 64-byte-safe callback refs; error replies |
 | 35 | track-record.ts + /track-record, followups.ts + cron/followups, /api/chart PNG, OrderTicket, plan.ts + /plan, notify prefs (kinds, quiet hours, notify-test), analytics.ts + Stats tab, group leaderboard and shared watchlist, assistant intent buttons; worker.yml indentation fixed |
 | 36 | cron/plan + planText + Account toggle, `/s/[id]/[tf]` shareable setup page (+SetupActions), simulator.ts + /api/simulate + /simulator, /welcome wizard, bot /simulate /compare /events /heat, settings plan toggle |
+| 37 | radar.ts + /api/me/radar + /radar, bot /holdings |
+| 38 | dca.ts (planLadder, resolveZone) + /api/dca + /dca, bot /dca with ask flow |
+| 39 | movers.ts + /api/movers + /movers, bot /movers |
+| 40 | academy.ts (8 lessons, 24 questions) + /learn + /learn/[id], bot /learn with inline quizzes, telegram_users.learn |

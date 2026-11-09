@@ -23,6 +23,10 @@ import { digestShared, buildDigest } from "./digest";
 import { buildPlan } from "./plan";
 import { buildTrackRecord } from "./track-record";
 import { simulate, SIM_DEFAULTS } from "./simulator";
+import { buildRadar } from "./radar";
+import { planLadder, resolveZone } from "./dca";
+import { buildMovers } from "./movers";
+import { LESSONS } from "./academy";
 import { globalConditions as conditionsForEvents } from "./market/conditions";
 import { safe } from "./fetch";
 import type { Timeframe } from "./types";
@@ -47,13 +51,14 @@ function menuFor(c: ChatCtx, id: MenuId = "main"): Keyboard {
       [{ text: "⚠️ Speculative", callback_data: "cat:speculative" }, { text: "🏦 Spot picks", callback_data: "cat:spot" }],
       [{ text: "🏆 Top 3", callback_data: "top" }, { text: "📊 Screener", callback_data: "screener:score" }],
       [{ text: "🌡 Market today", callback_data: "today" }, { text: "📆 Events", callback_data: "events" }],
+      [{ text: "🚀 Movers", callback_data: "movers" }],
       BACK,
     ];
     case "trading": return [
       [{ text: "👤 My trades", callback_data: "me" }, { text: "✍️ Record trade", callback_data: "ask:take" }],
       [{ text: "📒 Journal", callback_data: "journal" }, { text: "🌡 My risk", callback_data: "heat" }],
       [{ text: "📅 Week review", callback_data: "review" }, { text: "📐 Size a trade", callback_data: "ask:size" }],
-      [{ text: "📖 Trade guide", callback_data: "guide" }],
+      [{ text: "📡 Holdings radar", callback_data: "radar" }, { text: "📖 Trade guide", callback_data: "guide" }],
       BACK,
     ];
     case "alerts": return [
@@ -65,6 +70,7 @@ function menuFor(c: ChatCtx, id: MenuId = "main"): Keyboard {
     case "tools": return [
       [{ text: "🔍 Coin or token", callback_data: "ask:coin" }, { text: "⚖️ Compare", callback_data: "ask:compare" }],
       [{ text: "🧮 Simulator", callback_data: "simulate" }, { text: "📈 Track record", callback_data: "record" }],
+      [{ text: "🪜 DCA plan", callback_data: "ask:dca" }, { text: "🎓 Learn", callback_data: "learn" }],
       [{ text: "🤖 Ask the AI", callback_data: "askai" }, { text: "🧹 New AI chat", callback_data: "newchat" }],
       BACK,
     ];
@@ -92,7 +98,7 @@ const MENU_TITLE: Record<MenuId, string> = {
   market: "<b>📊 Market</b>\nWhat the engine sees right now.",
   trading: "<b>👤 My trading</b>\nYour open trades, journal and risk.",
   alerts: "<b>🔔 Alerts & watchlist</b>\nWhat to tell you, and which coins to follow.",
-  tools: "<b>🔍 Tools</b>\nLook up any coin or token, compare, test the rules.",
+  tools: "<b>🔍 Tools</b>\nLook up any coin or token, compare, plan a DCA, learn, test the rules.",
   group: "<b>👥 Group</b>\nLeaderboard and the shared watchlist.",
   settings: "<b>⚙️ Settings</b>\nExchange, account link, help.",
 };
@@ -173,6 +179,10 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/ask": case "/ai": return arg ? aiChat(c, arg) : askAiPrompt(c);
     case "/newchat": case "/forget": return aiReset(c);
     case "/simulate": case "/sim": return simulateCmd(c, arg);
+    case "/holdings": case "/radar": return radar(c);
+    case "/dca": return arg ? dcaCmd(c, arg) : askStart(c, "dca");
+    case "/movers": case "/gainers": return movers(c);
+    case "/learn": case "/academy": return learnList(c);
     case "/compare": case "/vs": return arg.trim().split(/\s+/).filter(Boolean).length >= 2 ? compare(c, arg) : askStart(c, "compare");
     case "/events": case "/calendar": return events(c);
     case "/heat": return heat(c);
@@ -235,6 +245,12 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "askai": return askAiPrompt(c);
     case "newchat": return aiReset(c);
     case "simulate": return simulateCmd(c, a ? `${a} ${b ?? ""}` : "");
+    case "radar": return radar(c);
+    case "movers": return movers(c);
+    case "learn": return learnList(c);
+    case "lesson": return lessonShow(c, Number(a));
+    case "lq": return quizAsk(c, Number(a), Number(b));
+    case "la": return quizAnswer(c, Number(a), Number(b), Number(d));
     case "events": return events(c);
     case "heat": return heat(c);
     case "record": return record(c);
@@ -269,6 +285,7 @@ const LABELS: Record<string, string> = {
   "🔍 coin": "/askcoin", coin: "/askcoin", scan: "/askcoin", "📐 size": "/asksize", size: "/asksize", "👤 me": "/me", me: "/me", "my trades": "/me",
   "📋 menu": "/menu", menu: "/menu", "🤖 ask ai": "/ask", "ask ai": "/ask", "⭐ watchlist": "/watchlist", watchlist: "/watchlist", "🔔 alerts": "/alerts", alerts: "/alerts",
   today: "/today", spot: "/spot", spec: "/spec", speculative: "/spec", top: "/top", screener: "/screener", record: "/record", events: "/events", heat: "/heat",
+  holdings: "/holdings", radar: "/holdings", movers: "/movers", gainers: "/movers", learn: "/learn", academy: "/learn", dca: "/dca",
   review: "/review", digest: "/digest", settings: "/settings", help: "/help", journal: "/journal", guide: "/guide", exchange: "/exchange", simulate: "/simulate", simulator: "/simulate",
 };
 export function labelToCommand(text: string): string | null { return LABELS[text.trim().toLowerCase()] ?? null; }
@@ -284,6 +301,7 @@ const ASK_PROMPTS: Record<string, string> = {
   watch: "Add to the watchlist. Which coin? Send a ticker like <code>SOL</code>.",
   compare: "Compare two coins. Send both tickers, e.g. <code>BTC ETH</code> (optionally a timeframe: <code>BTC ETH 1d</code>).",
   link: "Link your account. Open the website, Account page, Telegram section, and send me the 6-character code shown there.",
+  dca: "DCA plan. Send the coin and your budget in dollars, e.g. <code>BTC 200</code> (optionally the number of orders: <code>BTC 200 5</code>).",
 };
 async function askStart(c: ChatCtx, kind: string) {
   if (!ASK_PROMPTS[kind]) return sendMenu(c);
@@ -310,6 +328,7 @@ async function askStep(c: ChatCtx, text: string): Promise<boolean> {
     case "watch": await done(); await (c.isGroup ? groupWatchAdd(c, t) : watchAdd(c, t)); return true;
     case "compare": { const parts = t.split(/\s+/).filter(Boolean); if (parts.length < 2) { await tgSend(c.chatId, "Send two tickers, e.g. BTC ETH."); return true; } await done(); await compare(c, t); return true; }
     case "link": await done(); await linkAccount(c, t); return true;
+    case "dca": await done(); await dcaCmd(c, t); return true;
     case "alert": {
       if (st.step === 1) {
         const cn = await resolveCoin(t.split(/\s+/)[0]); if (!cn) { await tgSend(c.chatId, `Could not find "${esc(t)}". Try the ticker.`, { html: true }); return true; }
@@ -1106,6 +1125,95 @@ async function heat(c: ChatCtx) {
   const h = portfolioHeat((open ?? []).map((t) => ({ symbol: t.symbol, side: t.side, riskUsd: t.risk_usd == null ? null : Number(t.risk_usd) })), bal, limits);
   const budget = bal != null && h.heatPct != null ? Math.max(0, ((limits.maxHeatPct - h.heatPct) / 100) * bal) : null;
   return tgSend(c.chatId, `${who(c)}<b>🌡 Portfolio heat</b>\n${h.level === "stop" ? "🔴" : h.level === "caution" ? "🟡" : "🟢"} ${h.heatPct != null ? `${h.heatPct}% of your account at risk` : "Set your balance on the Risk page to measure heat"} (limit ${limits.maxHeatPct}%)\n${(open ?? []).length}/${limits.maxOpen} real trades open${budget != null ? ` · ${fmtUsd(budget)} left to risk today` : ""}\n${(open ?? []).map((t) => `- ${esc(t.symbol)} ${t.side} ${esc(t.timeframe)}${t.risk_usd ? `: ${fmtUsd(Number(t.risk_usd))}` : ": size unknown"}`).join("\n")}\n${esc(h.messages[0] ?? "")}`, { html: true, keyboard: [[{ text: "My trades", callback_data: "me" }, { text: "Plan", callback_data: "plan" }]] });
+}
+
+// ---------- stage 37-40: radar, DCA, movers, academy ----------
+
+async function radar(c: ChatCtx) {
+  if (!c.userId) return needLink(c);
+  await tgTyping(c.chatId);
+  const r = await buildRadar(c.sb, c.userId, c.venue);
+  if (r.note) return tgSend(c.chatId, `${who(c)}<b>📡 Holdings radar</b>\n${esc(r.note)}`, { html: true, keyboard: [[...(link("/") ? [{ text: "Portfolio", url: link("/portfolio")! }] : []), { text: "Menu", callback_data: "menu" }]] });
+  const icon = (t: string) => (t === "down" ? "🔴" : t === "up" ? "🟢" : t === "amber" ? "🟡" : "▫️");
+  const lines = r.rows.slice(0, 12).map((x) => `${icon(x.tone)} <b>${esc(x.symbol)}</b> ${fmtUsd(x.valueUsd)} (${x.pct.toFixed(0)}%)\n   ${esc(x.action)}${x.flags.length ? `\n   ⚠ ${esc(x.flags[0])}` : ""}`);
+  const kb: Keyboard = [];
+  const tappable = r.rows.filter((x) => x.coingeckoId).slice(0, 6);
+  for (let k = 0; k < tappable.length; k += 2) kb.push(tappable.slice(k, k + 2).map((x) => ({ text: `${x.symbol} card`, callback_data: `setup:${ref({ id: x.coingeckoId!, symbol: x.symbol })}:4h` })));
+  kb.push([...(link("/") ? [{ text: "🌐 Full radar", url: link("/radar")! }] : []), { text: "Menu", callback_data: "menu" }]);
+  const out = `${who(c)}<b>📡 Holdings radar</b> · ${fmtUsd(r.totalUsd)}\n${esc(r.summary)}\n\n${lines.join("\n\n")}${r.unscreened.length ? `\n\n<i>Not screened: ${esc(r.unscreened.map((u) => u.symbol).join(", "))}</i>` : ""}`;
+  return tgSend(c.chatId, out.length > 4000 ? out.slice(0, 3990) + "…" : out, { html: true, keyboard: kb });
+}
+
+async function dcaCmd(c: ChatCtx, arg: string) {
+  const parts = arg.trim().split(/\s+/);
+  const cn = await resolveCoin(parts[0] ?? ""); if (!cn) return tgSend(c.chatId, "Which coin? Example: /dca BTC 200");
+  const budget = Math.max(5, Number(String(parts[1] ?? "").replace(/[$,]/g, "")) || 200);
+  const count = Number(parts[2]) || 4;
+  await tgTyping(c.chatId);
+  const z = await resolveZone(c.sb, cn);
+  if (!z) return tgSend(c.chatId, `No price data for ${esc(cn.symbol)} right now.`, { html: true });
+  const p = planLadder({ symbol: cn.symbol, price: z.price, zone: z.zone, budget, count, weighting: "even", zoneSource: z.source, takeProfit: z.takeProfit });
+  const lines = p.orders.map((o, i) => `${o.n}. Limit buy <b>${fmtUsd(o.price)}</b> · ${fmtUsd(o.usd)} · ${fmtNum(o.units, 6)} ${esc(cn.symbol)} · avg so far ${fmtUsd(p.partial[i].avg)}`);
+  const text = [
+    `${who(c)}<b>🪜 DCA plan: ${esc(cn.symbol)}</b>, ${fmtUsd(budget)} in ${p.orders.length} orders`,
+    `Now ${fmtUsd(p.price)} · zone ${fmtUsd(p.zone.low)} to ${fmtUsd(p.zone.high)} (${esc(p.zoneSource)})`,
+    "", ...lines, "",
+    `Average if all fill: <b>${fmtUsd(p.avgIfAll)}</b> (${fmtNum(p.unitsIfAll, 6)} ${esc(cn.symbol)})`,
+    `Review level: <b>${fmtUsd(p.reviewLevel)}</b>. ${esc(p.reviewNote)}`,
+    p.takeProfit.length ? `Take profit later: ${p.takeProfit.map((t) => `${esc(t.label)} ${fmtUsd(t.price)}`).join(" · ")}` : "",
+    "", ...p.notes.slice(0, 2).map((n) => `• ${esc(n)}`),
+  ].filter((x) => x !== null).join("\n");
+  return tgSend(c.chatId, text, { html: true, keyboard: [[{ text: `📊 ${cn.symbol} card`, callback_data: `setup:${ref(cn)}:1d` }, ...(link("/") ? [{ text: "🌐 Planner", url: link(`/dca?symbol=${cn.symbol}&budget=${budget}`)! }] : [])], [{ text: "Menu", callback_data: "menu" }]] });
+}
+
+async function movers(c: ChatCtx) {
+  await tgTyping(c.chatId);
+  const m = await buildMovers(c.sb, c.venue, { limit: 5 });
+  const pct = (v: number | null) => `${(v ?? 0) >= 0 ? "+" : ""}${(v ?? 0).toFixed(1)}%`;
+  const row = (r: { symbol: string; price: number | null; change24h: number | null; listed: boolean }) => `<b>${esc(r.symbol)}</b> ${pct(r.change24h)} · ${fmtUsd(r.price)}${r.listed ? " ✓" : ""}`;
+  const text = [
+    `${who(c)}<b>🚀 Market movers</b> (24h, over 50M cap)${m.breadth ? ` · ${m.breadth.up} up / ${m.breadth.down} down` : ""}`,
+    "", "<b>Gainers</b>", ...m.gainers.map(row),
+    "", "<b>Losers</b>", ...m.losers.map(row),
+    m.volume.length ? `\n<b>Volume spikes (4h)</b>\n${m.volume.slice(0, 4).map((v) => `${esc(v.symbol)} ${v.ratio}x · ${esc(v.outlook ?? "")}`).join("\n")}` : "",
+    m.confirmedNew.length ? `\n<b>Newly confirmed</b>\n${m.confirmedNew.slice(0, 5).map((x) => `✅ ${esc(x.symbol)} ${x.side ?? ""} ${esc(x.timeframe)}${x.listed ? " ✓" : ""}`).join("\n")}` : "",
+    m.confirmedLost.length ? `\n<b>Lost confirmation</b>\n${m.confirmedLost.slice(0, 4).map((x) => `⚠️ ${esc(x.symbol)} ${esc(x.timeframe)}`).join("\n")}` : "",
+    `\n<i>✓ = listed on ${esc(VENUE_META[c.venue].label)}. A big move is information, not a signal.</i>`,
+  ].filter(Boolean).join("\n");
+  const tap = [...m.gainers.slice(0, 2), ...m.losers.slice(0, 2)];
+  return tgSend(c.chatId, text, { html: true, keyboard: [tap.slice(0, 2).map((r) => ({ text: `${r.symbol} card`, callback_data: `setup:${ref({ id: r.id, symbol: r.symbol })}:4h` })), tap.slice(2, 4).map((r) => ({ text: `${r.symbol} card`, callback_data: `setup:${ref({ id: r.id, symbol: r.symbol })}:4h` })), [...(link("/") ? [{ text: "🌐 Movers page", url: link("/movers")! }] : []), { text: "Menu", callback_data: "menu" }]].filter((r) => r.length) });
+}
+
+async function learnDone(c: ChatCtx): Promise<string[]> {
+  const { data } = await c.sb.from("telegram_users").select("learn").eq("tg_user_id", c.tgUserId).maybeSingle();
+  return Array.isArray(data?.learn?.done) ? data!.learn.done : [];
+}
+async function learnList(c: ChatCtx) {
+  const done = await learnDone(c);
+  const kb: Keyboard = [];
+  for (let i = 0; i < LESSONS.length; i += 2) kb.push(LESSONS.slice(i, i + 2).map((l, j) => ({ text: `${done.includes(l.id) ? "✅" : l.emoji} ${l.short}`, callback_data: `lesson:${i + j}` })));
+  kb.push([...(link("/") ? [{ text: "🌐 Academy", url: link("/learn")! }] : []), { text: "Menu", callback_data: "menu" }]);
+  return tgSend(c.chatId, `${who(c)}<b>🎓 Academy</b>: ${LESSONS.length} short lessons with a quiz each. ${done.length}/${LESSONS.length} done.\nPick one:`, { html: true, keyboard: kb });
+}
+async function lessonShow(c: ChatCtx, i: number) {
+  const l = LESSONS[i]; if (!l) return learnList(c);
+  const text = `<b>${l.emoji} ${esc(l.title)}</b> · ${l.minutes} min\n<i>${esc(l.summary)}</i>\n\n${l.body.map(esc).join("\n\n")}\n\n<b>Remember</b>\n${l.keyPoints.map((k) => `• ${esc(k)}`).join("\n")}`;
+  return tgSend(c.chatId, text, { html: true, keyboard: [[{ text: `📝 Quiz (${l.quiz.length} questions)`, callback_data: `lq:${i}:0` }], [{ text: "📚 All lessons", callback_data: "learn" }, ...(LESSONS[i + 1] ? [{ text: "Next lesson ▶", callback_data: `lesson:${i + 1}` }] : [])]] });
+}
+async function quizAsk(c: ChatCtx, i: number, qi: number) {
+  const l = LESSONS[i]; const q = l?.quiz[qi]; if (!q) return learnList(c);
+  return tgSend(c.chatId, `<b>${l.emoji} ${esc(l.title)}</b> · question ${qi + 1}/${l.quiz.length}\n\n${esc(q.q)}\n\n${q.options.map((o, oi) => `<b>${"ABC"[oi]}</b>. ${esc(o)}`).join("\n")}`, { html: true, keyboard: [q.options.map((_, oi) => ({ text: "ABC"[oi], callback_data: `la:${i}:${qi}:${oi}` }))] });
+}
+async function quizAnswer(c: ChatCtx, i: number, qi: number, oi: number) {
+  const l = LESSONS[i]; const q = l?.quiz[qi]; if (!q) return learnList(c);
+  const ok = oi === q.answer;
+  const last = qi === l.quiz.length - 1;
+  if (last) {
+    const done = new Set(await learnDone(c)); done.add(l.id);
+    await c.sb.from("telegram_users").update({ learn: { done: [...done] } }).eq("tg_user_id", c.tgUserId).then(() => {}, () => {});
+  }
+  const kb: Keyboard = last ? [[...(LESSONS[i + 1] ? [{ text: `Next: ${LESSONS[i + 1].short}`, callback_data: `lesson:${i + 1}` }] : []), { text: "📚 All lessons", callback_data: "learn" }]] : [[{ text: "Next question ▶", callback_data: `lq:${i}:${qi + 1}` }]];
+  return tgSend(c.chatId, `${ok ? "✅ Correct." : `❌ Not quite. The answer: <b>${esc(q.options[q.answer])}</b>.`}\n${esc(q.why)}${last ? `\n\n🎓 Lesson "${esc(l.title)}" done.` : ""}`, { html: true, keyboard: kb });
 }
 
 // ---------- groups: leaderboard and shared watchlist ----------

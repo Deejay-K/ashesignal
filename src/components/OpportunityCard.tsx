@@ -117,6 +117,7 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
         </div>
         {/* secondary actions */}
         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+            {o.category === "spot" ? <Link className="btn-ghost !py-1 !text-[11px]" href={`/dca?symbol=${encodeURIComponent(o.symbol)}`}>DCA plan</Link> : null}
           <Link className="btn-ghost !py-1 !text-[11px]" href={o.href}>Full analysis</Link>
           {o.category !== "speculative" && o.venues?.length ? <a className="btn-ghost !py-1 !text-[11px]" target="_blank" rel="noreferrer" href={tradeLink(o.venues[0], o.symbol)} title={o.venues[0] === currentVenue() ? "Opens the spot pair on your active exchange in a new tab. You place the order yourself." : `Not listed on your active exchange; opens on ${VENUE_META[o.venues[0]].label} instead.`}>Open on {VENUE_META[o.venues[0]].label} ↗</a> : null}
           {s ? <Link className="btn-ghost !py-1 !text-[11px]" href={`/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, tf: o.timeframe ?? "", leverage: String(s.leverage?.recommended ?? 1) })}`}>Size it</Link> : null}

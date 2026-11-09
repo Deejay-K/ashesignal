@@ -68,6 +68,7 @@ export default function PortfolioPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold">Portfolio</h1>
+          <Link href="/radar" className="link text-xs">Holdings radar: what the engine says about each coin you hold</Link>
         <div className="mt-1"><CurrencyPicker /></div>
         <p className="text-sm text-fg-2">Read-only wallet tracking (public addresses) plus read-only exchange accounts for balances, trade history and realized P&amp;L. AsheSignal never asks for seed phrases or keys that can trade or withdraw.</p>
       </div>

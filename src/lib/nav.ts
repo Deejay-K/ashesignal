@@ -11,6 +11,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/plan", label: "Today's plan", hint: "Stance, open trades, setups in zone, budget" },
       { href: "/opportunities", label: "Trading Discovery", hint: "Confirmed, Watching, Speculative, Spot" },
+      { href: "/movers", label: "Market movers", hint: "Gainers, losers, volume, new confirmations" },
       { href: "/screener", label: "Screener", hint: "Top 100 by any metric" },
       { href: "/scanner", label: "Scanner", hint: "Any token or contract address" },
       { href: "/discover", label: "Discover", hint: "Movers, trending, new pools" },
@@ -24,6 +25,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/setups", label: "Journal", hint: "Trades you took" },
       { href: "/review", label: "Weekly review", hint: "Your week, flagged" },
       { href: "/performance", label: "Engine performance", hint: "Signal hit rates" },
+      { href: "/radar", label: "Holdings radar", hint: "Engine view on what you hold" },
       { href: "/track-record", label: "Track record", hint: "Every signal, graded; your record too" },
       { href: "/simulator", label: "Strategy simulator", hint: "What taking every signal would have done" },
       { href: "/watchlist", label: "Watchlist", hint: "Starred coins" },
@@ -38,6 +40,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/risk", label: "Position size", hint: "Risk calculator" },
       { href: "/guide", label: "Trade guide", hint: "Place it on your exchange" },
+      { href: "/dca", label: "DCA planner", hint: "Spread a spot buy across the zone" },
+      { href: "/learn", label: "Academy", hint: "Short lessons with quizzes" },
       { href: "/welcome", label: "Guided setup", hint: "Exchange, risk, notifications, Telegram" },
       { href: "/lab", label: "Engine Lab", hint: "Rule variants, backtests" },
       { href: "/glossary", label: "Glossary", hint: "Every label explained" },
