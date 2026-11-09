@@ -27,7 +27,7 @@ export interface AssistantAnswer { text: string; bullets?: string[]; links: { la
 
 type Intent = "coin" | "today" | "trades_for_me" | "my_trades" | "risk" | "regime" | "howto" | "spot" | "general";
 
-const COIN_STOP = new Set(["I", "A", "THE", "AND", "OR", "IS", "ON", "IN", "TO", "MY", "ME", "WHAT", "HOW", "WHY", "SHOULD", "CAN", "DO", "IT", "OF", "FOR", "BUY", "SELL", "LONG", "SHORT", "TODAY", "NOW", "TP", "SL", "RR", "BTC?", "USD", "USDT", "USDC", "OK", "RSI", "MACD", "ATR", "EMA", "SMA", "AI", "ETF", "CEX", "DEX", "COINBASE", "KRAKEN", "BINANCE", "OKX", "BYBIT"]);
+const COIN_STOP = new Set(["TRADE", "TRADES", "TRADING", "NEW", "CONFIRMED", "WATCHING", "PLAN", "HELP", "BEST", "GOOD", "TOP", "HOT", "WHICH", "WHEN", "WHERE", "WHO", "ANY", "ALL", "ARE", "WILL", "YES", "NO", "PNL", "ATH", "ATL", "FOMO", "FUD", "HODL", "NFT", "APR", "APY", "KYC", "CPI", "FOMC", "FED", "GDP", "US", "UK", "EU", "CAD", "EUR", "GBP", "LOL", "OMG", "PLS", "THX", "I", "A", "THE", "AND", "OR", "IS", "ON", "IN", "TO", "MY", "ME", "WHAT", "HOW", "WHY", "SHOULD", "CAN", "DO", "IT", "OF", "FOR", "BUY", "SELL", "LONG", "SHORT", "TODAY", "NOW", "TP", "SL", "RR", "BTC?", "USD", "USDT", "USDC", "OK", "RSI", "MACD", "ATR", "EMA", "SMA", "AI", "ETF", "CEX", "DEX", "COINBASE", "KRAKEN", "BINANCE", "OKX", "BYBIT"]);
 
 function detectIntent(q: string): Intent {
   const s = q.toLowerCase();
@@ -48,20 +48,30 @@ async function coinFromQuoted(t: string): Promise<{ id: string; symbol: string; 
   return detectCoin(m[1]);
 }
 
-/** Try to find a coin ticker or name in the question. */
-async function detectCoin(q: string): Promise<{ id: string; symbol: string; name: string } | null> {
+/** Well-known coins people write by name in normal sentences. */
+const COIN_NAMES: Record<string, string> = { bitcoin: "BTC", ethereum: "ETH", ether: "ETH", solana: "SOL", ripple: "XRP", cardano: "ADA", dogecoin: "DOGE", polkadot: "DOT", chainlink: "LINK", avalanche: "AVAX", litecoin: "LTC", polygon: "POL", tron: "TRX", shiba: "SHIB", toncoin: "TON", stellar: "XLM", cosmos: "ATOM", uniswap: "UNI", aptos: "APT", arbitrum: "ARB", optimism: "OP", sui: "SUI", pepe: "PEPE", near: "NEAR", hedera: "HBAR", injective: "INJ", render: "RENDER", kaspa: "KAS" };
+
+/**
+ * Find the coin a question is about. Only an explicit mention counts: a ticker written in CAPITALS ("SOL", "BTC"),
+ * a $ticker ("$sol"), or a well-known coin name ("solana", "bitcoin"). Ordinary words such as "trade", "today",
+ * "plan" or "coinbase" are never treated as coins, even when a token with that name exists.
+ */
+export async function detectCoin(q: string): Promise<{ id: string; symbol: string; name: string } | null> {
   const words = q.replace(/[^\w$ ]/g, " ").split(/\s+/).filter(Boolean);
-  const cands = words.map((w) => w.replace(/^\$/, "").toUpperCase()).filter((w) => w.length >= 2 && w.length <= 10 && !COIN_STOP.has(w) && /^[A-Z0-9]+$/.test(w));
+  const cands: string[] = [];
+  for (const w of words) {
+    const bare = w.replace(/^\$/, "");
+    if (bare.length < 2 || bare.length > 10 || !/^[A-Za-z0-9]+$/.test(bare)) continue;
+    const explicit = w.startsWith("$") || (bare === bare.toUpperCase() && /[A-Z]/.test(bare));
+    const named = COIN_NAMES[bare.toLowerCase()];
+    if (named) cands.push(named);
+    else if (explicit && !COIN_STOP.has(bare.toUpperCase())) cands.push(bare.toUpperCase());
+  }
   for (const c of cands.slice(0, 4)) {
     const r = await safe(cgSearch(c));
     if (!r.ok || !r.data.length) continue;
-    const exact = r.data.find((x) => x.symbol.toUpperCase() === c) ?? r.data.find((x) => x.name.toUpperCase() === c);
+    const exact = r.data.find((x) => x.symbol.toUpperCase() === c);
     if (exact) return { id: exact.id, symbol: exact.symbol.toUpperCase(), name: exact.name };
-  }
-  // names like "solana", "bitcoin"
-  for (const w of words.filter((w) => w.length >= 4 && /^[A-Za-z]+$/.test(w)).slice(0, 6)) {
-    const r = await safe(cgSearch(w));
-    if (r.ok && r.data[0] && r.data[0].name.toLowerCase() === w.toLowerCase()) return { id: r.data[0].id, symbol: r.data[0].symbol.toUpperCase(), name: r.data[0].name };
   }
   return null;
 }
@@ -139,7 +149,7 @@ export async function answer(input: AssistantInput): Promise<AssistantAnswer> {
   try {
     const sys = `You are AsheSignal's chat assistant, talking with a trader in a chat (website or Telegram). Hold a natural conversation: answer what they actually asked, use the recent conversation and any quoted message to understand follow-ups ("and its stop?", "why?", "what about ETH?"), and you may ask one short clarifying question when the request is ambiguous.
 Facts about the market right now (prices, levels, setups, categories, regime, the user's trades) must come ONLY from the JSON context, which is the app's live engine data; never invent or estimate them, and say so when the context lacks something. General crypto and trading knowledge (what a stop-limit is, how staking works, what RSI means, risk management) you may explain from your own knowledge.
-Be concrete and short: 1 to 5 sentences, then optional bullets (max 5). Plain language for a beginner. Never tell the user to buy or sell and never promise outcomes; describe what the engine shows and what the app's rules say. The user trades manually on ${vm.label}${vm.canShort ? "" : ", which is spot only (no shorts)"}. Never use em dashes or en dashes; use plain hyphens or commas. Return JSON: {"text": string, "bullets": string[]}.`;
+Be concrete and short: 1 to 5 sentences, then optional bullets (max 5). Plain language for a beginner. Never tell the user to buy or sell and never promise outcomes; describe what the engine shows and what the app's rules say. The user trades manually on ${vm.label}${vm.canShort ? "" : ", which is spot only (no shorts)"}. Never use em dashes or en dashes; use plain hyphens or commas. Write coin tickers in capitals (SOL, BTC). A coin only counts as mentioned when the user writes its ticker in capitals, a $ticker, or its well-known name; ordinary words like "trade" or "today" are never coins, so never answer as if they were. Return JSON: {"text": string, "bullets": string[]}.`;
     const convo = input.history?.length ? `\n\nRecent conversation (oldest first):\n${input.history.slice(-8).map((h) => `${h.role}: ${h.text.slice(0, 600)}`).join("\n")}` : "";
     const quoted = input.quoted ? `\n\nThe user is replying to this message you sent earlier:\n"""${input.quoted.slice(0, 1500)}"""` : "";
     const r = await askJson<{ text: string; bullets?: string[] }>(sys, `${convo}${quoted}\n\nUser: ${q}\n\nIntent guess: ${intent}\n\nContext JSON:\n${JSON.stringify(ctx).slice(0, 12000)}`, 800);

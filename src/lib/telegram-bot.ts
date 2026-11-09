@@ -1181,10 +1181,12 @@ async function freeText(c: ChatCtx, text: string) {
     const addr = text.trim().split(/\s+/)[0];
     if (addr && classifyAddress(addr) !== "unknown") return scanCard(c, addr);
     // A bare ticker ("SOL", "$btc", "link 1d") opens the coin card directly.
-    const m = text.trim().match(/^\$?([a-z0-9]{2,10})(?:\s+(1h|4h|1d))?$/i);
-    if (m && !/^(hi|hey|yo|ok|okay|yes|no|nope|why|how|thanks|thank|thx|cool|nice|help|menu|start|today|trades|more|and)$/i.test(m[1])) {
-      const cn = await resolveCoin(m[1]);
-      if (cn && cn.symbol.toUpperCase() === m[1].toUpperCase()) return setupCard(c, cn.id, (m[2] as Timeframe) || "4h", cn);
+    // Only an explicit ticker opens a card: written in CAPITALS ("SOL", "BTC 1d") or with a $ ("$sol").
+    const m = text.trim().match(/^(\$?)([A-Za-z0-9]{2,10})(?:\s+(1h|4h|1d))?$/);
+    const explicit = m && (m[1] === "$" || (m[2] === m[2].toUpperCase() && /[A-Z]/.test(m[2])));
+    if (m && explicit && !/^(OK|YES|NO|HI|HELP|MENU)$/.test(m[2].toUpperCase())) {
+      const cn = await resolveCoin(m[2]);
+      if (cn && cn.symbol.toUpperCase() === m[2].toUpperCase()) return setupCard(c, cn.id, (m[3] as Timeframe) || "4h", cn);
     }
   }
   return aiChat(c, text);
@@ -1221,7 +1223,9 @@ async function aiChat(c: ChatCtx, text: string) {
     const cc = a.context?.coin as any;
     const coinNow = cc?.id ? { id: String(cc.id), symbol: String(cc.symbol), name: String(cc.name ?? cc.symbol) } : null;
     await saveMemory(c, { turns: [...mem.turns, { role: "user", text: text.slice(0, 600) }, { role: "assistant", text: [a.text, ...(a.bullets ?? [])].join(" ").slice(0, 900) }], coin: coinNow ?? mem.coin ?? null, at: Date.now() });
-    const body = [esc(a.text), ...(a.bullets?.length ? ["", ...a.bullets.map((b) => `• ${esc(b)}`)] : [])].join("\n");
+    // Tickers in bold so the coin being discussed stands out.
+    const boldTickers = (t: string) => esc(t).replace(/\b([A-Z][A-Z0-9]{1,9})\b/g, (w) => (coinNow && w === coinNow.symbol) || /^(BTC|ETH|SOL|XRP|ADA|DOGE|BNB|LINK|AVAX|TON|SUI|PEPE|DOT|LTC|TRX|USDC|USDT)$/.test(w) ? `<b>${w}</b>` : w);
+    const body = [boldTickers(a.text), ...(a.bullets?.length ? ["", ...a.bullets.map((b) => `• ${boldTickers(b)}`)] : [])].join("\n");
     // Buttons that match what was asked, so the answer leads straight to the card or section it talks about.
     const kb: Keyboard = [];
     if (coinNow) kb.push([{ text: `📊 ${coinNow.symbol} card`, callback_data: `setup:${ref(coinNow)}:4h` }, { text: `⭐ Watch ${coinNow.symbol}`, callback_data: `watch:${ref(coinNow)}` }]);
