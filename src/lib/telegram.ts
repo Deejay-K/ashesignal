@@ -17,12 +17,17 @@ async function call<T = unknown>(method: string, body: Record<string, unknown>):
 /** Escape for HTML parse mode. */
 export const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-export async function tgSend(chatId: string, text: string, opts: { url?: string; label?: string; keyboard?: Keyboard; html?: boolean } = {}): Promise<boolean> {
+/** Persistent buttons under the text box (Telegram "reply keyboard"); their labels arrive as plain messages. */
+export const REPLY_KEYBOARD: string[][] = [["☀️ Plan", "✅ Trades", "👀 Watching"], ["🔍 Coin", "📐 Size", "👤 Me"], ["📋 Menu", "⭐ Watchlist", "🔔 Alerts"]];
+
+export async function tgSend(chatId: string, text: string, opts: { url?: string; label?: string; keyboard?: Keyboard; html?: boolean; replyKeyboard?: string[][] | "remove" } = {}): Promise<boolean> {
   if (!TELEGRAM_ENABLED()) return false;
   const body: Record<string, unknown> = { chat_id: chatId, text: text.slice(0, 4000), disable_web_page_preview: true };
   if (opts.html) body.parse_mode = "HTML";
   const kb: Keyboard = opts.keyboard ?? (opts.url ? [[{ text: opts.label ?? "Open in AsheSignal", url: opts.url }]] : []);
-  if (kb.length) body.reply_markup = { inline_keyboard: kb };
+  if (opts.replyKeyboard === "remove") body.reply_markup = { remove_keyboard: true };
+  else if (opts.replyKeyboard) body.reply_markup = { keyboard: opts.replyKeyboard.map((r) => r.map((t) => ({ text: t }))), resize_keyboard: true, is_persistent: true, input_field_placeholder: "Tap a button, or type a coin" };
+  else if (kb.length) body.reply_markup = { inline_keyboard: kb };
   const r = await call("sendMessage", body);
   if (!r.ok && opts.html) { // HTML rejected (bad entity): retry as plain text
     return (await call("sendMessage", { chat_id: chatId, text: text.replace(/<[^>]+>/g, "").slice(0, 4000), disable_web_page_preview: true, ...(kb.length ? { reply_markup: { inline_keyboard: kb } } : {}) })).ok;

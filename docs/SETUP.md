@@ -346,3 +346,11 @@ Included fixes from the previous zips: Vercel cron schedules are daily (Hobby pl
 - **Strategy simulator** `/simulator` (Portfolio menu) and bot `/simulate [balance] [risk%]`: replays every resolved signal from the log with fixed fractional risk, exchange filter, max open trades, kinds and timeframes; end balance, return, drawdown, profit factor, streaks, equity curve, by month. Past outcomes only, no fees or slippage, clearly labelled.
 - **Guided setup** `/welcome` (Tools menu, and "guided setup" on the dashboard checklist): exchange, balance and risk limits, notifications, Telegram link, first look.
 - **Bot**: `/compare BTC ETH [tf]` side by side with a verdict; `/events` calendar with time-to-event; `/heat` open risk vs limits and budget left; `/simulate`; morning plan toggle and hour in `/settings`.
+
+## 34. Stage 36.1 - the bot is all buttons
+
+No typed command is required any more:
+- A **persistent keyboard under the text box** (Plan, Trades, Watching, Coin, Size, Me, Menu, Watchlist, Alerts) appears on /start (or /keyboard). Tapping a label is the same as the command.
+- Every command that needed an argument now has a **guided prompt** when pressed as a button or sent bare: Coin / scan, Size, Price alert (coin, then Above/Below buttons, then price), Record a trade, Add to watchlist, Compare, Link account. Each prompt has a Cancel button.
+- The main menu gained Compare, Simulator, Events, Heat, Record a trade, Price alert, Add to watchlist.
+- Plain words work too: "menu", "plan", "trades", "me", "heat", "events" and so on.

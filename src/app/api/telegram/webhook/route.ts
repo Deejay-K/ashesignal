@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { TELEGRAM_ENABLED, tgSend } from "@/lib/telegram";
-import { loadActor, handleCommand, handleCallback, handleStateReply, handleInline, touchGroupMember, type ChatCtx } from "@/lib/telegram-bot";
+import { loadActor, handleCommand, handleCallback, handleStateReply, handleInline, touchGroupMember, labelToCommand, type ChatCtx } from "@/lib/telegram-bot";
 import { ensureEngineConfig } from "@/lib/engine-config";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     if (!text.startsWith("/") && chat.state?.flow) {
       if (await handleStateReply(ctx, text.replace(/@\w+/g, "").trim())) return NextResponse.json({ ok: true });
     }
-    if (isGroup && !text.startsWith("/")) {
+    if (isGroup && !text.startsWith("/") && !labelToCommand(text)) {
       // In groups only react when addressed (mention or reply to the bot), so the bot does not answer every message.
       const mentioned = /@\w*bot\b/i.test(text) || msg.reply_to_message?.from?.is_bot;
       if (!mentioned) return NextResponse.json({ ok: true });

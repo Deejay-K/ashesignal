@@ -2,7 +2,7 @@
 // same engine functions the website uses. Nothing here places orders.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { tgSend, tgPhoto, tgEdit, tgAnswerCallback, tgTyping, esc, linkCode, type Keyboard } from "./telegram";
+import { tgSend, tgPhoto, tgEdit, tgAnswerCallback, tgTyping, esc, linkCode, REPLY_KEYBOARD, type Keyboard } from "./telegram";
 import { answer } from "./ai/assistant";
 import { globalConditions, summarize } from "./market/conditions";
 import { marketRegime } from "./market/regime";
@@ -42,13 +42,15 @@ function menuFor(c: ChatCtx): Keyboard {
     [{ text: "☀️ Today's plan", callback_data: "plan" }, { text: "🏆 Top 3 for me", callback_data: "top" }],
     [{ text: "🌡 Today", callback_data: "today" }, { text: "📊 Screener", callback_data: "screener:score" }],
     [{ text: "📈 Track record", callback_data: "record" }, { text: c.isGroup ? "⭐ Group watchlist" : "⭐ Watchlist", callback_data: "watchlist" }],
-    [{ text: "🔍 Coin / scan", callback_data: "howcoin" }, { text: "📐 Size a trade", callback_data: "howsize" }],
+    [{ text: "🔍 Coin / scan", callback_data: "ask:coin" }, { text: "⚖️ Compare", callback_data: "ask:compare" }, { text: "📐 Size a trade", callback_data: "ask:size" }],
+    [{ text: "🧮 Simulator", callback_data: "simulate" }, { text: "📆 Events", callback_data: "events" }, { text: "🌡 Heat", callback_data: "heat" }],
   ];
   if (c.isGroup) kb.push([{ text: "🏅 Leaderboard", callback_data: "leaderboard" }, { text: "🙋 Join leaderboard", callback_data: "optin:1" }]);
-  kb.push([{ text: "👤 My trades", callback_data: "me" }, { text: "📒 Journal", callback_data: "journal" }, { text: "🔔 Alerts", callback_data: "alerts" }]);
+  kb.push([{ text: "👤 My trades", callback_data: "me" }, { text: "📒 Journal", callback_data: "journal" }, { text: "✍️ Record a trade", callback_data: "ask:take" }]);
+  kb.push([{ text: "🔔 Alerts", callback_data: "alerts" }, { text: "➕ Price alert", callback_data: "ask:alert" }, { text: "⭐ Add to watchlist", callback_data: "ask:watch" }]);
   kb.push([{ text: "📅 Weekly review", callback_data: "review" }, { text: "☀️ Digest now", callback_data: "digest" }]);
   kb.push([{ text: "📣 Signals on/off", callback_data: "signals" }, { text: "⚙️ Exchange", callback_data: "exchange" }, { text: "⚙️ Settings", callback_data: "settings" }]);
-  kb.push([{ text: "📖 Trade guide", callback_data: "guide" }, { text: c.userId ? "🔓 Unlink" : "🔗 Link account", callback_data: c.userId ? "settings:unlink" : "howlink" }, { text: "❓ Help", callback_data: "help" }]);
+  kb.push([{ text: "📖 Trade guide", callback_data: "guide" }, { text: c.userId ? "🔓 Unlink" : "🔗 Link account", callback_data: c.userId ? "settings:unlink" : "ask:link" }, { text: "❓ Help", callback_data: "help" }]);
   return kb;
 }
 
@@ -87,11 +89,12 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
       // Deep links from groups: /start take_<ref>_<tf>_<real|paper>
       const m = arg.match(/^take_(.+)_(1h|4h|1d|15m|1w)_(real|paper)$/i);
       if (m) return takeStart(c, m[1], m[2] as Timeframe, m[3].toLowerCase() === "paper");
-      return sendMenu(c);
+      return sendMenu(c, true);
     }
+    case "/keyboard": return sendMenu(c, true);
     case "/menu": return sendMenu(c);
     case "/help": return help(c);
-    case "/link": return linkAccount(c, arg);
+    case "/link": return arg ? linkAccount(c, arg) : askStart(c, "link");
     case "/unlink": return unlink(c);
     case "/trades": case "/confirmed": return category(c, "confirmed");
     case "/watching": return category(c, "watching");
@@ -99,23 +102,23 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/spot": return category(c, "spot");
     case "/today": case "/conditions": return today(c);
     case "/regime": return today(c);
-    case "/coin": return coin(c, arg);
-    case "/scan": case "/token": case "/ca": return scanCard(c, arg);
+    case "/coin": return arg ? coin(c, arg) : askStart(c, "coin");
+    case "/scan": case "/token": case "/ca": return arg ? scanCard(c, arg) : askStart(c, "scan");
     case "/screener": return screener(c, arg || "score");
-    case "/size": return size(c, arg);
-    case "/alert": return alertCreate(c, arg);
+    case "/size": return arg ? size(c, arg) : askStart(c, "size");
+    case "/alert": return arg ? alertCreate(c, arg) : askStart(c, "alert");
     case "/alerts": return alertsList(c);
     case "/me": return me(c);
     case "/journal": return journal(c);
-    case "/take": return takeStart(c, arg);
+    case "/take": return arg ? takeStart(c, arg) : askStart(c, "take");
     case "/exchange": return exchange(c, arg);
-    case "/watch": case "/star": return c.isGroup ? groupWatchAdd(c, arg) : watchAdd(c, arg);
+    case "/watch": case "/star": return !arg ? askStart(c, "watch") : c.isGroup ? groupWatchAdd(c, arg) : watchAdd(c, arg);
     case "/unwatch": return c.isGroup ? groupWatchRemove(c, arg) : watchRemove(c, arg);
     case "/watchlist": return c.isGroup ? groupWatchlist(c) : watchlist(c);
     case "/mywatch": return watchAdd(c, arg);
     case "/plan": return plan(c);
     case "/simulate": case "/sim": return simulateCmd(c, arg);
-    case "/compare": case "/vs": return compare(c, arg);
+    case "/compare": case "/vs": return arg.trim().split(/\s+/).filter(Boolean).length >= 2 ? compare(c, arg) : askStart(c, "compare");
     case "/events": case "/calendar": return events(c);
     case "/heat": return heat(c);
     case "/record": case "/trackrecord": return record(c);
@@ -129,8 +132,14 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/signals": return signals(c, arg);
     case "/guide": return tgSend(c.chatId, `<b>How to place a trade on ${esc(VENUE_META[c.venue].label)}</b>\nShort version: limit order inside the entry zone, stop loss attached, take-profits in parts (30/30/40), stop to break-even after TP1. The full click-by-click guide with your numbers opens from any setup card.${VENUE_META[c.venue].canShort ? "" : `\n\n${esc(VENUE_META[c.venue].label)} is spot only: SHORT setups cannot be opened there.`}`, { html: true, keyboard: [[{ text: "Open the trade guide", url: link(`/guide?venue=${c.venue}`) ?? "https://t.me" }]] });
     case "/cancel": await setState(c, null); return tgSend(c.chatId, "Cancelled.");
+    case "/askcoin": return askStart(c, "coin");
+    case "/asksize": return askStart(c, "size");
     case "/untake": case "/close": return me(c);
-    default: return freeText(c, fullText);
+    default: {
+      const mapped = labelToCommand(fullText);
+      if (mapped) return handleCommand(c, mapped, "", mapped);
+      return freeText(c, fullText);
+    }
   }
 }
 
@@ -141,6 +150,9 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "menu": return sendMenu(c);
     case "journal": return journal(c);
     case "guide": return handleCommand(c, "/guide", "", "/guide");
+    case "ask": return askStart(c, a);
+    case "cancelflow": await setState(c, null); return tgSend(c.chatId, "Cancelled.", { keyboard: [[{ text: "Menu", callback_data: "menu" }]] });
+    case "askdir": return askDir(c, a);
     case "howcoin": return tgSend(c.chatId, "Send a ticker or a contract address, for example:\n<code>SOL</code> or <code>/coin SOL 1d</code>\n<code>/scan 0x...</code> or just paste the address\nIn any chat: type <code>@AsheSignalBot SOL</code> to share a card.", { html: true });
     case "howsize": return tgSend(c.chatId, "Position size: <code>/size ENTRY STOP [balance] [risk%]</code>\nExample: <code>/size 0.594 0.583 500 1</code>\nLinked accounts can leave out balance and risk%; the Risk page values are used.", { html: true, keyboard: [...(link("/") ? [[{ text: "Full calculator", url: link("/risk")! }]] : [])] });
     case "howlink": return needLink(c);
@@ -188,13 +200,78 @@ export async function handleStateReply(c: ChatCtx, text: string): Promise<boolea
   if (!st?.flow) return false;
   if (st.flow === "take") return takeStep(c, text);
   if (st.flow === "close") return closeStep(c, text);
+  if (st.flow === "ask") return askStep(c, text);
   return false;
+}
+
+/** Reply-keyboard labels and plain words that map to commands, so nothing needs a slash. */
+const LABELS: Record<string, string> = {
+  "☀️ plan": "/plan", plan: "/plan", "✅ trades": "/trades", trades: "/trades", confirmed: "/trades", "👀 watching": "/watching", watching: "/watching",
+  "🔍 coin": "/askcoin", coin: "/askcoin", scan: "/askcoin", "📐 size": "/asksize", size: "/asksize", "👤 me": "/me", me: "/me", "my trades": "/me",
+  "📋 menu": "/menu", menu: "/menu", "⭐ watchlist": "/watchlist", watchlist: "/watchlist", "🔔 alerts": "/alerts", alerts: "/alerts",
+  today: "/today", spot: "/spot", spec: "/spec", speculative: "/spec", top: "/top", screener: "/screener", record: "/record", events: "/events", heat: "/heat",
+  review: "/review", digest: "/digest", settings: "/settings", help: "/help", journal: "/journal", guide: "/guide", exchange: "/exchange", simulate: "/simulate", simulator: "/simulate",
+};
+export function labelToCommand(text: string): string | null { return LABELS[text.trim().toLowerCase()] ?? null; }
+
+// ---------- "ask" flows: every command that needs an argument can be driven by buttons ----------
+
+const ASK_PROMPTS: Record<string, string> = {
+  coin: "Which coin? Send a ticker like <code>SOL</code>, a name, or a contract address (any chain). Add a timeframe if you like: <code>SOL 1d</code>.",
+  scan: "Paste the contract address (Solana, Ethereum, Base, BNB, Polygon, Arbitrum, Avalanche, Optimism, Sui, TON...).",
+  size: "Position size. Send <b>entry price</b> and <b>stop price</b> separated by a space, e.g. <code>0.594 0.583</code>. Add balance and risk% if you are not linked: <code>0.594 0.583 500 1</code>.",
+  alert: "Price alert. Which coin? Send a ticker like <code>BTC</code>.",
+  take: "Record a trade. Which coin did you trade? Send a ticker like <code>SOL</code> (add 1h/4h/1d for the timeframe).",
+  watch: "Add to the watchlist. Which coin? Send a ticker like <code>SOL</code>.",
+  compare: "Compare two coins. Send both tickers, e.g. <code>BTC ETH</code> (optionally a timeframe: <code>BTC ETH 1d</code>).",
+  link: "Link your account. Open the website, Account page, Telegram section, and send me the 6-character code shown there.",
+};
+async function askStart(c: ChatCtx, kind: string) {
+  if (!ASK_PROMPTS[kind]) return sendMenu(c);
+  if (kind === "link" && c.userId) return tgSend(c.chatId, "Already linked. Use Settings to unlink.", { keyboard: [[{ text: "Settings", callback_data: "settings" }]] });
+  if (["alert", "take", "watch", "link"].includes(kind) && !c.userId && kind !== "link") return needLink(c);
+  if (c.isGroup && ["take", "alert", "link", "size"].includes(kind)) return tgSend(c.chatId, `${who(c)}Open a private chat with me for that one (tap my name, then Start), so your numbers are not posted in the group.`, { html: true });
+  await setState(c, { flow: "ask", kind, step: 1, data: {} });
+  return tgSend(c.chatId, `${ASK_PROMPTS[kind]}\nSend /cancel to stop.`, { html: true, keyboard: [[{ text: "✖ Cancel", callback_data: "cancelflow" }]] });
+}
+async function askDir(c: ChatCtx, dir: string) {
+  const st = c.state; if (st?.flow !== "ask" || st.kind !== "alert" || !st.data?.coin) return sendMenu(c);
+  st.data.dir = dir === "below" ? "below" : "above"; st.step = 3; await setState(c, st);
+  return tgSend(c.chatId, `Alert when ${esc(st.data.coin.symbol)} goes <b>${st.data.dir}</b> which price? (current ${st.data.price ? fmtUsd(st.data.price) : "unknown"})`, { html: true });
+}
+async function askStep(c: ChatCtx, text: string): Promise<boolean> {
+  const st = c.state; const t = text.trim();
+  if (!t) return true;
+  const done = async () => setState(c, null);
+  switch (st.kind) {
+    case "coin": await done(); await (classifyAddress(t.split(/\s+/)[0]) !== "unknown" ? scanCard(c, t) : coin(c, t)); return true;
+    case "scan": await done(); await scanCard(c, t); return true;
+    case "size": await done(); await size(c, t); return true;
+    case "take": await done(); { const [q, tf] = t.split(/\s+/); await takeStart(c, q, (["1h", "4h", "1d", "15m", "1w"].includes(tf) ? tf : "4h") as Timeframe); } return true;
+    case "watch": await done(); await (c.isGroup ? groupWatchAdd(c, t) : watchAdd(c, t)); return true;
+    case "compare": { const parts = t.split(/\s+/).filter(Boolean); if (parts.length < 2) { await tgSend(c.chatId, "Send two tickers, e.g. BTC ETH."); return true; } await done(); await compare(c, t); return true; }
+    case "link": await done(); await linkAccount(c, t); return true;
+    case "alert": {
+      if (st.step === 1) {
+        const cn = await resolveCoin(t.split(/\s+/)[0]); if (!cn) { await tgSend(c.chatId, `Could not find "${esc(t)}". Try the ticker.`, { html: true }); return true; }
+        const mk = await safe(getMarketsByIds([cn.id])); const price = mk.ok ? mk.data[0]?.priceUsd ?? null : null;
+        st.data = { coin: cn, price }; st.step = 2; await setState(c, st);
+        await tgSend(c.chatId, `${esc(cn.symbol)}${price ? ` is ${fmtUsd(price)}` : ""}. Alert when it goes:`, { html: true, keyboard: [[{ text: "⬆️ Above a price", callback_data: "askdir:above" }, { text: "⬇️ Below a price", callback_data: "askdir:below" }], [{ text: "✅ When it confirms", callback_data: `confirmalert:${ref(cn)}` }, { text: "✖ Cancel", callback_data: "cancelflow" }]] });
+        return true;
+      }
+      if (st.step === 2) { const d = /below|under|down/i.test(t) ? "below" : /above|over|up/i.test(t) ? "above" : null; if (!d) { await tgSend(c.chatId, "Tap Above or Below."); return true; } await askDir(c, d); return true; }
+      if (st.step === 3) { const price = Number(t.replace(/[$,]/g, "")); if (!(price > 0)) { await tgSend(c.chatId, "Send the price as a number."); return true; } await done(); await alertCreate(c, `${st.data.coin.symbol} ${st.data.dir} ${price}`); return true; }
+      return true;
+    }
+    default: await done(); return false;
+  }
 }
 
 // ---------- screens ----------
 
-async function sendMenu(c: ChatCtx) {
+async function sendMenu(c: ChatCtx, withReplyKeyboard = false) {
   const vm = VENUE_META[c.venue];
+  if (withReplyKeyboard && !c.isGroup) await tgSend(c.chatId, "Buttons are under the text box: Plan, Trades, Coin, Size, Me, Menu and more. You never have to type a command.", { replyKeyboard: REPLY_KEYBOARD });
   return tgSend(c.chatId, `<b>AsheSignal</b>${c.isGroup && c.firstName ? ` for ${esc(c.firstName)}` : ""}\nYour exchange: <b>${esc(vm.label)}</b>${vm.canShort ? "" : " (spot only, longs)"}${c.userId ? "" : "\nNot linked to an account: /link CODE from the Account page for journal, alerts and digest."}\n\nPick a section:`, { html: true, keyboard: menuFor(c) });
 }
 
