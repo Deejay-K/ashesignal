@@ -81,7 +81,7 @@ create table if not exists public.alerts (
   user_id uuid not null references auth.users(id) on delete cascade,
   asset_key text not null,
   symbol text not null,
-  type text not null check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','liquidity_change','new_listing','sentiment_zone')),
+  type text not null check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','sentiment_zone','liquidity_change','new_listing','macro_event','whale_transfer','new_confirmed','trade_update','spot_zone','entry_zone')),
   timeframe text,
   params jsonb not null default '{}'::jsonb,   -- e.g. {"price": 65000} or {"rsi": 30}
   channels text[] default '{push}',            -- push | email
@@ -275,7 +275,7 @@ create policy "seen listings readable" on public.seen_listings for select using 
 
 -- allow the two new alert types
 alter table public.alerts drop constraint if exists alerts_type_check;
-alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','liquidity_change','new_listing','sentiment_zone'));
+alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','sentiment_zone','liquidity_change','new_listing','macro_event','whale_transfer','new_confirmed','trade_update','spot_zone','entry_zone'));
 
 -- ---------- Stage 9 additions (safe to re-run) ----------
 -- Read-only exchange API keys, encrypted with EXCHANGE_KEY_SECRET before they reach the database.
@@ -298,7 +298,7 @@ create policy "own exchange accounts" on public.exchange_accounts for all using 
 alter table public.holdings_snapshots alter column wallet_id drop not null;
 alter table public.saved_setups add column if not exists leverage numeric;
 alter table public.alerts drop constraint if exists alerts_type_check;
-alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','liquidity_change','new_listing','sentiment_zone','macro_event'));
+alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','sentiment_zone','liquidity_change','new_listing','macro_event','whale_transfer','new_confirmed','trade_update','spot_zone','entry_zone'));
 
 -- ---------- Stage 14 additions (safe to re-run) ----------
 -- Market-wide large transfers logged by the worker (watched DEX tokens + top ERC20 + trending)
@@ -322,7 +322,7 @@ drop policy if exists "whale events readable" on public.whale_events;
 create policy "whale events readable" on public.whale_events for select using (true);
 
 alter table public.alerts drop constraint if exists alerts_type_check;
-alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','liquidity_change','new_listing','sentiment_zone','macro_event','whale_transfer'));
+alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','sentiment_zone','liquidity_change','new_listing','macro_event','whale_transfer','new_confirmed','trade_update','spot_zone','entry_zone'));
 
 -- ---------- Stage 15 additions (safe to re-run) ----------
 create table if not exists public.coin_metrics (
@@ -426,7 +426,7 @@ alter table public.signal_log add column if not exists venue text;
 
 -- new alert types: new_confirmed (global, filtered), trade_update (per taken setup; created automatically)
 alter table public.alerts drop constraint if exists alerts_type_check;
-alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','sentiment_zone','liquidity_change','new_listing','macro_event','whale_transfer','new_confirmed','trade_update','spot_zone'));
+alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','sentiment_zone','liquidity_change','new_listing','macro_event','whale_transfer','new_confirmed','trade_update','spot_zone','entry_zone'));
 
 -- ---------- Stage 21: daily digest ----------
 alter table public.profiles add column if not exists digest_enabled boolean default false;
@@ -503,7 +503,7 @@ create table if not exists telegram_users (
 alter table telegram_users enable row level security;
 alter table telegram_chats alter column venue drop not null;
 
--- Stage 33: entry-zone alerts
+-- Stage 33: entry-zone alerts (constraints are added NOT VALID so re-running never fails on rows created under an older list; new rows are still checked)
 alter table public.alerts drop constraint if exists alerts_type_check;
 alter table public.alerts add constraint alerts_type_check check (type in ('price_above','price_below','pct_move','rsi_above','rsi_below','macd_cross','pattern','breakout','breakdown','tp','sl','volume_spike','sentiment_zone','liquidity_change','new_listing','macro_event','whale_transfer','new_confirmed','trade_update','spot_zone','entry_zone'));
 
