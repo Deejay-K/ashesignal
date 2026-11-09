@@ -25,6 +25,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/review", label: "Weekly review", hint: "Your week, flagged" },
       { href: "/performance", label: "Engine performance", hint: "Signal hit rates" },
       { href: "/track-record", label: "Track record", hint: "Every signal, graded; your record too" },
+      { href: "/simulator", label: "Strategy simulator", hint: "What taking every signal would have done" },
       { href: "/watchlist", label: "Watchlist", hint: "Starred coins" },
     ],
   },
@@ -37,6 +38,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/risk", label: "Position size", hint: "Risk calculator" },
       { href: "/guide", label: "Trade guide", hint: "Place it on your exchange" },
+      { href: "/welcome", label: "Guided setup", hint: "Exchange, risk, notifications, Telegram" },
       { href: "/lab", label: "Engine Lab", hint: "Rule variants, backtests" },
       { href: "/glossary", label: "Glossary", hint: "Every label explained" },
     ],

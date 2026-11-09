@@ -18,7 +18,7 @@ export async function PUT(req: NextRequest) {
   const { data: u } = await sb.auth.getUser();
   if (!u.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const allowed = ["display_name", "trading_balance", "portfolio_value", "risk_pct", "max_exposure_pct", "default_leverage", "preferences", "digest_enabled", "digest_hour", "discord_webhook"];
+  const allowed = ["display_name", "trading_balance", "portfolio_value", "risk_pct", "max_exposure_pct", "default_leverage", "preferences", "digest_enabled", "digest_hour", "plan_enabled", "plan_hour", "discord_webhook"];
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const k of allowed) if (k in b) patch[k] = b[k];
   if ("discord_webhook" in patch) {

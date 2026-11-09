@@ -44,7 +44,7 @@ function keyboard(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[]): Keyb
   if (guide) row.push({ text: "📖 How to place it", url: guide });
   if (tv) row.push({ text: `↗ Open on ${VENUE_META[tv].label}`, url: tradeLink(tv, sig.symbol) });
   if (row.length) kb.push(row);
-  kb.push([{ text: "🔎 Full card", callback_data: `setup:${id}:${tf}` }, ...(link("/") ? [{ text: "🌐 Website", url: link(`/token/${id}?tf=${tf}`)! }] : [])]);
+  kb.push([{ text: "🔎 Full card", callback_data: `setup:${id}:${tf}` }, ...(link("/") ? [{ text: "🌐 Full page", url: link(`/s/${sig.coingeckoId}/${tf}`)! }] : [])]);
   return kb;
 }
 

@@ -73,7 +73,7 @@ export async function runFollowups(sb: SupabaseClient, budgetMs = 40_000): Promi
     if (close) patch.closed_at = new Date().toISOString();
     await sb.from("signal_followups").update(patch).eq("id", r.id);
     const listed = listingsUnknown ? ([...VENUE_IDS] as VenueId[]) : venuesFor(r.symbol, listings, null);
-    const kb: Keyboard = [[{ text: "🔎 Full card", callback_data: `setup:${r.coingecko_id.length <= 36 ? r.coingecko_id : `~${r.symbol}`}:${r.timeframe}` }, ...(link("/") ? [{ text: "Journal", url: link("/setups")! }] : [])]];
+    const kb: Keyboard = [[{ text: "🔎 Full card", callback_data: `setup:${r.coingecko_id.length <= 36 ? r.coingecko_id : `~${r.symbol}`}:${r.timeframe}` }, ...(link("/") ? [{ text: "🌐 Full page", url: link(`/s/${r.coingecko_id}/${r.timeframe}`)! }, { text: "Journal", url: link("/setups")! }] : [])]];
     for (const rc of recipients) {
       if (!canReceive(rc, listed, r.side)) continue;
       if (await tgSend(rc.chatId, text, { html: true, keyboard: kb })) sent++;

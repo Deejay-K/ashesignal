@@ -22,6 +22,8 @@ import { buildWeeklyReview } from "./review";
 import { digestShared, buildDigest } from "./digest";
 import { buildPlan } from "./plan";
 import { buildTrackRecord } from "./track-record";
+import { simulate, SIM_DEFAULTS } from "./simulator";
+import { globalConditions as conditionsForEvents } from "./market/conditions";
 import { safe } from "./fetch";
 import type { Timeframe } from "./types";
 import type { Opportunity } from "./market/opportunities";
@@ -112,6 +114,10 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/watchlist": return c.isGroup ? groupWatchlist(c) : watchlist(c);
     case "/mywatch": return watchAdd(c, arg);
     case "/plan": return plan(c);
+    case "/simulate": case "/sim": return simulateCmd(c, arg);
+    case "/compare": case "/vs": return compare(c, arg);
+    case "/events": case "/calendar": return events(c);
+    case "/heat": return heat(c);
     case "/record": case "/trackrecord": return record(c);
     case "/leaderboard": case "/lb": return leaderboard(c);
     case "/optin": return optIn(c, true);
@@ -157,6 +163,9 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "watch": return a === "rm" ? (c.isGroup ? groupWatchRemove(c, b) : watchRemove(c, b)) : c.isGroup ? groupWatchAdd(c, a) : watchAdd(c, a);
     case "watchlist": return c.isGroup ? groupWatchlist(c) : watchlist(c);
     case "plan": return plan(c);
+    case "simulate": return simulateCmd(c, a ? `${a} ${b ?? ""}` : "");
+    case "events": return events(c);
+    case "heat": return heat(c);
     case "record": return record(c);
     case "leaderboard": return leaderboard(c);
     case "optin": return optIn(c, a !== "0");
@@ -365,7 +374,7 @@ async function setupCard(c: ChatCtx, id: string, tf: Timeframe, known?: { id: st
     kb.push([{ text: "🔔 Alert at TP1/SL", callback_data: `alerttp:${ref(cn)}:${tf}` }, { text: "🔔 Entering zone", callback_data: `zonealert:${ref(cn)}:${tf}` }]);
     kb.push([...(s.kind !== "confirmed" ? [{ text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }] : []), { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
     const guide = link(`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: cn.symbol, leverage: String(s.leverage.recommended), venue: c.venue })}`);
-    kb.push([{ text: "📖 How to place it", url: guide ?? "https://t.me" }, { text: "📈 Chart", url: link(`/token/${cn.id}?tf=${tf}`) ?? "https://t.me" }]);
+    kb.push([{ text: "📖 How to place it", url: guide ?? "https://t.me" }, { text: "🌐 Full page", url: link(`/s/${cn.id}/${tf}`) ?? "https://t.me" }]);
     // Candle chart with the setup drawn on it first (short caption: Telegram caps captions at 1024 chars), then the full card.
     const chart = link(`/api/chart?${new URLSearchParams({ symbol: cn.symbol, id: cn.id, tf, side: s.side, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? "") })}`);
     const og = link(`/api/og?${new URLSearchParams({ symbol: cn.symbol, tf, side: s.side, kind: s.kind, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? s.stopLosses[0].price), rr: String(s.riskRewardTp2), lev: String(s.leverage.recommended), conf: String(s.confidence), style: s.style, theme: "foundry" })}`);
@@ -373,7 +382,7 @@ async function setupCard(c: ChatCtx, id: string, tf: Timeframe, known?: { id: st
     if (og) kb.push([{ text: "🖼 Share card", url: og }]);
   } else {
     body += `\n\nNo tradeable setup on ${tf}.`;
-    kb.push([{ text: "📈 Chart", url: link(`/token/${cn.id}?tf=${tf}`) ?? "https://t.me" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }, { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
+    kb.push([{ text: "🌐 Full page", url: link(`/s/${cn.id}/${tf}`) ?? "https://t.me" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }, { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
   }
   kb.push([{ text: "Menu", callback_data: "menu" }]);
   return tgSend(c.chatId, head + body, { html: true, keyboard: kb });
@@ -725,10 +734,14 @@ async function settings(c: ChatCtx) {
   let digest = "";
   let kb: Keyboard = [[{ text: "⚙️ Change exchange", callback_data: "exchange" }]];
   if (c.userId) {
-    const { data: p } = await c.sb.from("profiles").select("digest_enabled, digest_hour, email").eq("id", c.userId).maybeSingle();
-    const h = Number(p?.digest_hour ?? 13);
-    digest = `\nDaily digest: <b>${p?.digest_enabled ? `on, ${String(h).padStart(2, "0")}:00 UTC` : "off"}</b>\nAccount: ${esc(p?.email ?? "linked")}`;
-    kb = [[{ text: p?.digest_enabled ? "🔕 Digest off" : "🔔 Digest on", callback_data: `settings:digest:${p?.digest_enabled ? "0" : "1"}` }, { text: "⏰ Hour -1", callback_data: `settings:hour:${(h + 23) % 24}` }, { text: "⏰ Hour +1", callback_data: `settings:hour:${(h + 1) % 24}` }], [{ text: "⚙️ Change exchange", callback_data: "exchange" }, { text: "🔓 Unlink", callback_data: "settings:unlink" }]];
+    const { data: p } = await c.sb.from("profiles").select("digest_enabled, digest_hour, plan_enabled, plan_hour, email").eq("id", c.userId).maybeSingle();
+    const h = Number(p?.digest_hour ?? 13); const ph = Number(p?.plan_hour ?? 12);
+    digest = `\nMorning plan: <b>${p?.plan_enabled ? `on, ${String(ph).padStart(2, "0")}:00 UTC` : "off"}</b>\nDaily digest: <b>${p?.digest_enabled ? `on, ${String(h).padStart(2, "0")}:00 UTC` : "off"}</b>\nAccount: ${esc(p?.email ?? "linked")}`;
+    kb = [
+      [{ text: p?.plan_enabled ? "☀️ Plan off" : "☀️ Morning plan on", callback_data: `settings:plan:${p?.plan_enabled ? "0" : "1"}` }, { text: "⏰ -1", callback_data: `settings:planhour:${(ph + 23) % 24}` }, { text: "⏰ +1", callback_data: `settings:planhour:${(ph + 1) % 24}` }],
+      [{ text: p?.digest_enabled ? "🔕 Digest off" : "🔔 Digest on", callback_data: `settings:digest:${p?.digest_enabled ? "0" : "1"}` }, { text: "⏰ -1", callback_data: `settings:hour:${(h + 23) % 24}` }, { text: "⏰ +1", callback_data: `settings:hour:${(h + 1) % 24}` }],
+      [{ text: "⚙️ Change exchange", callback_data: "exchange" }, { text: "🔓 Unlink", callback_data: "settings:unlink" }],
+    ];
   } else kb.push([{ text: "Open Account page to link", url: link("/account") ?? "https://t.me" }]);
   const { data: su } = await c.sb.from(c.isGroup ? "telegram_chats" : "telegram_users").select("broadcast").eq(c.isGroup ? "chat_id" : "tg_user_id", c.isGroup ? c.chatId : c.tgUserId).maybeSingle();
   const sigOn = su?.broadcast !== false;
@@ -756,6 +769,8 @@ async function settingsSet(c: ChatCtx, key: string, val?: string) {
   if (!c.userId) return needLink(c);
   if (key === "digest") await c.sb.from("profiles").update({ digest_enabled: val === "1" }).eq("id", c.userId);
   if (key === "hour") await c.sb.from("profiles").update({ digest_hour: Math.max(0, Math.min(23, Number(val) || 0)) }).eq("id", c.userId);
+  if (key === "plan") await c.sb.from("profiles").update({ plan_enabled: val === "1" }).eq("id", c.userId);
+  if (key === "planhour") await c.sb.from("profiles").update({ plan_hour: Math.max(0, Math.min(23, Number(val) || 0)) }).eq("id", c.userId);
   return settings(c);
 }
 
@@ -889,6 +904,69 @@ async function record(c: ChatCtx) {
   if (r.journal) lines.push("", `<b>Your record</b>: ${r.journal.total.n} taken, ${r.journal.total.resolved} closed, ${r.journal.total.winRate != null ? `${r.journal.total.winRate}% win` : "no closed yet"}, real ${r.journal.real.sumR > 0 ? "+" : ""}${r.journal.real.sumR}R, paper ${r.journal.paper.sumR > 0 ? "+" : ""}${r.journal.paper.sumR}R`);
   lines.push("", "<i>Nobody can edit these rows; the worker writes them from price outcomes.</i>");
   return tgSend(c.chatId, lines.join("\n"), { html: true, keyboard: [[...(link("/") ? [{ text: "Full track record", url: link("/track-record")! }] : []), { text: "Menu", callback_data: "menu" }]] });
+}
+
+// ---------- simulator, compare, events, heat ----------
+
+async function simulateCmd(c: ChatCtx, arg: string) {
+  await tgTyping(c.chatId);
+  const nums = arg.split(/\s+/).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  let balance = nums[0], risk = nums[1];
+  if (!balance && c.userId) { const { data: p } = await c.sb.from("profiles").select("trading_balance, risk_pct").eq("id", c.userId).maybeSingle(); balance = Number(p?.trading_balance) || 0; risk = risk || Number(p?.risk_pct) || 1; }
+  balance = balance || SIM_DEFAULTS.balance; risk = Math.min(10, risk || SIM_DEFAULTS.riskPct);
+  const r = await simulate(c.sb, { ...SIM_DEFAULTS, balance, riskPct: risk, venue: c.venue });
+  const vm = VENUE_META[c.venue];
+  const text = [
+    `${who(c)}<b>🧮 Simulator</b>: every confirmed signal tradeable on ${esc(vm.label)}, last ${SIM_DEFAULTS.sinceDays} days, ${risk}% risk, max ${SIM_DEFAULTS.maxOpen} open`,
+    r.trades ? `${fmtUsd(balance)} → <b>${fmtUsd(r.endBalance)}</b> (${r.returnPct >= 0 ? "+" : ""}${r.returnPct}%)` : "",
+    r.trades ? `${r.trades} trades: ${r.wins} wins, ${r.losses} stops, ${r.expired} expired · avg ${r.avgR > 0 ? "+" : ""}${r.avgR}R · total ${r.totalR > 0 ? "+" : ""}${r.totalR}R` : "",
+    r.trades ? `Max drawdown ${r.maxDrawdownPct}% · profit factor ${r.profitFactor == null ? "∞" : r.profitFactor} · best streak ${r.bestStreak}, worst ${r.worstStreak}` : "",
+    r.monthly.length ? `\n<b>By month</b>\n${r.monthly.slice(-6).map((m) => `${m.key}: ${m.trades} trades, ${m.r > 0 ? "+" : ""}${m.r}R`).join("\n")}` : "",
+    `\n<i>${esc(r.note)}</i>`,
+    "Usage: /simulate 1000 1 (balance, risk %).",
+  ].filter(Boolean).join("\n");
+  return tgSend(c.chatId, text, { html: true, keyboard: [[...(link("/") ? [{ text: "Simulator page", url: link(`/simulator`)! }] : []), { text: "Track record", callback_data: "record" }, { text: "Menu", callback_data: "menu" }]] });
+}
+
+async function compare(c: ChatCtx, arg: string) {
+  const parts = arg.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return tgSend(c.chatId, "Compare two coins: /compare BTC ETH [4h]");
+  const tf = (["1h", "4h", "1d"].includes(parts[2]) ? parts[2] : "4h") as Timeframe;
+  await tgTyping(c.chatId);
+  const [a, b] = await Promise.all([resolveCoin(parts[0]), resolveCoin(parts[1])]);
+  if (!a || !b) return tgSend(c.chatId, `Could not find ${!a ? esc(parts[0]) : esc(parts[1])}.`, { html: true });
+  const [ra, rb] = await Promise.all([safe(analyzeAsset({ symbol: a.symbol, coingeckoId: a.id, venue: c.venue }, [tf])), safe(analyzeAsset({ symbol: b.symbol, coingeckoId: b.id, venue: c.venue }, [tf]))]);
+  const row = (cn: { symbol: string }, r: typeof ra) => {
+    const t = r.ok ? r.data.timeframes[tf] : null; if (!t || "unavailable" in t) return `<b>${esc(cn.symbol)}</b>: no data`;
+    const s = t.setup; const z = s ? zoneStatus(t.price, s.entry, s.side) : null;
+    return `<b>${esc(cn.symbol)}</b> ${fmtUsd(t.price)}\n  ${esc(t.outlook)} (score ${t.score > 0 ? "+" : ""}${t.score}) · trend ${esc(t.trend.direction)} · RSI ${t.momentum.rsi.toFixed(0)} · vol ${t.volume.ratio.toFixed(2)}x\n  ${s ? `${s.side} ${esc(s.kind)} · conf ${s.confidence}% · ${s.riskRewardTp2}R · ${z && z.state !== "unknown" ? esc(z.label) : ""}` : "no setup"}`;
+  };
+  const pick = (() => { const ta = ra.ok ? ra.data.timeframes[tf] : null, tb = rb.ok ? rb.data.timeframes[tf] : null; const sa = ta && !("unavailable" in ta) ? ta.setup : null, sb2 = tb && !("unavailable" in tb) ? tb.setup : null; const score = (s: any) => (s ? (s.kind === "confirmed" ? 100 : s.kind === "speculative" ? 20 : 50) + s.confidence : 0); const qa = score(sa), qb = score(sb2); if (!qa && !qb) return "Neither has a setup right now."; return qa === qb ? "Equal on paper; pick the one in its entry zone." : `Cleaner setup right now: <b>${esc(qa > qb ? a.symbol : b.symbol)}</b>.`; })();
+  return tgSend(c.chatId, `${who(c)}<b>⚖️ ${esc(a.symbol)} vs ${esc(b.symbol)}</b> (${tf})\n\n${row(a, ra)}\n\n${row(b, rb)}\n\n${pick}`, { html: true, keyboard: [[{ text: `${a.symbol} card`, callback_data: `setup:${ref(a)}:${tf}` }, { text: `${b.symbol} card`, callback_data: `setup:${ref(b)}:${tf}` }], [{ text: "Menu", callback_data: "menu" }]] });
+}
+
+async function events(c: ChatCtx) {
+  await tgTyping(c.chatId);
+  const r = await safe(conditionsForEvents());
+  if (!r.ok) return tgSend(c.chatId, "Calendar unavailable right now.");
+  const now = Date.now();
+  const ev = (r.data.events as any[]).filter((e) => Date.parse(e.time) > now - 3_600_000).sort((x, y) => Date.parse(x.time) - Date.parse(y.time)).slice(0, 10);
+  if (!ev.length) return tgSend(c.chatId, "No upcoming calendar events loaded.");
+  const lines = ev.map((e) => { const d = new Date(e.time); const inH = (d.getTime() - now) / 3_600_000; return `${e.impact === "High" ? "🔴" : e.impact === "Medium" ? "🟡" : "⚪"} <b>${esc(e.title)}</b> · ${d.toUTCString().slice(0, 22)} UTC${inH < 24 ? ` (in ${inH < 1 ? `${Math.max(0, Math.round(inH * 60))} min` : `${inH.toFixed(1)} h`})` : ""}`; });
+  return tgSend(c.chatId, `${who(c)}<b>📆 Upcoming events</b>\n${lines.join("\n")}\n\n<i>Rule of thumb: no new entries in the 30 minutes around a red event; stops get hunted.</i>`, { html: true, keyboard: [[{ text: "Today", callback_data: "today" }, { text: "Plan", callback_data: "plan" }, { text: "Menu", callback_data: "menu" }]] });
+}
+
+async function heat(c: ChatCtx) {
+  if (!c.userId) return needLink(c);
+  const [{ data: open }, { data: prof }] = await Promise.all([
+    c.sb.from("saved_setups").select("symbol, side, timeframe, risk_usd, paper").eq("user_id", c.userId).eq("taken", true).eq("paper", false).is("exit_price", null),
+    c.sb.from("profiles").select("trading_balance, preferences").eq("id", c.userId).maybeSingle(),
+  ]);
+  const limits = { maxHeatPct: Number(prof?.preferences?.maxHeatPct ?? 3), maxOpen: Number(prof?.preferences?.maxOpen ?? 3) };
+  const bal = prof?.trading_balance ? Number(prof.trading_balance) : null;
+  const h = portfolioHeat((open ?? []).map((t) => ({ symbol: t.symbol, side: t.side, riskUsd: t.risk_usd == null ? null : Number(t.risk_usd) })), bal, limits);
+  const budget = bal != null && h.heatPct != null ? Math.max(0, ((limits.maxHeatPct - h.heatPct) / 100) * bal) : null;
+  return tgSend(c.chatId, `${who(c)}<b>🌡 Portfolio heat</b>\n${h.level === "stop" ? "🔴" : h.level === "caution" ? "🟡" : "🟢"} ${h.heatPct != null ? `${h.heatPct}% of your account at risk` : "Set your balance on the Risk page to measure heat"} (limit ${limits.maxHeatPct}%)\n${(open ?? []).length}/${limits.maxOpen} real trades open${budget != null ? ` · ${fmtUsd(budget)} left to risk today` : ""}\n${(open ?? []).map((t) => `- ${esc(t.symbol)} ${t.side} ${esc(t.timeframe)}${t.risk_usd ? `: ${fmtUsd(Number(t.risk_usd))}` : ": size unknown"}`).join("\n")}\n${esc(h.messages[0] ?? "")}`, { html: true, keyboard: [[{ text: "My trades", callback_data: "me" }, { text: "Plan", callback_data: "plan" }]] });
 }
 
 // ---------- groups: leaderboard and shared watchlist ----------

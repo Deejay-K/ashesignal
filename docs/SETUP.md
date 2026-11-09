@@ -334,3 +334,15 @@ Run `supabase/schema.sql` again (tables `signal_followups`, `telegram_group_memb
 8. **Journal analytics** - Journal > Stats: by pre-trade verdict (does GO beat CAREFUL for you?), timeframe, coin, weekday, setup kind, leverage, side, exchange, with plain-language insights; real and paper separately. The verdict and leverage are now stored on each recorded trade (website and bot).
 9. **Groups** - `/leaderboard` (weekly R and counts per opted-in member, never dollars; `/optin`, `/optout`) and a shared group watchlist (`/watch`, `/unwatch`, `/watchlist` in a group act on the group's list; `/mywatch` adds to your own).
 10. **Assistant with buttons** - plain-text questions in the bot now come back with buttons for what they refer to: the coin's 4h and 1d cards and Watch, or Confirmed / Top 3 / Plan / Today / My trades / Review / Spot picks depending on the question.
+
+## 33. Stage 36 - morning plan delivery, shareable setup pages, simulator, wizard, bot additions
+
+Run `supabase/schema.sql` again (profiles: `plan_enabled`, `plan_hour`, `plan_last_sent`). Re-open `/api/telegram/setup?secret=...` once for the new commands.
+
+Included fixes from the previous zips: Vercel cron schedules are daily (Hobby plan), the full dynamic bot menu, discovery tab counts for every category, secondary card actions as buttons.
+
+- **Morning plan delivery**: Account > Notifications > Morning plan (on/off and hour), or the bot's /settings. New worker `/api/cron/plan` (hourly via GitHub Actions; `?force=1`, `?dry=1` like the digest) sends Today's plan by push, email and Telegram. Counts as the "digest" notification type for quiet hours and toggles.
+- **Shareable setup page** `/s/<coingecko id>/<tf>`: chart image with levels, outlook, where it is listed, levels with zone status, why and what is missing, guest pre-trade check, actions (I took this trade, copy, size, guide, open on exchange, zone alert, confirm alert) and the order ticket. Re-analysed live on every open. Telegram "Full page" buttons (cards, broadcasts, follow-ups) point here.
+- **Strategy simulator** `/simulator` (Portfolio menu) and bot `/simulate [balance] [risk%]`: replays every resolved signal from the log with fixed fractional risk, exchange filter, max open trades, kinds and timeframes; end balance, return, drawdown, profit factor, streaks, equity curve, by month. Past outcomes only, no fees or slippage, clearly labelled.
+- **Guided setup** `/welcome` (Tools menu, and "guided setup" on the dashboard checklist): exchange, balance and risk limits, notifications, Telegram link, first look.
+- **Bot**: `/compare BTC ETH [tf]` side by side with a verdict; `/events` calendar with time-to-event; `/heat` open risk vs limits and budget left; `/simulate`; morning plan toggle and hour in `/settings`.

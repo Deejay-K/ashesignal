@@ -554,3 +554,8 @@ alter table telegram_group_watch enable row level security;
 
 alter table public.saved_setups add column if not exists pretrade_verdict text;
 alter table public.saved_setups add column if not exists leverage_used numeric;
+
+-- Stage 36: automatic morning plan, public setup pages
+alter table public.profiles add column if not exists plan_enabled boolean default false;
+alter table public.profiles add column if not exists plan_hour int default 12;   -- UTC hour (12 = 7 am Toronto in winter)
+alter table public.profiles add column if not exists plan_last_sent text;

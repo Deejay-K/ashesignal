@@ -112,7 +112,8 @@ function OpportunitiesInner() {
   );
   const active = TABS.find((t) => t.key === tab)!;
   const tradeable = (i: Opportunity) => !mine || i.category === "speculative" || (i.venues?.includes(venue) && (VENUE_META[venue].canShort || i.side !== "SHORT"));
-  const count = (k: OppCategory) => mine ? all.filter((i) => i.category === k && tradeable(i)).length : (d?.counts?.[k] ?? all.filter((i) => i.category === k).length);
+  // Numbers for every tab at all times, from the full list (not the tab's slice), with the same tradeable filter.
+  const count = (k: OppCategory) => (d?.items ?? []).filter((i) => i.category === k && tradeable(i)).length;
 
   return (
     <div className="space-y-4">

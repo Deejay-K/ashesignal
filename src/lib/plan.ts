@@ -83,3 +83,16 @@ export async function buildPlan(sb: SupabaseClient | null, userId: string | null
 
   return { generatedAt: new Date().toISOString(), venue, market: { verdict: cond?.verdict ?? "unknown", headline: cond?.headline ?? "Conditions unavailable.", regime: reg?.label ?? null, regimeAdvice: reg?.advice ?? null, stance }, events, trades, setups, watching, heat, todo };
 }
+
+/** Plain-text version for push, email and Telegram delivery. */
+export function planText(p: Plan): { title: string; body: string } {
+  const vm = VENUE_META[p.venue];
+  const lines: string[] = [p.market.stance, p.market.headline + (p.market.regime ? ` Regime ${p.market.regime}.` : ""), ""];
+  lines.push("Do today:"); p.todo.forEach((t, i) => lines.push(`${i + 1}. ${t}`));
+  if (p.trades.length) { lines.push("", "Open trades:"); for (const t of p.trades) lines.push(`- ${t.symbol} ${t.side} ${t.timeframe}${t.paper ? " (paper)" : ""}${t.pnlPct != null ? ` ${t.pnlPct >= 0 ? "+" : ""}${t.pnlPct}%` : ""}: ${t.action}`); }
+  if (p.setups.length) { lines.push("", `Confirmed on ${vm.label}:`); for (const s of p.setups) lines.push(`- ${s.symbol} ${s.side} ${s.timeframe} conf ${s.confidence}%${s.entry ? `, entry ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}` : ""}${s.stop ? `, SL ${fmtUsd(s.stop)}` : ""}${s.tp1 ? `, TP1 ${fmtUsd(s.tp1)}` : ""}, ${s.zone.state === "in" ? "in zone" : s.zone.label}`); }
+  if (p.heat) lines.push("", `Risk budget: heat ${p.heat.heatPct ?? "?"}% of ${p.heat.maxHeatPct}%, ${p.heat.openCount}/${p.heat.maxOpen} open${p.heat.budgetUsd != null ? `, ${fmtUsd(p.heat.budgetUsd)} left to risk` : ""}.`);
+  lines.push("", "Manual trading only. Not financial advice.");
+  const title = `Today's plan: ${p.setups.length} confirmed on ${vm.label}, ${p.trades.length} open, ${p.market.verdict === "ok" ? "conditions ok" : `conditions ${p.market.verdict}`}`;
+  return { title, body: lines.join("\n") };
+}

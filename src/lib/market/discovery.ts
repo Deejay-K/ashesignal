@@ -22,7 +22,8 @@ function riskFromMetrics(r: any): RiskLevel {
 }
 
 
-export interface DiscoveryResult { items: Opportunity[]; updatedAt: number | null; live: string[]; demoted: number; counts: ReturnType<typeof counts>; note?: string }
+export interface DiscoveryResult { items: Opportunity[]; updatedAt: number | null; live: string[]; demoted: number; counts: ReturnType<typeof counts>; countsTradeable: ReturnType<typeof counts>; note?: string }
+
 
 export async function loadDiscovery(sb: SupabaseClient | null, opts: { cat?: string; venue: VenueId; live?: boolean; verifyBudgetMs?: number }): Promise<DiscoveryResult> {
   const cat = opts.cat ?? "all";
@@ -45,7 +46,7 @@ export async function loadDiscovery(sb: SupabaseClient | null, opts: { cat?: str
     await fill();
     await tag();
     const newest0 = items.reduce((m, i) => Math.max(m, Date.parse(i.updatedAt)), 0);
-    return { items, updatedAt: newest0 || null, live, demoted: 0, counts: counts(items), note: items.length ? undefined : "Live snapshot unavailable and no worker configured (SUPABASE_SERVICE_ROLE_KEY). See docs/SETUP.md section 14." };
+    return { items, updatedAt: newest0 || null, live, demoted: 0, counts: counts(items), countsTradeable: counts(tradeableOn(items, active)), note: items.length ? undefined : "Live snapshot unavailable and no worker configured (SUPABASE_SERVICE_ROLE_KEY). See docs/SETUP.md section 14." };
   }
   if (cat === "all" || cat === "confirmed" || cat === "watching") {
     let q = sb.from("coin_metrics").select("*").neq("category", "none").not("category", "is", null);
@@ -105,7 +106,7 @@ export async function loadDiscovery(sb: SupabaseClient | null, opts: { cat?: str
   const demoted = await verifyConfirmed(items, sb, opts.verifyBudgetMs ?? 20_000);
   await tag();
   const newest = items.reduce((m, i) => Math.max(m, Date.parse(i.updatedAt)), 0);
-  return { items, updatedAt: newest || null, live, demoted, counts: counts(items) };
+  return { items, updatedAt: newest || null, live, demoted, counts: counts(items), countsTradeable: counts(tradeableOn(items, active)) };
 }
 
 /** Items a given exchange user can actually place: listed there, and no SHORTs on spot-only venues. */

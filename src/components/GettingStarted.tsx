@@ -47,7 +47,7 @@ export default function GettingStarted() {
   return (
     <div className="card relative border-l-4 border-mint p-4">
       <button className="absolute right-3 top-2 text-fg-3 hover:text-fg" aria-label="Dismiss" onClick={() => { try { localStorage.setItem(KEY, "1"); } catch {} setHidden(true); }}>×</button>
-      <div className="flex flex-wrap items-baseline gap-2"><h2 className="font-semibold">Getting started</h2><span className="num text-xs text-fg-3">{done} of {steps.length} done</span></div>
+      <div className="flex flex-wrap items-baseline gap-2"><h2 className="font-semibold">Getting started</h2><span className="num text-xs text-fg-3">{done} of {steps.length} done</span><Link href="/welcome" className="link text-xs">guided setup</Link></div>
       <div className="mt-1 h-1.5 w-full overflow-hidden rounded bg-bg-3"><div className="h-full bg-mint transition-all" style={{ width: `${(done / steps.length) * 100}%` }} /></div>
       <ol className="mt-3 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
         {steps.map((s, i) => (

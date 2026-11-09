@@ -124,3 +124,4 @@ All tables have RLS: `auth.uid() = user_id`.
 | 33.1 | `src/lib/telegram-broadcast.ts` broadcastConfirmed (called from cron/screen on promotion), `/api/telegram/test-signal`, `/signals` command, `broadcast` columns |
 | 34 | `src/lib/market/discovery.ts` loadDiscovery/tradeableOn shared by API and bot; leverage in TakeTradeDialog and bot /take; 64-byte-safe callback refs; error replies |
 | 35 | track-record.ts + /track-record, followups.ts + cron/followups, /api/chart PNG, OrderTicket, plan.ts + /plan, notify prefs (kinds, quiet hours, notify-test), analytics.ts + Stats tab, group leaderboard and shared watchlist, assistant intent buttons; worker.yml indentation fixed |
+| 36 | cron/plan + planText + Account toggle, `/s/[id]/[tf]` shareable setup page (+SetupActions), simulator.ts + /api/simulate + /simulator, /welcome wizard, bot /simulate /compare /events /heat, settings plan toggle |
