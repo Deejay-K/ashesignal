@@ -419,3 +419,14 @@ Driven by an outside review of the homepage. No database change and no new envir
 - **Track record on the dashboard**: finished Confirmed signals, winners vs losers, win rate and average result, with a link to the full page (every signal, losers included). The card stays hidden until the worker has logged signals.
 - **No more endless loading tiles**: Conditions, Regime and Fear and Greed say "data unavailable right now" when their source does not answer.
 - **Phone**: the top coins table hides the 1h and volume columns on small screens.
+
+## 43. Stage 43 - new logo, animated header logo and site-wide banner
+
+No database change and no new environment variables.
+
+- **Favicon**: `public/favicon.svg` and `src/app/favicon.ico` are the new mint "A" with the signal pulse.
+- **App icons**: `public/icon-192.png` and `public/icon-512.png` are the new logo as still PNGs. They keep their names and stay PNG on purpose: phones and browsers only accept still images for the home-screen icon and for notification icons, and an animated GIF there would be shown frozen or rejected.
+- **Animated logo in the app**: the header logo on every page is the looping GIF (`public/brand/logo.gif`). A 512 px copy is in `public/brand/logo-512.gif` for sharing.
+- **Banner**: `src/components/SiteBanner.tsx` puts the animated banner across the very top of every page, above the header. It is always the full width of the screen and its height follows the width. Three renders of the same loop keep the text readable: `banner-desktop.gif` (1920 x 112, screens 1024 px and wider), `banner-tablet.gif` (1200 x 120, 640 to 1023 px) and `banner-mobile.gif` (780 x 130, phones). The banner scrolls away with the page; the header stays pinned as before. Tapping it goes to the dashboard.
+- To change the banner, replace the three GIFs in `public/brand/` with files of the same size and name.
+- Brand colour: mint `#36BD94` on `#0B0F14`.

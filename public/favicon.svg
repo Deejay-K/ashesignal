@@ -1,1 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0b0f14"/><rect x="10" y="10" width="44" height="44" rx="10" fill="#36bd94"/><path d="M20 44 L32 18 L44 44 M25 35 H39" stroke="#06281d" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#121a22"/><stop offset="1" stop-color="#0b0f14"/></linearGradient>
+    <linearGradient id="m" gradientUnits="userSpaceOnUse" x1="262" y1="792" x2="762" y2="236"><stop offset="0" stop-color="#2aa07c"/><stop offset="1" stop-color="#4fd9ae"/></linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <rect x="14" y="14" width="996" height="996" rx="212" fill="none" stroke="#36BD94" stroke-opacity=".28" stroke-width="6"/>
+  <g fill="none" stroke="url(#m)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M262 792 L512 236 L762 792" stroke-width="92"/>
+    <path d="M356 640 H446 L498 536 L548 716 L592 640 H668" stroke-width="56"/>
+  </g>
+</svg>

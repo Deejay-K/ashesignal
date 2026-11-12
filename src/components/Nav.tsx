@@ -83,7 +83,8 @@ export default function Nav() {
     <header className="nav-header">
       <div className="nav-inner">
         <Link href="/" className="nav-brand" aria-label="AsheSignal home">
-          <span className="nav-logo" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/brand/logo.gif" alt="" width={28} height={28} className="nav-logo" />
           <span className="nav-brand-text">AsheSignal</span>
         </Link>
 

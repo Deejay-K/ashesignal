@@ -131,3 +131,4 @@ All tables have RLS: `auth.uid() = user_id`.
 | 40 | academy.ts (8 lessons, 24 questions) + /learn + /learn/[id], bot /learn with inline quizzes, telegram_users.learn |
 | 41 | market/signal-state.ts: holdCheck (signal stays Confirmed with frozen levels until stop, TP1, faded score, flip, regime or age), signalView, demoteRow; used by cron/screen, discovery verifyConfirmed, bot setupCard/planFor, /s page; analyzeScreen (screener candles); AI chat reads loadDiscovery |
 | 42 | market/junk.ts (assetKind), market/why.ts (explainNoConfirmed, returned as `why` by loadDiscovery), /api/headline + Headline, WhyNone, TopCoins, TrackRecordSummary; discover() filters and breadth |
+| 43 | SiteBanner (animated banner above the header on every page, three GIF sizes in public/brand), animated header logo, new favicon and PNG app icons |
