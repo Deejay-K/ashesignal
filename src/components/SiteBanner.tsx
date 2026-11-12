@@ -1,19 +1,36 @@
 import Link from "next/link";
+import BrandLogo from "./BrandLogo";
+
+// Chart line in a 0-100 box, stretched to its container (strokes keep their thickness).
+const YS = [86, 74, 80, 60, 67, 46, 54, 30, 38, 14];
+const PTS = YS.map((y, i) => [+(i * (100 / (YS.length - 1))).toFixed(2), y] as const);
+const LINE = "M" + PTS.map(([x, y]) => `${x} ${y}`).join(" L");
+const DOT = PTS[7];
 
 /**
- * Stage 43 - the animated AsheSignal banner across the very top of every page, above the header. Three renders of
- * the same loop so the text stays readable at every width: a thin strip on desktop, a taller one on tablets and
- * phones. Heights follow the width (see .site-banner in globals.css), so nothing jumps while the image loads.
+ * The animated AsheSignal banner across the very top of every page, above the header. Stage 44: drawn live with
+ * HTML, SVG and CSS instead of GIF files, so it uses the active theme's colours and font (any current or future
+ * theme), stays sharp at every width, and loops without a seam. Styles: .site-banner in globals.css.
  */
 export default function SiteBanner() {
   return (
     <Link href="/" className="site-banner" aria-label="AsheSignal home">
-      <picture>
-        <source media="(min-width: 1024px)" srcSet="/brand/banner-desktop.gif" width={1920} height={112} />
-        <source media="(min-width: 640px)" srcSet="/brand/banner-tablet.gif" width={1200} height={120} />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/banner-mobile.gif" alt="AsheSignal - clear crypto signals, you place the trade" width={780} height={130} decoding="async" />
-      </picture>
+      <span className="sb-grid" aria-hidden="true" />
+      <span className="sb-chart" aria-hidden="true">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
+          <path className="sb-fill" d={`${LINE} V100 H0Z`} />
+          <path className="sb-line" d={LINE} />
+          <path className="sb-run" d={LINE} pathLength={100} />
+        </svg>
+        <span className="sb-dot" style={{ left: `${DOT[0]}%`, top: `${DOT[1]}%` }} />
+      </span>
+      <span className="sb-brand">
+        <BrandLogo size="100%" className="sb-logo" />
+        <span className="sb-text">
+          <span className="sb-name">Ashe<span>Signal</span></span>
+          <span className="sb-tag">Clear crypto signals. You place the trade.<span className="sb-sub">AN ASHE FOUNDRY APP</span></span>
+        </span>
+      </span>
     </Link>
   );
 }

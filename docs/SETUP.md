@@ -430,3 +430,14 @@ No database change and no new environment variables.
 - **Banner**: `src/components/SiteBanner.tsx` puts the animated banner across the very top of every page, above the header. It is always the full width of the screen and its height follows the width. Three renders of the same loop keep the text readable: `banner-desktop.gif` (1920 x 112, screens 1024 px and wider), `banner-tablet.gif` (1200 x 120, 640 to 1023 px) and `banner-mobile.gif` (780 x 130, phones). The banner scrolls away with the page; the header stays pinned as before. Tapping it goes to the dashboard.
 - To change the banner, replace the three GIFs in `public/brand/` with files of the same size and name.
 - Brand colour: mint `#36BD94` on `#0B0F14`.
+
+## 44. Stage 44 - logo, banner and tab icon follow the theme
+
+The header logo and the top banner are no longer GIF files. They are drawn live in the page (inline SVG, HTML and CSS animation), and every colour comes from the theme variables: `--bg`, `--bg-2`, `--fg`, `--fg-2`, `--border` and `--mint`. The text uses the page font, so the Terminal theme gets its monospace lettering and its scanlines over the banner like the rest of the app.
+
+- Works for all six themes (Foundry, Terminal, Trader, Midnight, Ember, Paper) and switches instantly when the theme is changed.
+- **Future themes need no extra work**: add the theme to `src/lib/themes.ts` (and its variables to `globals.css`) as before, and the logo, banner and tab icon pick up its colours. Nothing in the banner or logo code names a theme.
+- **Browser-tab icon**: `ThemeFavicon` redraws the favicon in the active theme's colours on load and on every theme change. `public/favicon.svg` (Foundry colours) is the fallback before the page has loaded.
+- The banner is still full width on every page above the header: 64 px tall on phones, 84 px on tablets, 108 px on desktop. It is sharper than the GIFs at any screen size and weighs almost nothing. The loop is seamless, and it holds still for people who have "reduce motion" turned on.
+- **What cannot follow the theme**: the home-screen icon and notification icon (`icon-192.png`, `icon-512.png`). The phone stores those once, outside the app, so they stay in Foundry mint.
+- Files: `src/components/BrandLogo.tsx`, `SiteBanner.tsx`, `ThemeFavicon.tsx`, styles under "brand mark and banner" in `globals.css`. The banner GIFs from stage 43 were removed; `public/brand/logo-512.gif` stays as a shareable Foundry-coloured logo.

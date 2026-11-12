@@ -98,12 +98,47 @@ tr:last-child td { border-bottom: 0; }
 .nav-header { position: sticky; top: 0; z-index: 40; border-bottom: 1px solid var(--border); background: rgba(11,15,20,.92); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding-top: env(safe-area-inset-top); }
 .nav-inner { display: flex; align-items: center; gap: 8px; max-width: 80rem; margin: 0 auto; padding: 8px 12px; min-height: 52px; }
 .nav-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -0.01em; flex: 0 0 auto; }
-.nav-logo { display: inline-block; width: 28px; height: 28px; border-radius: 22%; background: #0b0f14; box-shadow: 0 0 14px rgba(54,189,148,.35); }
-/* Animated brand banner above the header on every page: full width, height follows the width. */
-.site-banner { display: block; width: 100%; background: #0b0f14; border-bottom: 1px solid var(--border); line-height: 0; }
-.site-banner img { display: block; width: 100%; height: auto; aspect-ratio: 780 / 130; }
-@media (min-width: 640px) { .site-banner img { aspect-ratio: 1200 / 120; } }
-@media (min-width: 1024px) { .site-banner img { aspect-ratio: 1920 / 112; } }
+.nav-logo { display: inline-block; width: 28px; height: 28px; flex: 0 0 auto; border-radius: 22%; box-shadow: 0 0 14px color-mix(in srgb, var(--mint) 38%, transparent); }
+
+/* ---------- brand mark and banner (Stage 44): drawn live from the theme variables ----------
+   Nothing here names a theme. Colours come from --bg, --bg-2, --fg, --fg-2, --mint and the font from the page,
+   so every theme in src/lib/themes.ts, and any theme added later, restyles the logo and the banner by itself. */
+.brand-logo { display: block; }
+.brand-tile { fill: var(--bg-2); }
+.brand-ring { stroke: var(--mint); stroke-opacity: .35; animation: brand-breathe 2s ease-in-out infinite; }
+.brand-a { stroke: var(--mint); }
+.brand-run { stroke: color-mix(in srgb, var(--mint) 35%, var(--fg)); stroke-dasharray: 30 200; stroke-dashoffset: 34; animation: brand-run 2s linear infinite; filter: drop-shadow(0 0 22px var(--mint)); }
+@keyframes brand-run { from { stroke-dashoffset: 34; } to { stroke-dashoffset: -104; } }
+@keyframes brand-breathe { 0%, 100% { stroke-opacity: .2; } 50% { stroke-opacity: .6; } }
+
+.site-banner { --sb-h: 64px; position: relative; display: block; width: 100%; height: var(--sb-h); overflow: hidden; color: var(--fg); border-bottom: 1px solid var(--border);
+  background: linear-gradient(100deg, var(--bg-2), var(--bg) 60%); }
+@media (min-width: 640px) { .site-banner { --sb-h: 84px; } }
+@media (min-width: 1024px) { .site-banner { --sb-h: 108px; } }
+.sb-grid { position: absolute; inset: 0; opacity: .07; background-image: linear-gradient(to right, var(--mint) 1px, transparent 1px), linear-gradient(to bottom, var(--mint) 1px, transparent 1px); background-size: calc(var(--sb-h) * 1.2) calc(var(--sb-h) / 2); }
+.sb-chart { position: absolute; top: 0; right: 0; bottom: 0; width: 20%; }
+@media (min-width: 640px) { .sb-chart { width: 46%; } }
+@media (min-width: 1024px) { .sb-chart { width: 50%; } }
+.sb-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.sb-chart path { fill: none; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.sb-chart .sb-fill { fill: var(--mint); stroke: none; opacity: .13; -webkit-mask-image: linear-gradient(to bottom, #000, transparent); mask-image: linear-gradient(to bottom, #000, transparent); }
+.sb-line { stroke: var(--mint); stroke-opacity: .55; stroke-width: 2px; }
+.sb-run { stroke: color-mix(in srgb, var(--mint) 40%, var(--fg)); stroke-width: 2.6px; stroke-dasharray: 20 200; stroke-dashoffset: 22; animation: sb-run 2s linear infinite; }
+@keyframes sb-run { from { stroke-dashoffset: 22; } to { stroke-dashoffset: -102; } }
+.sb-dot { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 999px; background: var(--mint); }
+.sb-dot::after { content: ""; position: absolute; inset: -2px; border-radius: 999px; border: 1.5px solid var(--mint); animation: sb-ping 2s ease-out infinite; }
+@keyframes sb-ping { from { transform: scale(1); opacity: .7; } to { transform: scale(3.6); opacity: 0; } }
+.sb-brand { position: absolute; inset: 0 auto 0 0; display: flex; align-items: center; gap: calc(var(--sb-h) * .2); padding-left: max(12px, calc(var(--sb-h) * .3)); max-width: 80%; }
+@media (min-width: 640px) { .sb-brand { max-width: 100%; } }
+.sb-logo { width: calc(var(--sb-h) * .7) !important; height: calc(var(--sb-h) * .7) !important; flex: 0 0 auto; border-radius: 22%; box-shadow: 0 0 18px color-mix(in srgb, var(--mint) 30%, transparent); }
+.sb-text { display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+.sb-name { font-weight: 700; font-size: calc(var(--sb-h) * .36); line-height: 1.05; letter-spacing: -0.02em; white-space: nowrap; }
+.sb-name span { color: var(--mint); }
+.sb-tag { margin-top: calc(var(--sb-h) * .03); color: var(--fg-2); font-size: min(10px, 2.25vw); overflow: hidden; font-weight: 500; line-height: 1.2; white-space: nowrap; }
+.sb-sub { display: none; margin-left: calc(var(--sb-h) * .2); color: var(--mint); font-size: .8em; font-weight: 600; letter-spacing: .14em; }
+@media (min-width: 640px) { .sb-tag { font-size: calc(var(--sb-h) * .15); } }
+@media (min-width: 1024px) { .sb-sub { display: inline; } }
+@media (prefers-reduced-motion: reduce) { .brand-run, .brand-ring, .sb-run, .sb-dot::after { animation: none; } .brand-run, .sb-run { stroke-dashoffset: -30; } }
 @media print { .site-banner { display: none; } }
 .nav-brand-text { display: none; }
 .nav-links { display: none; align-items: center; gap: 2px; flex: 0 0 auto; margin-left: 8px; }
@@ -159,7 +194,6 @@ tr:last-child td { border-bottom: 0; }
 :root[data-theme="terminal"]{--bg:#000000;--bg-2:#050a05;--bg-3:#0a140a;--border:#123d12;--fg:#b6ffb6;--fg-2:#6fdc6f;--fg-3:#3f8f3f;--mint:#39ff14;--mint-dim:rgba(57,255,20,.12);--red:#ff4d4d;--red-dim:rgba(255,77,77,.14);--amber:#ffd23f;--amber-dim:rgba(255,210,63,.14);--blue:#5cf2ff;--font-sans:var(--font-geist-mono),ui-monospace,monospace;}
 :root[data-theme="terminal"] body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;background:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.18) 3px);mix-blend-mode:multiply;}
 :root[data-theme="terminal"] .card{box-shadow:inset 0 0 0 1px rgba(57,255,20,.06);}
-:root[data-theme="terminal"] .nav-logo{box-shadow:0 0 18px rgba(57,255,20,.6);}
 :root[data-theme="trader"]{--bg:#070707;--bg-2:#101010;--bg-3:#181818;--border:#2a2a2a;--fg:#f3efe6;--fg-2:#bdb8ad;--fg-3:#7d786f;--mint:#ffb000;--mint-dim:rgba(255,176,0,.14);--red:#ff3b3b;--red-dim:rgba(255,59,59,.14);--amber:#ffd166;--amber-dim:rgba(255,209,102,.14);--blue:#4ea3ff;}
 :root[data-theme="trader"] .card{border-radius:6px;}
 :root[data-theme="trader"] table{font-size:12px;}
@@ -172,7 +206,6 @@ tr:last-child td { border-bottom: 0; }
 :root[data-theme="paper"] .btn{color:#ffffff;}
 :root[data-theme="paper"] .card{box-shadow:0 1px 2px rgba(15,23,42,.06);}
 :root[data-theme="paper"] .pill-gray{background:rgba(71,85,105,.1);}
-:root[data-theme="paper"] .nav-logo{box-shadow:0 0 12px rgba(15,157,116,.35);}
 /* generic: nav/bottom bars follow theme bg */
 .nav-header{background:color-mix(in srgb,var(--bg) 92%,transparent);}
 .bottom-nav{background:color-mix(in srgb,var(--bg) 95%,transparent) !important;}

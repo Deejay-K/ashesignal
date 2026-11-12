@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import SiteBanner from "@/components/SiteBanner";
+import ThemeFavicon from "@/components/ThemeFavicon";
 import BottomNav from "@/components/BottomNav";
 import AskDrawer from "@/components/AskDrawer";
 import { THEME_BOOT } from "@/lib/themes";
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
       </head>
       <body className="min-h-screen">
+        <ThemeFavicon />
         <SiteBanner />
         <Nav />
         <main className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-5">{children}</main>
