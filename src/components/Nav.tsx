@@ -26,13 +26,21 @@ export default function Nav() {
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const [more, setMore] = useState<string | null>(null);
+  // A menu opens on hover and stays while the mouse is on the label or the panel (leaving closes it after a short
+  // grace period, so a slip of the mouse does not shut it). Clicking the label pins it open until the user picks a
+  // page, clicks elsewhere or presses Escape.
+  const [pinned, setPinned] = useState<string | null>(null);
+  const closeT = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelClose = () => { if (closeT.current) { clearTimeout(closeT.current); closeT.current = null; } };
+  const hoverIn = (id: string) => { cancelClose(); setMore(id); };
+  const hoverOut = (id: string) => { cancelClose(); closeT.current = setTimeout(() => setMore((m) => (m === id ? null : m)), 350); };
   const t = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") { e.preventDefault(); searchRef.current?.focus(); }
-      if (e.key === "Escape") { setOpen(false); setMenu(false); setMore(null); }
+      if (e.key === "Escape") { setOpen(false); setMenu(false); setMore(null); setPinned(null); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -53,11 +61,12 @@ export default function Nav() {
   useEffect(() => {
     setMenu(false);
     setMore(null);
+    setPinned(null);
   }, [path]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest?.(".nav-group")) setMore(null);
+      if (!(e.target as HTMLElement).closest?.(".nav-group")) { setMore(null); setPinned(null); }
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -94,10 +103,11 @@ export default function Nav() {
             const active = groupFor(path)?.id === g.id;
             if (!g.items.length) return <Link key={g.id} href={g.href} className={`nav-link ${active ? "nav-link-active" : ""}`}>{g.label}</Link>;
             return (
-              <div key={g.id} className="nav-group" onMouseEnter={() => setMore(g.id)} onMouseLeave={() => setMore((m) => (m === g.id ? null : m))}>
-                <Link href={g.href} className={`nav-link ${active ? "nav-link-active" : ""}`} aria-haspopup="menu" aria-expanded={more === g.id} onClick={(e) => { if (more !== g.id && window.matchMedia("(hover: none)").matches) { e.preventDefault(); setMore(g.id); } }}>{g.label} <span className="nav-caret">▾</span></Link>
-                {more === g.id ? (
-                  <div className="nav-menu" role="menu">
+              <div key={g.id} className="nav-group" onMouseEnter={() => hoverIn(g.id)} onMouseLeave={() => hoverOut(g.id)}>
+                <Link href={g.href} className={`nav-link ${active ? "nav-link-active" : ""} ${pinned === g.id ? "nav-link-pinned" : ""}`} aria-haspopup="menu" aria-expanded={more === g.id || pinned === g.id}
+                  onClick={(e) => { e.preventDefault(); cancelClose(); if (pinned === g.id) { setPinned(null); setMore(null); } else { setPinned(g.id); setMore(g.id); } }}>{g.label} <span className="nav-caret">▾</span></Link>
+                {more === g.id || pinned === g.id ? (
+                  <div className="nav-menu-wrap"><div className="nav-menu" role="menu">
                     {sectionsOf(g).map((sec) => (
                       <div key={sec.title ?? "all"} className="nav-menu-section">
                         {sec.title ? <div className="nav-menu-title">{sec.title}</div> : null}
@@ -108,7 +118,7 @@ export default function Nav() {
                         ))}
                       </div>
                     ))}
-                  </div>
+                  </div></div>
                 ) : null}
               </div>
             );

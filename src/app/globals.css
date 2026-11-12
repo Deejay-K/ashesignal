@@ -148,7 +148,10 @@ tr:last-child td { border-bottom: 0; }
 .nav-link:hover { color: var(--fg); background: rgba(159,176,192,.08); }
 .nav-link-active { background: var(--mint-dim) !important; color: var(--mint) !important; }
 .nav-tier2 { display: none; }
-.nav-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 180px; padding: 4px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.45); display: flex; flex-direction: column; }
+/* The wrapper starts right under the menu label and carries the 6px gap as padding, so the mouse never crosses
+   empty space between the label and the panel (that gap used to close the menu). */
+.nav-menu-wrap { position: absolute; right: 0; top: 100%; padding-top: 6px; z-index: 50; }
+.nav-menu { min-width: 180px; padding: 4px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,.45); display: flex; flex-direction: column; }
 .nav-menu-item { display: block; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--fg-2); white-space: nowrap; }
 .nav-menu-item:hover { color: var(--fg); background: rgba(159,176,192,.08); }
 .nav-tier2-menu { display: block; }
@@ -336,3 +339,43 @@ table tbody tr:hover td { background: rgba(159,176,192,.06); }
 .tour-dots { display: flex; gap: 5px; }
 .tour-dots span { width: 18px; height: 4px; border-radius: 4px; background: var(--border); }
 .tour-dots span.on { background: var(--mint); }
+.nav-link-pinned { color: var(--fg); background: rgba(159,176,192,.1); }
+.nav-link-pinned .nav-caret { transform: rotate(180deg); display: inline-block; }
+
+/* ---------- Stage 46: SquixiMutation, the mascot ---------- */
+.ask-fab-face { width: 26px; height: 26px; margin: -4px 0 -4px -6px; border-radius: 999px; object-fit: cover; object-position: top; background: var(--bg-3); border: 1px solid var(--border); }
+.ask-avatar { width: 36px; height: 36px; flex: 0 0 auto; border-radius: 999px; object-fit: cover; object-position: top; background: var(--bg-3); border: 1px solid var(--mint); }
+.squixi-btn { font-size: 15px; line-height: 1; }
+.squixi-btn:hover { border-color: var(--mint); }
+.squixi-btn-sm { padding: 0 4px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-2); font-size: 13px; cursor: pointer; }
+
+/* The stage sits just above the Ask button. Character height follows the device: small on phones, never a
+   screen-filler on desktop. Everything is click-through except the bubble and the character themselves. */
+.squixi { --sq-h: 92px; position: fixed; right: 8px; bottom: calc(112px + env(safe-area-inset-bottom)); z-index: 44; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; pointer-events: none; max-width: calc(100vw - 16px); }
+@media (min-width: 640px) { .squixi { --sq-h: 116px; } }
+@media (min-width: 768px) { .squixi { right: 16px; bottom: 68px; flex-direction: row; align-items: flex-end; gap: 8px; } }
+@media (min-width: 1280px) { .squixi { --sq-h: 140px; } }
+@media (max-height: 520px) { .squixi { --sq-h: 72px; } }
+.squixi-char { order: 2; flex: 0 0 auto; height: var(--sq-h); padding: 0; border: 0; background: none; cursor: pointer; pointer-events: none; opacity: 0; transform: translateY(40%) scale(.2); transform-origin: 80% 100%; transition: transform .28s cubic-bezier(.3,1.6,.5,1), opacity .2s; filter: drop-shadow(0 6px 14px rgba(0,0,0,.45)); }
+.squixi-char img { display: block; height: 100%; width: auto; }
+.squixi-out .squixi-char, .squixi-peek .squixi-char { opacity: 1; transform: none; pointer-events: auto; }
+.squixi-peek .squixi-char { animation: squixi-wave 2.6s ease-in-out both; }
+@keyframes squixi-wave { 0% { transform: translateY(60%) scale(.6); opacity: 0; } 14% { transform: translateY(-4%) scale(1.04); opacity: 1; } 22%, 78% { transform: none; opacity: 1; } 50% { transform: rotate(-4deg); } 100% { transform: translateY(60%) scale(.6); opacity: 0; } }
+.squixi-bubble { order: 1; position: relative; width: min(350px, calc(100vw - 16px)); max-height: min(58vh, 480px); display: flex; flex-direction: column; background: var(--bg-2); color: var(--fg); border: 1px solid var(--mint); border-radius: 14px; box-shadow: 0 16px 44px rgba(0,0,0,.5); pointer-events: none; opacity: 0; transform: translateY(8px) scale(.96); transform-origin: 100% 100%; transition: transform .22s ease, opacity .18s; }
+.squixi-out .squixi-bubble { opacity: 1; transform: none; pointer-events: auto; }
+@media (min-width: 768px) { .squixi-bubble { margin-bottom: calc(var(--sq-h) * .35); } }
+.squixi-head { display: flex; align-items: flex-start; gap: 8px; padding: 10px 10px 6px 12px; border-bottom: 1px solid var(--border); }
+.squixi-name { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--mint); }
+.squixi-title { font-size: 14px; font-weight: 700; line-height: 1.25; }
+.squixi-x { margin-left: auto; flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-3); color: var(--fg); font-size: 18px; line-height: 1; cursor: pointer; }
+.squixi-x:hover { border-color: var(--mint); color: var(--mint); }
+.squixi-body { padding: 8px 12px; overflow-y: auto; font-size: 13px; line-height: 1.45; color: var(--fg-2); }
+.squixi-rows { margin: 8px 0 0; display: grid; gap: 3px; }
+.squixi-rows > div { display: grid; grid-template-columns: 96px 1fr; gap: 8px; padding: 3px 0; border-bottom: 1px dashed var(--border); }
+.squixi-rows dt { color: var(--fg-3); font-size: 12px; }
+.squixi-rows dd { margin: 0; color: var(--fg); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.squixi-notes { margin: 8px 0 0; padding-left: 16px; list-style: disc; display: grid; gap: 4px; }
+.squixi-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--border); }
+.squixi-mute { margin-left: auto; font-size: 11px; color: var(--fg-3); text-decoration: underline; background: none; border: 0; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .squixi-char, .squixi-bubble { transition: opacity .15s; transform: none; } .squixi-peek .squixi-char { animation: none; } }
+@media print { .squixi, .ask-fab { display: none; } }

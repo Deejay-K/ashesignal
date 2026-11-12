@@ -134,3 +134,4 @@ All tables have RLS: `auth.uid() = user_id`.
 | 43 | SiteBanner (animated banner above the header on every page, three GIF sizes in public/brand), animated header logo, new favicon and PNG app icons |
 | 44 | BrandLogo (inline SVG, theme variables), SiteBanner redrawn in HTML/SVG/CSS, ThemeFavicon (per-theme tab icon); no theme-specific brand code |
 | 45 | nav.ts sections + sectionsOf, SubNav per section, Fold (dashboard sections), Tour, shared-fetch.ts (one request per URL per page), loadDiscoveryCached, headline.ts shared by /api/headline and the bot |
+| 46 | lib/mascot.ts (squixiSay, setupBriefing, patternBriefing, page tips), Mascot component (pop-out character + bubble + Ask button), 🦑 buttons in AnalysisPanel and OpportunityCard, AskDrawer opened by event |

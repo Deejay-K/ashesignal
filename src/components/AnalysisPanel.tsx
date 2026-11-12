@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { squixiSay, setupBriefing, patternBriefing } from "@/lib/mascot";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { mergeCandle, subscribeKline } from "@/lib/live";
 import { currentVenue, VENUE_EVENT } from "@/lib/venue-pref";
@@ -184,6 +185,8 @@ export default function AnalysisPanel({ asset, defaultTf = "4h", title }: { asse
           ))}
           <span className="mx-1 h-5 w-px shrink-0 bg-border" />
           <button className="btn-ghost shrink-0" onClick={savePrefs} title="Make this timeframe + overlay set the default on every chart (synced to your account when signed in)">{prefSaved === "saved" ? "Default ✓" : prefSaved === "saving" ? "Saving…" : "Set as default"}</button>
+          <button className="btn-ghost shrink-0 squixi-btn" aria-label="Ask SquixiMutation to explain this trade" title="SquixiMutation explains this trade: entry, every target, the stop and what to do"
+            onClick={() => squixiSay(analysis ? setupBriefing({ symbol: asset.symbol ?? asset.id ?? "This coin", id: asset.id ?? null, tf, price: analysis.price, setup: analysis.setup, outlook: analysis.outlook, score: analysis.score, venue: currentVenue() }) : { kind: "info", title: "One moment", text: "The chart is still loading. Tap me again in a second and I will explain the trade." })}>🦑</button>
         </div>
         {loading && !candles.length ? <div className="h-[300px] animate-pulse rounded-lg bg-bg-3 sm:h-[420px]" /> : candles.length ? <PriceChart candles={candles} analysis={analysis} overlays={overlays} visiblePatterns={visible ?? undefined} /> : <Empty>{err ?? "No chart data for this timeframe."}</Empty>}
         {meta?.note ? <p className="mt-2 text-xs text-amber">{meta.note}</p> : null}
@@ -340,6 +343,7 @@ function PatternCol({ title, items, tf }: { title: string; items: Pattern[]; tf:
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`pill ${dead ? "pill-gray" : p.bias === "bullish" ? "pill-mint" : "pill-red"}`}>{p.bias === "bullish" ? "▲ bullish" : "▼ bearish"}</span>
                   <b>{p.name}</b>
+                  <button type="button" className="squixi-btn squixi-btn-sm" aria-label={`SquixiMutation explains ${p.name}`} title="SquixiMutation explains this pattern" onClick={() => squixiSay(patternBriefing(p, tf))}>🦑</button>
                   <span className="pill pill-gray">{p.family}</span>
                   <span className="pill pill-gray">{tf}</span>
                   <span className="num ml-auto text-xs text-fg-3">{Math.round(p.confidence * 100)}%</span>
@@ -373,7 +377,7 @@ function PatternToggles({ a, visible, onToggle, onAll }: { a: TimeframeAnalysis;
     const on = vis.has(p.id);
     const tone = dead ? "chip-gray" : p.bias === "bullish" ? "chip-mint" : "chip-red";
     return (
-      <button key={p.id} onClick={() => onToggle(p.id)} className={`chip ${tone}`} data-on={on} title={p.description}>
+      <button key={p.id} onClick={() => { onToggle(p.id); squixiSay(patternBriefing(p, a.timeframe, !on)); }} className={`chip ${tone}`} data-on={on} title={`${p.description} Tap: show or hide it on the chart, and SquixiMutation explains it.`}>
         <span>{p.bias === "bullish" ? "▲" : "▼"}</span>
         <span className="chip-name">{p.name}</span>
         <span className="chip-meta">{p.status} · {Math.round(p.confidence * 100)}%</span>

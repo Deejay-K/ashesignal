@@ -455,3 +455,25 @@ No database change and no new environment variables. The signal engine and its r
 ## 46. Stage 45.1 - banner loop fix
 
 The light that travels along the banner's chart line did not loop cleanly on wide screens: two or three lights showed at once and they jumped back mid-line when the loop restarted. Cause: the dash trick used for it is measured in screen pixels on a stretched line, so it only lined up at one width. The light is now a bright copy of the line seen through a narrow window that slides from off the left edge to off the right edge, so there is exactly one light and no visible restart at any width. The name "Confirmed Trades" is unchanged everywhere and stays that way.
+
+## 47. Stage 45.2 - desktop menus stay open
+
+The Trade, My money and More menus closed while the mouse travelled from the label down to the panel, because of a small empty gap between the two. Now:
+
+- **Hover**: the menu stays open while the mouse is on the label or anywhere on the panel. There is no gap to cross, and leaving closes it only after a third of a second, so a small slip does not shut it.
+- **Click**: clicking the label pins the menu open. It stays until you pick a page, click the label again, click anywhere else or press Escape. The hub's main page is the first entry in its menu.
+
+## 48. Stage 46 - SquixiMutation, the mascot
+
+No database change and no new environment variables.
+
+- **The character**: `public/brand/squixi.webp` is the mascot's own 32-frame animation with the white background removed (transparent, so it sits on every theme). `squixi.png` is a still, `squixi-head.png` the face used on the Ask button and in the Ask panel.
+- **Where it lives**: bottom-right corner, behind the Ask button. It is hidden until it has something to say, then pops out with a speech bubble and ducks back afterwards. About once a minute or two it pops up for a couple of seconds to wave, without a bubble.
+- **Size**: 92 px tall on phones, 116 px on tablets, 140 px on wide desktops, 72 px on very short screens. The bubble is at most 350 px wide and never taller than about half the screen (it scrolls inside).
+- **The bubble**: has an X to close. It also leaves by itself: after 14 seconds for a page hint, 60 to 90 seconds for a trade or pattern explanation. The timer pauses while the mouse or a finger is on it. Escape closes it too.
+- **Ask**: the Ask button and panel are now "Ask SquixiMutation"; same answers as before, in the mascot's name.
+- **🦑 on a chart** (token pages, next to "Set as default"): Squixi explains the trade on the timeframe you are looking at: direction, status, price now, entry zone, TP1 to TP3 with percent and R, SL1 and SL2, reward to risk, confidence, leverage, hold time, whether price is in the zone, what is still missing for a Confirmed Trade, what cancels the idea, and how to work the targets. With buttons to size it, place it and open the full page.
+- **🦑 Explain on Trading Discovery cards** (Confirmed Trades and Watching): the same explanation for that card's trade.
+- **Patterns**: tapping a pattern chip under the chart still shows or hides it on the chart, and Squixi now explains it: which way it leans, what its status means, the trigger level, target and cancel level, why it got its confidence, and what to do. Each pattern in the list below the chart has its own 🦑 as well.
+- **Page hints**: the first time someone opens a kind of page (dashboard, token, Trading Discovery, size calculator, guide, plan, portfolio, alerts, track record, scanner, academy) Squixi gives one short hint. Once per device per page kind, never during the tour. "Stop page tips" in the bubble or "Tips on/off" in the Ask panel turns them, and the waving, off. The 🦑 buttons always work.
+- **Adding lines for the mascot**: everything it says is in `src/lib/mascot.ts`. Any component can make it speak with `squixiSay({ title, text, rows, notes, actions })`.

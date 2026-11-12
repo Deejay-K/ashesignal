@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { squixiSay, setupBriefing } from "@/lib/mascot";
 import Link from "next/link";
 import { RiskBadge } from "@/components/ui";
 import { fmtPct, fmtUsd, pctClass, timeAgo } from "@/lib/format";
@@ -118,6 +119,7 @@ export default function OpportunityCard({ o }: { o: Opportunity }) {
         {/* secondary actions */}
         <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
             {o.category === "spot" ? <Link className="btn-ghost !py-1 !text-[11px]" href={`/dca?symbol=${encodeURIComponent(o.symbol)}`}>DCA plan</Link> : null}
+          {o.category !== "speculative" && o.category !== "spot" ? <button type="button" className="btn-ghost !py-1 !text-[11px] squixi-btn" aria-label="SquixiMutation explains this trade" title="SquixiMutation explains this trade: entry, every target, the stop and what to do" onClick={() => squixiSay(setupBriefing({ symbol: o.symbol, id: o.assetKey.startsWith("cg:") ? o.assetKey.slice(3) : null, tf: o.timeframe ?? "4h", price: o.price, setup: (s as never) ?? null, venue: currentVenue(), category: o.category }))}>🦑 Explain</button> : null}
           <Link className="btn-ghost !py-1 !text-[11px]" href={o.href}>Full analysis</Link>
           {o.category !== "speculative" && o.venues?.length ? <a className="btn-ghost !py-1 !text-[11px]" target="_blank" rel="noreferrer" href={tradeLink(o.venues[0], o.symbol)} title={o.venues[0] === currentVenue() ? "Opens the spot pair on your active exchange in a new tab. You place the order yourself." : `Not listed on your active exchange; opens on ${VENUE_META[o.venues[0]].label} instead.`}>Open on {VENUE_META[o.venues[0]].label} ↗</a> : null}
           {s ? <Link className="btn-ghost !py-1 !text-[11px]" href={`/risk?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), stop: String(s.stopLosses[0]?.price ?? ""), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: o.symbol, tf: o.timeframe ?? "", leverage: String(s.leverage?.recommended ?? 1) })}`}>Size it</Link> : null}
