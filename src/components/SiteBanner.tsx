@@ -20,7 +20,11 @@ export default function SiteBanner() {
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
           <path className="sb-fill" d={`${LINE} V100 H0Z`} />
           <path className="sb-line" d={LINE} />
-          <path className="sb-run" d={LINE} pathLength={100} />
+        </svg>
+        {/* The travelling light: a bright copy of the line seen through a narrow window that slides left to right.
+            It starts and ends fully off the edge, so the loop has no visible restart at any screen width. */}
+        <svg className="sb-runsvg" viewBox="0 0 100 100" preserveAspectRatio="none" focusable="false">
+          <path className="sb-run" d={LINE} />
         </svg>
         <span className="sb-dot" style={{ left: `${DOT[0]}%`, top: `${DOT[1]}%` }} />
       </span>

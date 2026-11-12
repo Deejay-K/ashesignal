@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { sharedJson } from "@/lib/shared-fetch";
 import Link from "next/link";
 import type { Regime } from "@/lib/market/regime";
 import { fmtUsd } from "@/lib/format";
@@ -10,7 +11,7 @@ const TONE: Record<Regime["label"], string> = { "risk-on": "pill-mint", "risk-of
 /** Dashboard card: BTC trend, breadth and alt-season gauge with the one-line advice. */
 export default function RegimeCard() {
   const [r, setR] = useState<Regime | null | undefined>(undefined);
-  useEffect(() => { fetch("/api/regime").then((x) => (x.ok ? x.json() : null)).then(setR).catch(() => setR(null)); }, []);
+  useEffect(() => { sharedJson<Parameters<typeof setR>[0]>("/api/regime", 60_000).then((j) => setR(j ?? null)); }, []);
   if (r === undefined) return <div className="card h-24 animate-pulse" />;
   if (!r) return null;
   const bar = (v: number, label: string, hint: string) => (

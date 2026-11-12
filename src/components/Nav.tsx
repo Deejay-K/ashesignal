@@ -10,7 +10,7 @@ import ThemePicker from "./ThemePicker";
 import VenuePicker from "./VenuePicker";
 import SubNav from "./SubNav";
 
-import { NAV_GROUPS, NAV_ALL, groupFor } from "@/lib/nav";
+import { NAV_GROUPS, NAV_ALL, groupFor, sectionsOf } from "@/lib/nav";
 
 interface SearchRes {
   isAddress: boolean;
@@ -98,10 +98,15 @@ export default function Nav() {
                 <Link href={g.href} className={`nav-link ${active ? "nav-link-active" : ""}`} aria-haspopup="menu" aria-expanded={more === g.id} onClick={(e) => { if (more !== g.id && window.matchMedia("(hover: none)").matches) { e.preventDefault(); setMore(g.id); } }}>{g.label} <span className="nav-caret">▾</span></Link>
                 {more === g.id ? (
                   <div className="nav-menu" role="menu">
-                    {g.items.map((l) => (
-                      <Link key={l.href} href={l.href} role="menuitem" className={`nav-menu-item ${isActive(l.href) ? "nav-link-active" : ""}`}>
-                        <span>{l.label}</span>{l.hint ? <span className="nav-menu-hint">{l.hint}</span> : null}
-                      </Link>
+                    {sectionsOf(g).map((sec) => (
+                      <div key={sec.title ?? "all"} className="nav-menu-section">
+                        {sec.title ? <div className="nav-menu-title">{sec.title}</div> : null}
+                        {sec.items.map((l) => (
+                          <Link key={l.href} href={l.href} role="menuitem" className={`nav-menu-item ${isActive(l.href) ? "nav-link-active" : ""}`}>
+                            <span>{l.label}</span>{l.hint ? <span className="nav-menu-hint">{l.hint}</span> : null}
+                          </Link>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 ) : null}
@@ -176,14 +181,18 @@ export default function Nav() {
           {NAV_GROUPS.map((g) => (
             <div key={g.id} className="nav-sheet-group">
               <div className="nav-sheet-title">{g.icon} {g.label}</div>
-              {(g.items.length ? g.items : [{ href: g.href, label: g.label, hint: undefined }]).map((l) => (
-                <Link key={l.href} href={l.href} className={`nav-sheet-item ${isActive(l.href) ? "nav-link-active" : ""}`}>{l.label}</Link>
-              ))}
+              {g.items.length ? sectionsOf(g).map((sec) => (
+                <div key={sec.title ?? "all"} className="nav-sheet-section">
+                  {sec.title ? <div className="nav-sheet-sub">{sec.title}</div> : null}
+                  {sec.items.map((l) => <Link key={l.href} href={l.href} className={`nav-sheet-item ${isActive(l.href) ? "nav-link-active" : ""}`}>{l.label}</Link>)}
+                </div>
+              )) : <Link href={g.href} className={`nav-sheet-item ${isActive(g.href) ? "nav-link-active" : ""}`}>{g.label}</Link>}
             </div>
           ))}
           <div className="nav-sheet-group">
             <div className="nav-sheet-title">● Account</div>
             <Link href="/account" className={`nav-sheet-item ${isActive("/account") ? "nav-link-active" : ""}`}>Account & settings</Link>
+            <Link href="/?tour=1" className="nav-sheet-item">Take the tour</Link>
             <div className="flex items-center gap-2 px-1 pt-1 text-xs text-fg-3">Exchange <VenuePicker compact /></div>
             <div className="flex items-center gap-2 px-1 pt-1 text-xs text-fg-3">Theme <ThemePicker compact /></div>
           </div>

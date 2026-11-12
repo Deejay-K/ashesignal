@@ -8,6 +8,7 @@ import { globalConditions, summarize } from "./market/conditions";
 import { marketRegime } from "./market/regime";
 import { analyzeScreen } from "./market/analyze";
 import { signalView, ago } from "./market/signal-state";
+import { buildHeadline } from "./headline";
 import { search as cgSearch, getMarketsByIds } from "./providers/coingecko";
 import { getFearGreed } from "./providers/feargreed";
 import { loadDiscovery, tradeableOn } from "./market/discovery";
@@ -417,8 +418,11 @@ async function today(c: ChatCtx) {
   const cond = condR.ok ? summarize(condR.data.conditions) : null;
   const r = regR.ok ? regR.data : null;
   const f = fngR.ok ? fngR.data[0] : null;
+  // Same one-line answer as the top of the website's dashboard.
+  const hl = await safe(buildHeadline(c.sb, c.venue));
   const lines = [
     `<b>Today</b>`,
+    ...(hl.ok ? [`${hl.data.tone === "down" ? "🔴" : hl.data.tone === "up" ? "🟢" : "🟡"} <b>${esc(hl.data.title)}.</b> ${esc(hl.data.stance)} <b>${esc(hl.data.move)}</b>`, ""] : []),
     cond ? `${cond.verdict === "avoid" ? "🔴" : cond.verdict === "caution" ? "🟡" : "🟢"} <b>Conditions:</b> ${esc(cond.headline)}` : "Conditions unavailable.",
     r ? `${r.label === "risk-on" ? "🟢" : r.label === "risk-off" ? "🔴" : "🟡"} <b>Regime:</b> ${esc(r.label)}. ${esc(r.headline)}\n${esc(r.advice)}\nBTC ${esc(r.btc.trend)} (score ${r.btc.score > 0 ? "+" : ""}${r.btc.score}), breadth ${r.breadth.above50}% up 30d, alt gauge ${r.alts.altSeason}% (${esc(r.alts.label)})${r.alts.btcDominance != null ? `, BTC dom ${r.alts.btcDominance}%` : ""}` : "Regime unavailable.",
     f ? `😨 <b>Fear & Greed:</b> ${f.value} (${esc(f.label)})` : "",

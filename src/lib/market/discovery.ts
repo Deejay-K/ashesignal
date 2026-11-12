@@ -110,6 +110,20 @@ export async function loadDiscovery(sb: SupabaseClient | null, opts: { cat?: str
   return { items, updatedAt: newest || null, live, demoted, counts: counts(items), countsTradeable: counts(tradeableOn(items, active)), why: cat === "all" ? explainNoConfirmed(items, active) : null };
 }
 
+// Short server-side memo of the full Discovery result per exchange and category. The dashboard asks for the same
+// list from several cards and the headline; within half a minute they all get one database read and one re-check.
+const discMemo = new Map<string, { at: number; p: Promise<DiscoveryResult> }>();
+export function loadDiscoveryCached(sb: SupabaseClient | null, opts: { cat?: string; venue: VenueId; verifyBudgetMs?: number }, ttlMs = 30_000): Promise<DiscoveryResult> {
+  const key = `${opts.venue}|${opts.cat ?? "all"}`;
+  const hit = discMemo.get(key);
+  if (hit && Date.now() - hit.at < ttlMs) return hit.p;
+  const p = loadDiscovery(sb, opts);
+  discMemo.set(key, { at: Date.now(), p });
+  p.catch(() => discMemo.delete(key));
+  return p;
+}
+export function clearDiscoveryCache() { discMemo.clear(); }
+
 /** Items a given exchange user can actually place: listed there, and no SHORTs on spot-only venues. */
 export function tradeableOn(items: Opportunity[], venue: VenueId): Opportunity[] {
   return items.filter((i) => i.category === "speculative" || i.category === "spot" || (i.venues.includes(venue) && (VENUE_META[venue].canShort || i.side !== "SHORT")));

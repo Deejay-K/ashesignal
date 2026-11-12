@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import WhyNone from "./WhyNone";
+import { sharedJson } from "@/lib/shared-fetch";
 import type { WhyNone as Why } from "@/lib/market/why";
 
 const CATS = [
@@ -17,7 +18,9 @@ export default function DiscoveryStrip() {
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [why, setWhy] = useState<Why | null>(null);
-  useEffect(() => { fetch("/api/opportunities?cat=all").then((r) => r.json()).then((d) => { setCounts(d.counts ?? {}); if (d.note) setNote(d.note); setWhy(d.why ?? null); }).catch(() => setCounts({})); }, []);
+  useEffect(() => {
+    sharedJson<{ counts?: Record<string, number>; note?: string; why?: Why | null }>("/api/opportunities?cat=all").then((d) => { setCounts(d?.counts ?? {}); if (d?.note) setNote(d.note); setWhy(d?.why ?? null); });
+  }, []);
   return (
     <div className="space-y-2">
     <div className="opp-tabs">

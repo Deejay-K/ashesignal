@@ -14,7 +14,8 @@ import PortfolioCard from "@/components/PortfolioCard";
 import MarketBriefing from "@/components/MarketBriefing";
 import TradeConditions from "@/components/TradeConditions";
 import Term from "@/components/Term";
-import Welcome from "@/components/Welcome";
+import Fold from "@/components/Fold";
+import Tour from "@/components/Tour";
 import GettingStarted from "@/components/GettingStarted";
 import { cookies } from "next/headers";
 import { VENUE_COOKIE } from "@/lib/venue-pref";
@@ -37,10 +38,21 @@ export default async function Dashboard() {
 
   return (
     <div className="space-y-4">
+      <Tour />
+      {/* 1. Today: the answer first, then the six things to check, then the signal list and why it is empty. */}
       <Headline />
       <TodayPanel />
-      <Welcome />
+      <DiscoveryStrip />
       <GettingStarted />
+
+      {/* 2. You: what you hold and what you follow. */}
+      <Fold id="you" title="Your account" hint="portfolio and watchlist">
+        <PortfolioCard />
+        <WatchlistPreview />
+      </Fold>
+
+      {/* 3. The market: background for the headline above. */}
+      <Fold id="market" title="Market right now" hint="size, sentiment, conditions, regime, briefing">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
         <StatCard label="Total market cap" value={fmtUsd(ov?.totalMarketCapUsd.value, { compact: true })} sub={<span className={pctClass(ov?.marketCapChange24hPct.value)}>{fmtPct(ov?.marketCapChange24hPct.value)} 24h</span>} />
         <StatCard label="24h volume" value={fmtUsd(ov?.totalVolume24hUsd.value, { compact: true })} sub="all exchanges · CoinGecko" />
@@ -51,13 +63,12 @@ export default async function Dashboard() {
         </div>
       </div>
       {!g.ok ? <p className="text-xs text-red">Market overview unavailable: {g.error}</p> : null}
+        <TradeConditions compact />
+        <RegimeCard />
+        <MarketBriefing />
+      </Fold>
 
-      <TradeConditions compact />
-      <RegimeCard />
-      <DiscoveryStrip />
-      <TrackRecordSummary />
-      <MarketBriefing />
-
+      <Fold id="ideas" title="Ideas and movers" hint="strongest and weakest charts, trending, gainers and losers">
       <div className="grid gap-4 lg:grid-cols-3">
         <Section title={`Top bullish (4h, ${VENUE_META[d?.venue ?? venue].label} top-40)`} right={<Link className="link text-xs" href="/discover">more →</Link>}>
           <PickList items={d?.bullish ?? []} empty={d ? (d.breadth.analyzed ? `None of the ${d.breadth.analyzed} top coins checked is bullish on 4h (score +15 or more): ${d.breadth.bearish} bearish, ${d.breadth.neutral} neutral. Longs are low odds right now; waiting is fine.` : "The 4h scan returned no data from the exchange just now. Reload in a minute.") : undefined} />
@@ -77,13 +88,15 @@ export default async function Dashboard() {
       </div>
       <p className="text-[11px] text-fg-3">Gainers, losers and unusual volume only show real coins above $20M market cap: no stablecoins, wrapped coins, tokenized stocks or micro-caps.{d ? ` Lists checked at ${new Date(d.generatedAt).toISOString().slice(11, 16)} UTC.` : ""}</p>
       {d?.errors.length ? <p className="text-xs text-amber">Some discovery sources failed: {d.errors.join(" · ")}</p> : null}
+      </Fold>
 
-      <PortfolioCard />
-      <WatchlistPreview />
+      <TrackRecordSummary />
 
+      <Fold id="top" title="Top coins" hint="by market cap">
       <Section title="Top coins by market cap" right={<span className="pill pill-mint">verified · coingecko</span>}>
         {coins.ok ? <TopCoins coins={coins.data} show={50} /> : <Empty>Coin list unavailable: {coins.error}</Empty>}
       </Section>
+      </Fold>
       <Disclaimer />
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { sharedJson } from "@/lib/shared-fetch";
 import type { ConditionsReport } from "@/lib/market/conditions";
 import Term from "./Term";
 
@@ -10,7 +11,7 @@ export default function TradeConditions({ query, compact = false }: { query?: Re
   const qs = new URLSearchParams(Object.entries(query ?? {}).filter(([, v]) => !!v) as [string, string][]).toString();
   useEffect(() => {
     let alive = true;
-    const load = () => fetch(`/api/conditions${qs ? `?${qs}` : ""}`).then((x) => x.json()).then((j) => alive && setR(j)).catch(() => {});
+    const load = () => sharedJson<Parameters<typeof setR>[0]>(`/api/conditions${qs ? `?${qs}` : ""}`, 60_000).then((j) => { if (alive && j) setR(j); });
     load();
     const t = setInterval(load, 120_000);
     return () => { alive = false; clearInterval(t); };

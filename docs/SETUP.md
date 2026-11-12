@@ -441,3 +441,17 @@ The header logo and the top banner are no longer GIF files. They are drawn live 
 - The banner is still full width on every page above the header: 64 px tall on phones, 84 px on tablets, 108 px on desktop. It is sharper than the GIFs at any screen size and weighs almost nothing. The loop is seamless, and it holds still for people who have "reduce motion" turned on.
 - **What cannot follow the theme**: the home-screen icon and notification icon (`icon-192.png`, `icon-512.png`). The phone stores those once, outside the app, so they stay in Foundry mint.
 - Files: `src/components/BrandLogo.tsx`, `SiteBanner.tsx`, `ThemeFavicon.tsx`, styles under "brand mark and banner" in `globals.css`. The banner GIFs from stage 43 were removed; `public/brand/logo-512.gif` stays as a shareable Foundry-coloured logo.
+
+## 45. Stage 45 - usability overhaul: grouped menus, sectioned dashboard, tour, speed
+
+No database change and no new environment variables. The signal engine and its rules are untouched in this stage.
+
+- **Menus grouped under sub-headings** (`src/lib/nav.ts`). Same five hubs, clearer names and order: Home, Trade (Signals, Research), My money (What I hold, My trading), Alerts, More (Tools, Learn, Results). The row under the header now shows only the pages of the section you are in, so it fits a phone. The phone menu uses the same sub-headings and has "Take the tour".
+- **Dashboard in sections.** Order is now: today's headline, the check tiles, the signal list with its "why" panel, your setup checklist, then foldable sections: Your account, Market right now, Ideas and movers, Top coins. Tap a section title to fold it; each device remembers what you folded. The old Welcome card is replaced by the tour.
+- **First-visit tour** (`src/components/Tour.tsx`): six short cards explaining the headline, the four categories, the trade plan, alerts and the track record. Shown once per device; replay it from the menu or by opening `/?tour=1`.
+- **Speed.** The dashboard used to ask the server for the signal list three times and for the regime and conditions twice each. Cards now share one request per page (`src/lib/shared-fetch.ts`), and the server keeps the signal list for 30 seconds per exchange (`loadDiscoveryCached`) and the headline for 60 seconds. "Refresh live" on Trading Discovery still forces a fresh scan.
+- **Bot**: the Today message opens with the same one-line headline as the website (`src/lib/headline.ts`).
+
+## 46. Stage 45.1 - banner loop fix
+
+The light that travels along the banner's chart line did not loop cleanly on wide screens: two or three lights showed at once and they jumped back mid-line when the loop restarted. Cause: the dash trick used for it is measured in screen pixels on a stretched line, so it only lined up at one width. The light is now a bright copy of the line seen through a narrow window that slides from off the left edge to off the right edge, so there is exactly one light and no visible restart at any width. The name "Confirmed Trades" is unchanged everywhere and stays that way.

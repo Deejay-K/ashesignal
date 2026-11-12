@@ -5,6 +5,7 @@ import Link from "next/link";
 import { currentVenue, VENUE_EVENT } from "@/lib/venue-pref";
 import { VENUE_META, type VenueId } from "@/lib/venues";
 import { fmtUsd } from "@/lib/format";
+import { sharedJson } from "@/lib/shared-fetch";
 
 interface Opp { category: string; side: string | null; venues?: string[]; symbol: string }
 
@@ -24,9 +25,9 @@ export default function TodayPanel() {
     setVenue(currentVenue());
     const on = () => setVenue(currentVenue());
     window.addEventListener(VENUE_EVENT, on);
-    fetch("/api/conditions").then((r) => (r.ok ? r.json() : null)).then((j) => j?.verdict && setCond({ verdict: j.verdict, headline: j.headline })).catch(() => {}).finally(done("cond"));
-    fetch("/api/regime").then((r) => (r.ok ? r.json() : null)).then((j) => j?.label && setRegime(j)).catch(() => {}).finally(done("regime"));
-    fetch("/api/opportunities?cat=all").then((r) => (r.ok ? r.json() : null)).then((j) => setOpps(j?.items ?? [])).catch(() => setOpps([]));
+    sharedJson<{ verdict?: string; headline: string }>("/api/conditions", 60_000).then((j) => { if (j?.verdict) setCond({ verdict: j.verdict, headline: j.headline }); }).finally(done("cond"));
+    sharedJson<{ label: string; advice: string }>("/api/regime", 60_000).then((j) => { if (j?.label) setRegime(j); }).finally(done("regime"));
+    sharedJson<{ items?: Opp[] }>("/api/opportunities?cat=all").then((j) => setOpps(j?.items ?? []));
     fetch("/api/me/heat").then((r) => (r.ok ? r.json() : null)).then((j) => setHeat(j?.current ?? null)).catch(() => setHeat(null));
     fetch("/api/me/alerts").then((r) => (r.ok ? r.json() : null)).then((j) => setAlerts(j ? { unread: (j.events ?? []).filter((e: { read: boolean }) => !e.read).length, active: (j.alerts ?? []).filter((a: { active: boolean }) => a.active).length } : null)).catch(() => setAlerts(null));
     fetch("/api/fng?limit=1").then((r) => (r.ok ? r.json() : null)).then((j) => { const d = j?.data?.[0]; if (d) setFng({ value: Number(d.value), label: d.classification ?? d.label ?? "" }); }).catch(() => {}).finally(done("fng"));
