@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Disclaimer, Empty } from "@/components/ui";
+import WhyNone from "@/components/WhyNone";
+import type { WhyNone as Why } from "@/lib/market/why";
 import { timeAgo } from "@/lib/format";
 import type { Opportunity, OppCategory } from "@/lib/market/opportunities";
 import { RISK_ORDER } from "@/lib/market/opportunities";
@@ -34,7 +36,7 @@ function OpportunitiesInner() {
   const sp = useSearchParams();
   const router = useRouter();
   const tab = (TABS.find((t) => t.key === sp.get("cat"))?.key ?? "confirmed") as OppCategory;
-  const [d, setD] = useState<{ items: Opportunity[]; updatedAt: number | null; counts?: Record<OppCategory, number>; note?: string; live?: string[] } | null>(null);
+  const [d, setD] = useState<{ items: Opportunity[]; updatedAt: number | null; counts?: Record<OppCategory, number>; note?: string; live?: string[]; why?: Why | null } | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [f, setF] = useState<Filters>(EMPTY);
   const [sort, setSort] = useState<SortKey>("confidence");
@@ -176,7 +178,8 @@ function OpportunitiesInner() {
         </div>
       </div>
 
-      {!d ? <div className="card h-40 animate-pulse"><div className="p-4 text-xs text-fg-3">Loading. If the worker has not filled this category yet, a live scan runs now (10 to 40 seconds).</div></div> : d.note ? <Empty>{d.note}</Empty> : !all.length ? (
+      {d && tab === "confirmed" && d.why ? <WhyNone why={d.why} /> : null}
+      {!d ? <div className="card h-40 animate-pulse"><div className="p-4 text-xs text-fg-3">Loading. If the worker has not filled this category yet, a live scan runs now (10 to 40 seconds).</div></div> : d.note ? <Empty>{d.note}</Empty> : !all.length && tab === "confirmed" && d.why ? null : !all.length ? (
         <Empty>
           Nothing in {active.label} yet. {tab === "confirmed" ? "That is normal in quiet markets: the engine only confirms when the criteria are met. Check Watching for setups that are close." : tab === "watching" ? "The worker fills this within about an hour of its first run." : tab === "speculative" ? "The speculative worker scans trending and new DEX pools every 5 minutes; cards appear after the first runs." : "The spot worker scores 5 coins per run over the top 150; the first tier fills within a couple of hours."}
         </Empty>

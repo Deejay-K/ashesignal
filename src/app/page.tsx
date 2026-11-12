@@ -4,7 +4,9 @@ import { getFearGreed } from "@/lib/providers/feargreed";
 import { discover } from "@/lib/market/discover";
 import { safe } from "@/lib/fetch";
 import { fmtPct, fmtUsd, pctClass } from "@/lib/format";
-import CoinTable from "@/components/CoinTable";
+import TopCoins from "@/components/TopCoins";
+import Headline from "@/components/Headline";
+import TrackRecordSummary from "@/components/TrackRecordSummary";
 import { Disclaimer, Empty, RiskBadge, Section, StatCard } from "@/components/ui";
 import FngGauge from "@/components/FngGauge";
 import WatchlistPreview from "@/components/WatchlistPreview";
@@ -28,13 +30,14 @@ export const revalidate = 0;
 export default async function Dashboard() {
   const jar = await cookies();
   const venue = isVenueId(jar.get(VENUE_COOKIE)?.value) ? (jar.get(VENUE_COOKIE)!.value as VenueId) : DEFAULT_VENUE;
-  const [g, coins, fng, disc] = await Promise.all([safe(getGlobal()), safe(getMarkets(1, 50, true)), safe(getFearGreed(30)), safe(discover(venue))]);
+  const [g, coins, fng, disc] = await Promise.all([safe(getGlobal()), safe(getMarkets(1, 100, true)), safe(getFearGreed(30)), safe(discover(venue))]);
   const ov = g.ok ? g.data : null;
   const f = fng.ok ? fng.data : [];
   const d = disc.ok ? disc.data : null;
 
   return (
     <div className="space-y-4">
+      <Headline />
       <TodayPanel />
       <Welcome />
       <GettingStarted />
@@ -52,40 +55,44 @@ export default async function Dashboard() {
       <TradeConditions compact />
       <RegimeCard />
       <DiscoveryStrip />
+      <TrackRecordSummary />
       <MarketBriefing />
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Section title={`Top bullish (4h, ${VENUE_META[d?.venue ?? venue].label} top-40)`} right={<Link className="link text-xs" href="/discover">more →</Link>}>
-          <PickList items={d?.bullish ?? []} />
+          <PickList items={d?.bullish ?? []} empty={d ? (d.breadth.analyzed ? `None of the ${d.breadth.analyzed} top coins checked is bullish on 4h (score +15 or more): ${d.breadth.bearish} bearish, ${d.breadth.neutral} neutral. Longs are low odds right now; waiting is fine.` : "The 4h scan returned no data from the exchange just now. Reload in a minute.") : undefined} />
         </Section>
         <Section title={`Top bearish (4h, ${VENUE_META[d?.venue ?? venue].label} top-40)`} right={<Link className="link text-xs" href="/discover">more →</Link>}>
-          <PickList items={d?.bearish ?? []} />
+          <PickList items={d?.bearish ?? []} empty={d ? (d.breadth.analyzed ? `None of the ${d.breadth.analyzed} top coins checked is bearish on 4h (score -15 or less): ${d.breadth.bullish} bullish, ${d.breadth.neutral} neutral.` : "The 4h scan returned no data from the exchange just now. Reload in a minute.") : undefined} />
         </Section>
         <Section title="Trending" right={<Link className="link text-xs" href="/discover">more →</Link>}>
-          <PickList items={(d?.trending ?? []).slice(0, 8)} />
+          <PickList items={(d?.trending ?? []).slice(0, 8)} empty="CoinGecko trending is unavailable right now, or only stablecoins and wrapped coins are trending." />
         </Section>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Section title="Biggest gainers 24h"><PickList items={(d?.gainers ?? []).slice(0, 6)} /></Section>
-        <Section title="Biggest losers 24h"><PickList items={(d?.losers ?? []).slice(0, 6)} /></Section>
-        <Section title="Unusual volume"><PickList items={(d?.unusualVolume ?? []).slice(0, 6)} /></Section>
+        <Section title="Biggest gainers 24h"><PickList items={(d?.gainers ?? []).slice(0, 6)} empty={MOVERS_EMPTY} /></Section>
+        <Section title="Biggest losers 24h"><PickList items={(d?.losers ?? []).slice(0, 6)} empty={MOVERS_EMPTY} /></Section>
+        <Section title="Unusual volume"><PickList items={(d?.unusualVolume ?? []).slice(0, 6)} empty="No real coin is trading between 15% and 100% of its market cap today. Quiet market." /></Section>
       </div>
+      <p className="text-[11px] text-fg-3">Gainers, losers and unusual volume only show real coins above $20M market cap: no stablecoins, wrapped coins, tokenized stocks or micro-caps.{d ? ` Lists checked at ${new Date(d.generatedAt).toISOString().slice(11, 16)} UTC.` : ""}</p>
       {d?.errors.length ? <p className="text-xs text-amber">Some discovery sources failed: {d.errors.join(" · ")}</p> : null}
 
       <PortfolioCard />
       <WatchlistPreview />
 
-      <Section title="Top 50 by market cap" right={<span className="pill pill-mint">verified · coingecko</span>}>
-        {coins.ok ? <CoinTable coins={coins.data} /> : <Empty>Coin list unavailable: {coins.error}</Empty>}
+      <Section title="Top coins by market cap" right={<span className="pill pill-mint">verified · coingecko</span>}>
+        {coins.ok ? <TopCoins coins={coins.data} show={50} /> : <Empty>Coin list unavailable: {coins.error}</Empty>}
       </Section>
       <Disclaimer />
     </div>
   );
 }
 
-function PickList({ items }: { items: DiscoverItem[] }) {
-  if (!items.length) return <Empty>Nothing qualifies right now.</Empty>;
+const MOVERS_EMPTY = "No data from the exchange for this list right now. Reload in a minute.";
+
+function PickList({ items, empty }: { items: DiscoverItem[]; empty?: string }) {
+  if (!items.length) return <Empty>{empty ?? "Nothing qualifies right now."}</Empty>;
   return (
     <ul className="divide-y divide-border">
       {items.map((it) => {

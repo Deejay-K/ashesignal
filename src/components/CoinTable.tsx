@@ -13,10 +13,10 @@ export default function CoinTable({ coins, compact = false }: { coins: CoinRow[]
             <th>#</th>
             <th>Asset</th>
             <th className="text-right">Price</th>
-            <th className="text-right">1h</th>
+            <th className="hidden text-right sm:table-cell">1h</th>
             <th className="text-right">24h</th>
             <th className="text-right">7d</th>
-            {!compact ? <th className="text-right">Volume 24h</th> : null}
+            {!compact ? <th className="hidden text-right md:table-cell">Volume 24h</th> : null}
             {!compact ? <th className="text-right">Market cap</th> : null}
             <th>7d</th>
             <th />
@@ -34,10 +34,10 @@ export default function CoinTable({ coins, compact = false }: { coins: CoinRow[]
                 </Link>
               </td>
               <td className="num text-right">{fmtUsd(c.priceUsd)}</td>
-              <td className={`num text-right ${pctClass(c.change1hPct)}`}>{fmtPct(c.change1hPct, 1)}</td>
+              <td className={`num hidden text-right sm:table-cell ${pctClass(c.change1hPct)}`}>{fmtPct(c.change1hPct, 1)}</td>
               <td className={`num text-right ${pctClass(c.change24hPct)}`}>{fmtPct(c.change24hPct, 1)}</td>
               <td className={`num text-right ${pctClass(c.change7dPct)}`}>{fmtPct(c.change7dPct, 1)}</td>
-              {!compact ? <td className="num text-right text-fg-2">{fmtUsd(c.volume24hUsd, { compact: true })}</td> : null}
+              {!compact ? <td className="num hidden text-right text-fg-2 md:table-cell">{fmtUsd(c.volume24hUsd, { compact: true })}</td> : null}
               {!compact ? <td className="num text-right text-fg-2">{fmtUsd(c.marketCapUsd, { compact: true })}</td> : null}
               <td>{c.sparkline7d?.length ? <Sparkline data={c.sparkline7d} /> : null}</td>
               <td><WatchButton id={c.id} symbol={c.symbol} name={c.name} /></td>

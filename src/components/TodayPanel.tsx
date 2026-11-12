@@ -17,16 +17,19 @@ export default function TodayPanel() {
   const [heat, setHeat] = useState<{ level: string; heatPct: number | null; openCount: number } | null | undefined>(undefined);
   const [alerts, setAlerts] = useState<{ unread: number; active: number } | null | undefined>(undefined);
   const [fng, setFng] = useState<{ value: number; label: string } | null>(null);
+  // Which tiles have had their answer (or their failure): a tile that got no data says so instead of loading forever.
+  const [settled, setSettled] = useState<Record<string, boolean>>({});
+  const done = (k: string) => () => setSettled((x) => ({ ...x, [k]: true }));
   useEffect(() => {
     setVenue(currentVenue());
     const on = () => setVenue(currentVenue());
     window.addEventListener(VENUE_EVENT, on);
-    fetch("/api/conditions").then((r) => (r.ok ? r.json() : null)).then((j) => j?.verdict && setCond({ verdict: j.verdict, headline: j.headline })).catch(() => {});
-    fetch("/api/regime").then((r) => (r.ok ? r.json() : null)).then((j) => j?.label && setRegime(j)).catch(() => {});
+    fetch("/api/conditions").then((r) => (r.ok ? r.json() : null)).then((j) => j?.verdict && setCond({ verdict: j.verdict, headline: j.headline })).catch(() => {}).finally(done("cond"));
+    fetch("/api/regime").then((r) => (r.ok ? r.json() : null)).then((j) => j?.label && setRegime(j)).catch(() => {}).finally(done("regime"));
     fetch("/api/opportunities?cat=all").then((r) => (r.ok ? r.json() : null)).then((j) => setOpps(j?.items ?? [])).catch(() => setOpps([]));
     fetch("/api/me/heat").then((r) => (r.ok ? r.json() : null)).then((j) => setHeat(j?.current ?? null)).catch(() => setHeat(null));
     fetch("/api/me/alerts").then((r) => (r.ok ? r.json() : null)).then((j) => setAlerts(j ? { unread: (j.events ?? []).filter((e: { read: boolean }) => !e.read).length, active: (j.alerts ?? []).filter((a: { active: boolean }) => a.active).length } : null)).catch(() => setAlerts(null));
-    fetch("/api/fng?limit=1").then((r) => (r.ok ? r.json() : null)).then((j) => { const d = j?.data?.[0]; if (d) setFng({ value: Number(d.value), label: d.classification ?? d.label ?? "" }); }).catch(() => {});
+    fetch("/api/fng?limit=1").then((r) => (r.ok ? r.json() : null)).then((j) => { const d = j?.data?.[0]; if (d) setFng({ value: Number(d.value), label: d.classification ?? d.label ?? "" }); }).catch(() => {}).finally(done("fng"));
     return () => window.removeEventListener(VENUE_EVENT, on);
   }, []);
   const canShort = VENUE_META[venue].canShort;
@@ -42,13 +45,13 @@ export default function TodayPanel() {
       </Link>
       <Link href="/glossary#trade-conditions" className="today-tile">
         <span className="today-k">Conditions</span>
-        <span className={`today-v ${tone(cond?.verdict)}`}>{cond ? cond.verdict.toUpperCase() : "…"}</span>
-        <span className="today-s">{cond?.headline ?? "checking news, liquidity, sentiment"}</span>
+        <span className={`today-v ${tone(cond?.verdict)}`}>{cond ? cond.verdict.toUpperCase() : settled.cond ? "n/a" : "…"}</span>
+        <span className="today-s">{cond?.headline ?? (settled.cond ? "data unavailable right now; reload in a minute" : "checking news, liquidity, sentiment")}</span>
       </Link>
       <Link href="/glossary#market-regime" className="today-tile">
         <span className="today-k">Regime</span>
-        <span className={`today-v ${tone(regime?.label)}`}>{regime?.label ?? "…"}</span>
-        <span className="today-s">{regime?.advice ?? "BTC trend, breadth, alt season"}</span>
+        <span className={`today-v ${tone(regime?.label)}`}>{regime?.label ?? (settled.regime ? "n/a" : "…")}</span>
+        <span className="today-s">{regime?.advice ?? (settled.regime ? "data unavailable right now; reload in a minute" : "BTC trend, breadth, alt season")}</span>
       </Link>
       <Link href="/opportunities?cat=confirmed" className="today-tile">
         <span className="today-k">Confirmed on {VENUE_META[venue].label}</span>
@@ -67,8 +70,8 @@ export default function TodayPanel() {
       </Link>
       <Link href="/sentiment" className="today-tile">
         <span className="today-k">Fear & Greed</span>
-        <span className={`today-v ${fng ? (fng.value <= 25 ? "down" : fng.value >= 75 ? "up" : "") : ""}`}>{fng ? fng.value : "…"}</span>
-        <span className="today-s">{fng?.label ?? "crowd sentiment"}{fng ? (fng.value <= 20 ? " · extremes often mark lows" : fng.value >= 80 ? " · extremes often mark tops" : "") : ""}</span>
+        <span className={`today-v ${fng ? (fng.value <= 25 ? "down" : fng.value >= 75 ? "up" : "") : ""}`}>{fng ? fng.value : settled.fng ? "n/a" : "…"}</span>
+        <span className="today-s">{fng?.label ?? (settled.fng ? "data unavailable right now" : "crowd sentiment")}{fng ? (fng.value <= 20 ? " · extremes often mark lows" : fng.value >= 80 ? " · extremes often mark tops" : "") : ""}</span>
       </Link>
     </div>
   );

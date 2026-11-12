@@ -443,7 +443,14 @@ async function category(c: ChatCtx, cat: "confirmed" | "watching" | "speculative
   const per = 6;
   const slice = items.slice(page * per, page * per + per);
   const head = `${who(c)}<b>${title}</b> on ${esc(vm.label)}${cat === "confirmed" && !vm.canShort ? " (longs only)" : ""}: ${items.length}${cat === "confirmed" ? "\nConfirmed means the engine's gates passed; it is not a guarantee." : cat === "speculative" ? "\nHigh risk by definition. Position size: money you can lose entirely." : cat === "spot" ? "\nBuy and hold, no leverage. Zones are where accumulation makes sense." : "\nStructure is building; each one lists what must happen to confirm."}`;
-  if (!slice.length) return tgSend(c.chatId, `${head}\n\n${cat === "confirmed" ? "Nothing qualifies right now. That is normal in quiet or risk-off markets; check Watching." : "Nothing here right now."}`, { html: true, keyboard: [[{ text: "Watching", callback_data: "cat:watching" }, { text: "Menu", callback_data: "menu" }]] });
+  let whyText = "";
+  if (!items.length && cat === "confirmed") {
+    // Say why, in plain words: what is blocking the watched setups and which ideas are closest.
+    const all = await safe(loadDiscovery(c.sb, { venue: c.venue, verifyBudgetMs: 1 }));
+    const w = all.ok ? all.data.why : null;
+    if (w) whyText = `${esc(w.headline)}${w.blockers.length ? `\n\n<b>What is missing most often</b>\n${w.blockers.slice(0, 3).map((b) => `- ${esc(b.label)} (${b.count}): ${esc(b.plain)}`).join("\n")}` : ""}${w.closest.length ? `\n\n<b>Closest to confirming</b>\n${w.closest.slice(0, 3).map((x) => `- <b>${esc(x.symbol)}</b> ${x.side} ${esc(x.tf ?? "")}: ${esc(x.missing)}`).join("\n")}` : ""}\n\nNo signal is also a signal. Waiting is fine.`;
+  }
+  if (!slice.length) return tgSend(c.chatId, `${head}\n\n${whyText || (cat === "confirmed" ? "Nothing qualifies right now. That is normal in quiet or risk-off markets; check Watching." : "Nothing here right now.")}`, { html: true, keyboard: [[{ text: "Watching", callback_data: "cat:watching" }, { text: "Menu", callback_data: "menu" }]] });
   const lines = slice.map((i, idx) => {
     const n = page * per + idx + 1;
     const s = (i.detail as any)?.setup;

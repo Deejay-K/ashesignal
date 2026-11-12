@@ -9,7 +9,7 @@ import type { LiquidityChange } from "@/lib/market/liquidity";
 import { VENUE_EVENT } from "@/lib/venue-pref";
 import { VENUE_META } from "@/lib/venues";
 
-const CATS: { key: keyof Omit<DiscoverResult, "errors" | "generatedAt" | "venue">; label: string; note: string }[] = [
+const CATS: { key: keyof Omit<DiscoverResult, "errors" | "generatedAt" | "venue" | "breadth">; label: string; note: string }[] = [
   { key: "bullish", label: "Bullish setups", note: "4h analysis score ≥ +15 on the top-40 listed on your active exchange" },
   { key: "bearish", label: "Bearish breakdowns", note: "4h analysis score ≤ −15 on the top-40 listed on your active exchange" },
   { key: "trending", label: "Trending", note: "CoinGecko search trending" },

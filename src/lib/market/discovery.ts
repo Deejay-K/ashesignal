@@ -11,6 +11,7 @@ import { analyzeTimeframe } from "../ta/analysis";
 import { holdCheck, demoteRow, SCREEN_CANDLES } from "./signal-state";
 import type { Timeframe } from "../types";
 import { safe } from "../fetch";
+import { explainNoConfirmed, type WhyNone } from "./why";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function riskFromMetrics(r: any): RiskLevel {
@@ -22,7 +23,7 @@ function riskFromMetrics(r: any): RiskLevel {
 }
 
 
-export interface DiscoveryResult { items: Opportunity[]; updatedAt: number | null; live: string[]; demoted: number; counts: ReturnType<typeof counts>; countsTradeable: ReturnType<typeof counts>; note?: string }
+export interface DiscoveryResult { items: Opportunity[]; updatedAt: number | null; live: string[]; demoted: number; counts: ReturnType<typeof counts>; countsTradeable: ReturnType<typeof counts>; note?: string; /** Set when the user has no placeable Confirmed trade: what is blocking, and what is closest. */ why?: WhyNone | null }
 
 
 export async function loadDiscovery(sb: SupabaseClient | null, opts: { cat?: string; venue: VenueId; live?: boolean; verifyBudgetMs?: number }): Promise<DiscoveryResult> {
@@ -106,7 +107,7 @@ export async function loadDiscovery(sb: SupabaseClient | null, opts: { cat?: str
   const demoted = await verifyConfirmed(items, sb, opts.verifyBudgetMs ?? 20_000);
   await tag();
   const newest = items.reduce((m, i) => Math.max(m, Date.parse(i.updatedAt)), 0);
-  return { items, updatedAt: newest || null, live, demoted, counts: counts(items), countsTradeable: counts(tradeableOn(items, active)) };
+  return { items, updatedAt: newest || null, live, demoted, counts: counts(items), countsTradeable: counts(tradeableOn(items, active)), why: cat === "all" ? explainNoConfirmed(items, active) : null };
 }
 
 /** Items a given exchange user can actually place: listed there, and no SHORTs on spot-only venues. */

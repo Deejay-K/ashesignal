@@ -405,3 +405,17 @@ Now the screener row is the signal, and everything reads it:
 - Follow-up messages: "no longer confirms" is only sent for a faded score, a flip or a regime change. A signal that ended at its stop or TP1 gets the stop or TP1 message instead.
 
 No database change and no new environment variables. Signals that are Confirmed at the moment you deploy keep their status and get frozen levels from the next scan on.
+
+## 42. Stage 42 - cleaner lists, plain reasons, track record up front
+
+Driven by an outside review of the homepage. No database change and no new environment variables.
+
+- **One headline at the top of the dashboard**: the market's state in one sentence (regime, Bitcoin trend, BTC dominance, Fear and Greed), how many Confirmed trades you can place on your exchange, and the best move for today. Endpoint: `/api/headline`.
+- **Junk filter** (`src/lib/market/junk.ts`): stablecoins, wrapped or staked copies of another coin, and tokenized stocks, funds, treasuries and gold are recognised by ticker and name. The top coins table hides them by default with a "Real coins only" button to show everything again (remembered on the device). Trending, the 4h bullish and bearish picks and recovery candidates skip them too. The filter is a name-based best effort; a brand new token of that kind can slip through until its pattern is added.
+- **Gainers, losers and unusual volume** only list real coins that are in the top 250 with at least $20M market cap, so one-buyer micro-caps no longer show up with +300%. Unusual volume ignores turnover above 100% of market cap, which is almost always a stale market cap or wash trading.
+- **Coins outside the top 250** now carry a "high" risk badge instead of none.
+- **Why nothing is Confirmed** (`src/lib/market/why.ts`): when there is no Confirmed trade you can place, the dashboard, the Confirmed tab and the bot's Trades button say why in plain words: how many signals exist but are SHORTs or not listed on your exchange, what the watched setups are missing most often, and which ideas are closest to confirming.
+- **Empty lists explain themselves**: an empty "Top bullish" says how many of the checked coins are bearish and neutral instead of "Nothing qualifies right now".
+- **Track record on the dashboard**: finished Confirmed signals, winners vs losers, win rate and average result, with a link to the full page (every signal, losers included). The card stays hidden until the worker has logged signals.
+- **No more endless loading tiles**: Conditions, Regime and Fear and Greed say "data unavailable right now" when their source does not answer.
+- **Phone**: the top coins table hides the 1h and volume columns on small screens.

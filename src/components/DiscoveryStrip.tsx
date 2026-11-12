@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import WhyNone from "./WhyNone";
+import type { WhyNone as Why } from "@/lib/market/why";
 
 const CATS = [
   { key: "confirmed", label: "Confirmed Trades", tone: "tab-green", hint: "criteria met" },
@@ -14,8 +16,10 @@ const CATS = [
 export default function DiscoveryStrip() {
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  useEffect(() => { fetch("/api/opportunities?cat=all").then((r) => r.json()).then((d) => { setCounts(d.counts ?? {}); if (d.note) setNote(d.note); }).catch(() => setCounts({})); }, []);
+  const [why, setWhy] = useState<Why | null>(null);
+  useEffect(() => { fetch("/api/opportunities?cat=all").then((r) => r.json()).then((d) => { setCounts(d.counts ?? {}); if (d.note) setNote(d.note); setWhy(d.why ?? null); }).catch(() => setCounts({})); }, []);
   return (
+    <div className="space-y-2">
     <div className="opp-tabs">
       {CATS.map((c) => (
         <Link key={c.key} href={`/opportunities?cat=${c.key}`} className={`opp-tab ${c.tone}`}>
@@ -26,6 +30,8 @@ export default function DiscoveryStrip() {
         </Link>
       ))}
       {note ? <span className="w-full text-[11px] text-fg-3">{note}</span> : null}
+    </div>
+    {why ? <WhyNone why={why} compact /> : null}
     </div>
   );
 }
