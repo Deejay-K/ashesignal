@@ -10,6 +10,7 @@ import type { Timeframe } from "@/lib/types";
 import { categorize, detailSnapshot, type EngineRecord } from "@/lib/market/categorize";
 import { engineRecord } from "@/lib/ta/backtest";
 import { marketRegime, regimeAllows } from "@/lib/market/regime";
+import { holdCheck, SCREEN_CANDLES, type FrozenSetup, type HoldResult } from "@/lib/market/signal-state";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -35,12 +36,12 @@ export async function GET(req: Request) {
   const slice = all ? coins : coins.slice(batch * BATCH, batch * BATCH + BATCH);
   const regime = await safe(marketRegime()).then((r) => (r.ok ? r.data : null));
   const rows: Record<string, unknown>[] = [];
-  const { data: prevRows } = await sb.from("coin_metrics").select("asset_key, timeframe, category, category_since").in("asset_key", slice.map((c) => `cg:${c.id}`));
+  const { data: prevRows } = await sb.from("coin_metrics").select("asset_key, timeframe, category, category_since, detail").in("asset_key", slice.map((c) => `cg:${c.id}`));
   const prev = new Map((prevRows ?? []).map((r) => [`${r.asset_key}|${r.timeframe}`, r]));
   const history: Record<string, unknown>[] = [];
   const promoted: ConfirmedSignal[] = [];
   await Promise.all(slice.map(async (c) => {
-    const ks = await Promise.all(TFS.map((tf) => safe(getOhlcv({ symbol: c.symbol, coingeckoId: c.id }, tf, 300))));
+    const ks = await Promise.all(TFS.map((tf) => safe(getOhlcv({ symbol: c.symbol, coingeckoId: c.id }, tf, SCREEN_CANDLES))));
     const analyses = ks.map((k, i) => (k.ok && k.data.quality === "verified" && k.data.candles.length ? analyzeTimeframe(TFS[i], k.data.candles) : null));
     ks.forEach((k, i) => {
       if (!k.ok || k.data.quality !== "verified" || !k.data.candles.length) return; // CEX candles only; no synthesized data in the screener
@@ -52,13 +53,34 @@ export async function GET(req: Request) {
       const htf = analyses[i + 1] ?? null;
       let record: EngineRecord | null = null;
       if (a.setup?.kind === "confirmed" && !all) record = engineRecord(TFS[i], k.data.candles);
-      const cat = categorize(a, { htf, record, regime: a.setup ? regimeAllows(regime, c.symbol, a.setup.side) : null });
+      const reg = a.setup ? regimeAllows(regime, c.symbol, a.setup.side) : null;
+      const ctx = { htf, record, regime: reg };
+      const strict = categorize(a, ctx);
       const key = `cg:${c.id}|${TFS[i]}`;
       const before = prev.get(key);
-      const changed = (before?.category ?? "none") !== cat.category;
-      if (changed && cat.category === "confirmed" && a.setup) promoted.push({ coingeckoId: c.id, symbol: c.symbol, name: c.name, timeframe: TFS[i], price: a.price, setup: a.setup, qualifies: cat.qualifies });
-      if (changed) history.push({ asset_key: `cg:${c.id}`, symbol: c.symbol, timeframe: TFS[i], category: cat.category, prev_category: before?.category ?? "none", reason: cat.category === "confirmed" ? cat.qualifies.slice(0, 2).join(" ") : cat.category === "watching" ? cat.reasons.slice(0, 2).join("; ") : "Setup no longer qualifies.", snapshot: a.setup ? { side: a.setup.side, kind: a.setup.kind, confidence: a.setup.confidence, entry: a.setup.entry.mid, tp1: a.setup.takeProfits[0]?.price, sl1: a.setup.stopLosses[0]?.price, score: a.score, price: a.price } : { score: a.score, price: a.price } });
-      rows.push({ venue, bt_n: record?.n ?? null, bt_winrate: record?.winRate ?? null, bt_expectancy: record?.expectancyR ?? null, category: cat.category, category_since: changed ? new Date().toISOString() : before?.category_since ?? new Date().toISOString(), watch_reasons: cat.reasons, detail: detailSnapshot(a, cat, { htf, record, regime: a.setup ? regimeAllows(regime, c.symbol, a.setup.side) : null }), liquidity_note: `${c.volume24hUsd != null && c.marketCapUsd ? ((c.volume24hUsd / c.marketCapUsd) * 100).toFixed(1) + "% of market cap traded in 24h" : ""}`, asset_key: `cg:${c.id}`, symbol: c.symbol, name: c.name, timeframe: TFS[i], price: a.price, market_cap: c.marketCapUsd, volume_24h: c.volume24hUsd, change_24h_pct: c.change24hPct, score: a.score, outlook: a.outlook, opportunity: a.opportunityScore, rsi: a.momentum.rsi, atr_pct: a.volatility.atrPct * 100, vol_ratio: a.volume.ratio, vol_regime: a.volatility.regime, trend: a.trend.direction, macd_cross: a.momentum.macdCross, breakout: a.breakout.type, setup_side: a.setup?.side ?? null, setup_kind: a.setup?.kind ?? null, setup_rr: a.setup?.riskRewardTp2 ?? null, setup_confidence: a.setup?.confidence ?? null, leverage: a.setup?.leverage.recommended ?? null, patterns: [...a.patterns.confirmed, ...a.patterns.forming].slice(0, 4).map((p) => `${p.name} (${p.status})`), updated_at: new Date().toISOString() });
+      const now = new Date().toISOString();
+      // A Confirmed signal keeps its status and its levels until the stop, TP1, a faded score, a flip or old age ends
+      // it (holdCheck). Without this a setup sitting on a threshold flipped in and out on every scan.
+      const frozen = before?.category === "confirmed" ? ((before.detail as { setup?: FrozenSetup } | null)?.setup ?? null) : null;
+      let hold: HoldResult | null = null;
+      if (frozen) { const fr = regimeAllows(regime, c.symbol, frozen.side); hold = holdCheck({ a, candles: k.data.candles, setup: frozen, since: before!.category_since ?? now, tf: TFS[i], regimeOk: fr.ok, regimeReason: fr.reason }); }
+      const held = !!(frozen && hold?.held);
+      const ended = !!(frozen && hold && !hold.held);
+      // An ended signal drops to watching (or none) for this scan even if the gates pass again: a fresh signal with
+      // fresh levels can only follow on a later scan, which also stops back-to-back repeats.
+      const category = held ? "confirmed" : ended && strict.category === "confirmed" ? "watching" : strict.category;
+      const reasons = held ? (((before!.detail as { qualifies?: string[] } | null)?.qualifies) ?? strict.reasons) : ended ? [hold!.reason!, ...(strict.category === "confirmed" ? [] : strict.reasons)] : strict.reasons;
+      const changed = (before?.category ?? "none") !== category;
+      if (changed && category === "confirmed" && a.setup) promoted.push({ coingeckoId: c.id, symbol: c.symbol, name: c.name, timeframe: TFS[i], price: a.price, setup: a.setup, qualifies: strict.qualifies });
+      if (changed) history.push({ asset_key: `cg:${c.id}`, symbol: c.symbol, timeframe: TFS[i], category, prev_category: before?.category ?? "none", reason: category === "confirmed" ? strict.qualifies.slice(0, 2).join(" ") : ended ? `Signal ended: ${hold!.reason}` : category === "watching" ? strict.reasons.slice(0, 2).join("; ") : "Setup no longer qualifies.", snapshot: a.setup ? { side: a.setup.side, kind: a.setup.kind, confidence: a.setup.confidence, entry: a.setup.entry.mid, tp1: a.setup.takeProfits[0]?.price, sl1: a.setup.stopLosses[0]?.price, score: a.score, price: a.price, ...(ended ? { end: hold!.end } : {}) } : { score: a.score, price: a.price, ...(ended ? { end: hold!.end } : {}) } });
+      const snap = detailSnapshot(a, strict, ctx) as Record<string, unknown>;
+      const detail = held
+        ? { ...snap, setup: frozen, qualifies: reasons, watch: [], signal: { state: "active", since: before!.category_since } }
+        : ended
+          ? { ...snap, qualifies: [], watch: [{ what: "Was Confirmed, signal ended", why: hold!.reason, needs: "A fresh confirmation on a later scan." }, ...(strict.category === "confirmed" ? [] : strict.watch)], signal: { state: "ended", end: hold!.end, at: now, reason: hold!.reason } }
+          : category === "confirmed" ? { ...snap, signal: { state: "active", since: now } } : snap;
+      const st = held ? frozen! : a.setup;
+      rows.push({ venue, bt_n: record?.n ?? null, bt_winrate: record?.winRate ?? null, bt_expectancy: record?.expectancyR ?? null, category, category_since: changed ? now : before?.category_since ?? now, watch_reasons: reasons, detail, liquidity_note: `${c.volume24hUsd != null && c.marketCapUsd ? ((c.volume24hUsd / c.marketCapUsd) * 100).toFixed(1) + "% of market cap traded in 24h" : ""}`, asset_key: `cg:${c.id}`, symbol: c.symbol, name: c.name, timeframe: TFS[i], price: a.price, market_cap: c.marketCapUsd, volume_24h: c.volume24hUsd, change_24h_pct: c.change24hPct, score: a.score, outlook: a.outlook, opportunity: a.opportunityScore, rsi: a.momentum.rsi, atr_pct: a.volatility.atrPct * 100, vol_ratio: a.volume.ratio, vol_regime: a.volatility.regime, trend: a.trend.direction, macd_cross: a.momentum.macdCross, breakout: a.breakout.type, setup_side: st?.side ?? null, setup_kind: held ? "confirmed" : a.setup?.kind ?? null, setup_rr: held ? frozen!.rr ?? null : a.setup?.riskRewardTp2 ?? null, setup_confidence: st?.confidence ?? null, leverage: held ? frozen!.leverage?.recommended ?? null : a.setup?.leverage.recommended ?? null, patterns: [...a.patterns.confirmed, ...a.patterns.forming].slice(0, 4).map((p) => `${p.name} (${p.status})`), updated_at: now });
     });
   }));
   if (rows.length) {

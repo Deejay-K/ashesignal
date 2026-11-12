@@ -51,13 +51,16 @@ export async function runFollowups(sb: SupabaseClient, budgetMs = 40_000): Promi
   const price = new Map<string, number>();
   if (mk.ok) for (const m of mk.data) if (m.priceUsd) price.set(m.id, m.priceUsd);
   // lost confirmation in the last 15 minutes
-  const { data: lost } = await sb.from("category_history").select("asset_key, timeframe, changed_at").eq("prev_category", "confirmed").gt("changed_at", new Date(Date.now() - 15 * 60_000).toISOString());
-  const lostSet = new Set((lost ?? []).map((l: any) => `${l.asset_key}|${l.timeframe}`));
+  const { data: lost } = await sb.from("category_history").select("asset_key, timeframe, changed_at, snapshot").eq("prev_category", "confirmed").gt("changed_at", new Date(Date.now() - 15 * 60_000).toISOString());
+  // Only a faded score, a flip or a regime change is "lost confirmation". A signal that ended at its stop or at TP1
+  // is reported by the price events below, and one that simply aged out keeps being tracked to TP or stop.
+  const lostSet = new Set((lost ?? []).filter((l: any) => !["stop", "tp1", "expired"].includes(l.snapshot?.end)).map((l: any) => `${l.asset_key}|${l.timeframe}`));
   const events: Event[] = [];
   for (const r of rows) {
     const p = price.get(r.coingecko_id) ?? null;
-    if (p != null) events.push(...detect(r, p));
-    if (!r.lost_at && lostSet.has(`${r.asset_key}|${r.timeframe}`) && !r.tp1_at) events.push({ type: "lost", row: r, price: p });
+    const found = p != null ? detect(r, p) : [];
+    events.push(...found);
+    if (!r.lost_at && lostSet.has(`${r.asset_key}|${r.timeframe}`) && !r.tp1_at && !r.sl_at && !found.some((e) => e.type === "sl" || e.type === "tp1")) events.push({ type: "lost", row: r, price: p });
     if (Date.now() - Date.parse(r.emitted_at) > MAX_AGE_DAYS * 86_400_000) events.push({ type: "expired", row: r, price: p });
     await sb.from("signal_followups").update({ last_price: p, last_checked_at: new Date().toISOString() }).eq("id", r.id);
   }

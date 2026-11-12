@@ -23,10 +23,12 @@ function GuideInner() {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     const q = sp.get("venue");
-    setV(isVenueId(q) ? q : currentVenue());
+    const v = isVenueId(q) ? q : currentVenue();
+    setV(v);
     const side = sp.get("side");
     const lev = n("leverage");
-    setMarket(side === "SHORT" || lev > 1 ? "perp" : "spot");
+    // Spot-only exchanges (Coinbase) stay on spot: a SHORT there becomes a sell-what-you-hold guide.
+    setMarket(!VENUE_META[v].canShort ? "spot" : side === "SHORT" || lev > 1 ? "perp" : "spot");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const setup = useMemo(() => ({

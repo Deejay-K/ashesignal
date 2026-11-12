@@ -129,3 +129,4 @@ All tables have RLS: `auth.uid() = user_id`.
 | 38 | dca.ts (planLadder, resolveZone) + /api/dca + /dca, bot /dca with ask flow |
 | 39 | movers.ts + /api/movers + /movers, bot /movers |
 | 40 | academy.ts (8 lessons, 24 questions) + /learn + /learn/[id], bot /learn with inline quizzes, telegram_users.learn |
+| 41 | market/signal-state.ts: holdCheck (signal stays Confirmed with frozen levels until stop, TP1, faded score, flip, regime or age), signalView, demoteRow; used by cron/screen, discovery verifyConfirmed, bot setupCard/planFor, /s page; analyzeScreen (screener candles); AI chat reads loadDiscovery |

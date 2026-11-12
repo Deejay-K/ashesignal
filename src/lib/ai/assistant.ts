@@ -6,9 +6,9 @@ import { askJson, aiProvider, AI_MODEL } from "./claude";
 import { stripDashes } from "./briefing";
 import { globalConditions, summarize } from "@/lib/market/conditions";
 import { marketRegime } from "@/lib/market/regime";
-import { analyzeAsset } from "@/lib/market/analyze";
+import { analyzeScreen } from "@/lib/market/analyze";
+import { loadDiscovery, tradeableOn } from "@/lib/market/discovery";
 import { search as cgSearch } from "@/lib/providers/coingecko";
-import { liveTaCategories } from "@/lib/market/live-opportunities";
 import { portfolioHeat } from "@/lib/risk/heat";
 import { venueListings, venuesFor, VENUE_META, type VenueId } from "@/lib/venues";
 import { fmtUsd } from "@/lib/format";
@@ -115,7 +115,11 @@ export async function answer(input: AssistantInput): Promise<AssistantAnswer> {
   ctx.request = req;
   if (intent === "coin" && coin) {
     const tfsWanted = (req.tfs.length ? req.tfs : ["1h", "4h", "1d"].filter((t) => !req.excluded.includes(t))) as ("15m" | "1h" | "4h" | "1d" | "1w")[];
-    const a = await safe(analyzeAsset({ symbol: coin.symbol, coingeckoId: coin.id, venue }, tfsWanted.length ? tfsWanted : ["1h", "4h"]));
+    const a = await safe(analyzeScreen({ symbol: coin.symbol, coingeckoId: coin.id }, tfsWanted.length ? tfsWanted : ["1h", "4h"]));
+    // The signal list is the authority on "confirmed": a live setup that passes the chart gates is not a signal until the screener sends it.
+    const sigSb = input.adminSb ?? input.sb ?? null;
+    const sigRows = sigSb ? ((await sigSb.from("coin_metrics").select("timeframe, category").eq("asset_key", `cg:${coin.id}`)).data ?? []) : [];
+    const isSignal = (tf: string) => sigRows.some((r: { timeframe: string; category: string }) => r.timeframe === tf && r.category === "confirmed");
     const listings = await venueListings();
     const vs = venuesFor(coin.symbol, listings, venue);
     if (a.ok) {
@@ -128,18 +132,18 @@ export async function answer(input: AssistantInput): Promise<AssistantAnswer> {
           nearestResistance: above ? { price: fmtUsd(above.price), pct: +(((above.price - x.price) / x.price) * 100).toFixed(2) } : null,
           nearestSupport: below ? { price: fmtUsd(below.price), pct: +(((x.price - below.price) / x.price) * 100).toFixed(2) } : null,
           zone: z ? { state: z.state, label: z.label, pct: z.pct } : null,
-          setup: x.setup ? { side: x.setup.side, kind: x.setup.kind, entry: `${fmtUsd(x.setup.entry.low)} to ${fmtUsd(x.setup.entry.high)}`, tp1: fmtUsd(x.setup.takeProfits[0]?.price), tp2: fmtUsd(x.setup.takeProfits[1]?.price), sl1: fmtUsd(x.setup.stopLosses[0]?.price), rr: x.setup.riskRewardTp2, confidence: x.setup.confidence, gaps: x.setup.quality.confirmGaps.slice(0, 3), issues: x.setup.quality.issues.slice(0, 2) } : null, levels: x.levels.slice(0, 4).map((l) => `${l.kind} ${fmtUsd(l.price)}`), patterns: [...x.patterns.confirmed.map((p) => `${p.name} (confirmed)`), ...x.patterns.forming.map((p) => `${p.name} (forming)`)].slice(0, 4) };
+          setup: x.setup ? { side: x.setup.side, kind: isSignal(tf) ? "confirmed" : x.setup.kind === "confirmed" ? "speculative" : x.setup.kind, signal: isSignal(tf), entry: `${fmtUsd(x.setup.entry.low)} to ${fmtUsd(x.setup.entry.high)}`, tp1: fmtUsd(x.setup.takeProfits[0]?.price), tp2: fmtUsd(x.setup.takeProfits[1]?.price), sl1: fmtUsd(x.setup.stopLosses[0]?.price), rr: x.setup.riskRewardTp2, confidence: x.setup.confidence, gaps: !isSignal(tf) && x.setup.kind === "confirmed" ? ["Passes the chart checks but is not a sent signal yet: the hourly scan also checks the higher timeframe, the engine record and the market regime."] : x.setup.quality.confirmGaps.slice(0, 3), issues: x.setup.quality.issues.slice(0, 2) } : null, levels: x.levels.slice(0, 4).map((l) => `${l.kind} ${fmtUsd(l.price)}`), patterns: [...x.patterns.confirmed.map((p) => `${p.name} (confirmed)`), ...x.patterns.forming.map((p) => `${p.name} (forming)`)].slice(0, 4) };
       });
       ctx.coin = { ...coin, price: tfs[0] ? fmtUsd((a.data.timeframes[tfs[0].tf] as { price: number }).price) : null, consensus: a.data.consensus.summary, alignment: a.data.consensus.alignment, timeframes: tfs, listedOn: vs.map((v) => VENUE_META[v].label), tradeable: vs.includes(venue) };
     } else ctx.coin = { ...coin, error: a.error };
     links.push({ label: `${coin.symbol} full analysis`, href: `/token/${coin.id}` });
   }
   if (intent === "trades_for_me" || intent === "today" || (intent === "general" && !coin)) {
-    const live = await safe(liveTaCategories(40, venue));
-    const listings = await venueListings();
-    const items = live.ok ? live.data : [];
-    const mine = items.filter((i) => i.category === "confirmed" && venuesFor(i.symbol, listings, venue).includes(venue) && (vm.canShort || i.side === "LONG"));
-    const watching = items.filter((i) => i.category === "watching" && venuesFor(i.symbol, listings, venue).includes(venue));
+    // Same list as the website and the bot's Trades button, never a separate live scan.
+    const disc = await safe(loadDiscovery(input.adminSb ?? null, { venue, verifyBudgetMs: 10_000 }));
+    const items = disc.ok ? tradeableOn(disc.data.items, venue) : [];
+    const mine = items.filter((i) => i.category === "confirmed");
+    const watching = items.filter((i) => i.category === "watching");
     ctx.confirmed = mine.slice(0, 5).map((i) => { const s = (i.detail as { setup?: { entry: { low: number; high: number }; takeProfits: { price: number }[]; stopLosses: { price: number }[]; rr: number; confidence: number } }).setup; return { symbol: i.symbol, side: i.side, tf: i.timeframe, entry: s ? `${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}` : null, tp1: s ? fmtUsd(s.takeProfits[0]?.price) : null, sl1: s ? fmtUsd(s.stopLosses[0]?.price) : null, rr: s?.rr, confidence: s?.confidence }; });
     ctx.confirmedCount = mine.length;
     ctx.watchingCount = watching.length;

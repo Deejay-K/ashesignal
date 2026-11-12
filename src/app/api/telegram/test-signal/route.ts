@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cronAuthorized, supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcastConfirmed } from "@/lib/telegram-broadcast";
-import { analyzeAsset } from "@/lib/market/analyze";
+import { analyzeScreen } from "@/lib/market/analyze";
 import { search } from "@/lib/providers/coingecko";
 import type { Timeframe } from "@/lib/types";
 
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
   const hits = await search(symbol);
   const cn = hits.find((h) => h.symbol.toUpperCase() === symbol) ?? hits[0];
   if (!cn) return NextResponse.json({ error: `coin ${symbol} not found` }, { status: 404 });
-  const a = await analyzeAsset({ symbol: cn.symbol.toUpperCase(), coingeckoId: cn.id }, [tf]);
+  const a = await analyzeScreen({ symbol: cn.symbol.toUpperCase(), coingeckoId: cn.id }, [tf]);
   const t = a.timeframes[tf];
   if (!t || "unavailable" in t || !t.setup) return NextResponse.json({ error: `${symbol} has no setup on ${tf} right now; try another coin or timeframe` }, { status: 404 });
   const only = url.searchParams.get("chat");

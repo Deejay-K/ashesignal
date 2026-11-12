@@ -8,7 +8,7 @@ import { liveTaCategories, liveSpeculative, liveSpot, within } from "./live-oppo
 import { venueListings, venuesFor, VENUE_META, type VenueId } from "../venues";
 import { getOhlcv } from "./ohlcv";
 import { analyzeTimeframe } from "../ta/analysis";
-import { categorize, detailSnapshot } from "./categorize";
+import { holdCheck, demoteRow, SCREEN_CANDLES } from "./signal-state";
 import type { Timeframe } from "../types";
 import { safe } from "../fetch";
 
@@ -118,33 +118,22 @@ async function verifyConfirmed(items: Opportunity[], sb: SupabaseClient, budgetM
   const started = Date.now();
   const targets = items.filter((i) => i.category === "confirmed" && i.assetKey.startsWith("cg:") && Date.now() - Date.parse(i.updatedAt) > 10 * 60_000);
   let demoted = 0;
-  const updates: Record<string, unknown>[] = [];
-  const history: Record<string, unknown>[] = [];
   await Promise.all(targets.slice(0, 40).map(async (i) => {
     if (Date.now() - started > budgetMs) return;
     const tf = i.timeframe as Timeframe;
-    const r = await safe(getOhlcv({ symbol: i.symbol, coingeckoId: i.assetKey.slice(3) }, tf, 300));
+    const d: any = i.detail ?? {};
+    if (!d.setup) return;
+    const r = await safe(getOhlcv({ symbol: i.symbol, coingeckoId: i.assetKey.slice(3) }, tf, SCREEN_CANDLES));
     if (!r.ok || r.data.quality !== "verified") return;
     const a = analyzeTimeframe(tf, r.data.candles);
     if (!a) return;
-    const d: any = i.detail ?? {};
-    const record = d.record ?? null;
-    const cat = categorize(a, { record });
-    if (cat.category === "confirmed") return;
+    // Same rule as the screener: the signal stands until its stop, TP1, a faded score, a flip or old age ends it.
+    const res = holdCheck({ a, candles: r.data.candles, setup: d.setup, since: i.firstSeen, tf });
+    if (res.held) { i.price = a.price; return; }
     demoted++;
-    const now = new Date().toISOString();
-    const newCat = cat.category === "none" ? "watching" : cat.category; // keep it visible as watching with the reason
-    const reasons = cat.reasons.length ? cat.reasons : ["Setup no longer meets the confirmation gates on the latest candles."];
-    i.category = newCat;
-    i.detail = detailSnapshot(a, { ...cat, category: newCat, watch: cat.watch.length ? cat.watch : [{ what: "Lost confirmation on the latest candles", why: a.setup?.quality.confirmGaps[0] ?? a.setup?.quality.issues[0] ?? "Score or trigger faded.", needs: "The gates passing again on a candle close." }] }, { record }) as unknown as Record<string, unknown>;
-    i.firstSeen = now; i.updatedAt = now;
-    updates.push({ asset_key: i.assetKey, timeframe: tf, category: newCat, category_since: now, watch_reasons: reasons, detail: i.detail, price: a.price, score: a.score, outlook: a.outlook, setup_kind: a.setup?.kind ?? null, updated_at: now });
-    history.push({ asset_key: i.assetKey, symbol: i.symbol, timeframe: tf, category: newCat, prev_category: "confirmed", reason: `Live re-check: ${reasons[0]}`, snapshot: { price: a.price, score: a.score } });
+    const out = await demoteRow(sb, { asset_key: i.assetKey, symbol: i.symbol, timeframe: tf, detail: d }, a, res);
+    i.category = out.category; i.detail = out.detail; i.firstSeen = out.at; i.updatedAt = out.at;
   }));
-  if (updates.length) {
-    for (const u of updates) await sb.from("coin_metrics").update(u).eq("asset_key", u.asset_key as string).eq("timeframe", u.timeframe as string);
-    await sb.from("category_history").insert(history);
-  }
   return demoted;
 }
 

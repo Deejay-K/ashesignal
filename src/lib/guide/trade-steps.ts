@@ -124,8 +124,43 @@ const PERP_URL: Record<VenueId, (base: string, quote: string) => string> = {
 
 const pct = (a: number, b: number) => `${(((a - b) / b) * 100 >= 0 ? "+" : "")}${(((a - b) / b) * 100).toFixed(2)}%`;
 
+/**
+ * A SHORT on a spot-only exchange (Coinbase) cannot be opened. It means "sell (some of) what you hold". After the
+ * sell there is no position left, so there is no TP/SL bracket: the short's targets become optional buy-back levels
+ * (below price) and its stop becomes the level where the bearish idea fails (above price).
+ */
+function spotSellGuide(venue: VenueId, s: GuideSetup): Guide {
+  const meta = VENUE_META[venue];
+  const quote = meta.quotes[0];
+  const pair = meta.instrument(s.symbol, quote);
+  const zone = s.entryLow && s.entryHigh ? `${fmtUsd(s.entryLow)} to ${fmtUsd(s.entryHigh)}` : fmtUsd(s.entry);
+  const steps: GuideSection[] = [
+    { title: "What this signal means on " + meta.label, steps: [
+      { title: "This is a sell signal, not a short", body: [`${meta.label} spot cannot short. The engine's SHORT setup on ${s.symbol} means it expects price to fall, so if you hold ${s.symbol} this is a reason to sell some or all of it. If you do not hold ${s.symbol}, there is nothing to do: skip it.`, `Selling ${s.symbol} for ${quote === "USD" ? "USD or USDC" : quote} closes that part of your position. After the sell you hold cash, so there is nothing left for a take profit or stop loss to protect.`], warn: `Do NOT tick 'TP/SL' on the sell order. ${meta.label}'s bracket is built for buys: it wants the take profit above and the stop below price, the opposite of a short's levels, which is why the numbers looked broken.` },
+      { title: "Decide how much to sell", body: ["All of it if you would not buy it today at this price.", "Half if you want to keep exposure and buy back lower.", "Nothing if your own plan for this coin is long term (spot hold): then just note the warning."] },
+    ] },
+    { title: `On ${meta.label}`, steps: [
+      { title: "Open the pair", body: [UI[venue].spotPath, `Confirm the pair reads ${pair}${quote === "USD" ? ` (or ${s.symbol}-USDC if you sell into USDC; the prices are the same)` : ""}.`], tip: `Direct link: ${meta.tradeUrl(s.symbol, quote)}` },
+      { title: "Place the sell as a Limit order", body: [`Choose Sell and the order type 'Limit'.`, `Price: inside the sell zone ${zone}. ${s.entryLow && s.entryHigh ? "If price is already below the zone, either sell at the current price (a Limit at the current bid) or wait for a bounce back into the zone." : ""}`, `Amount: the part of your ${s.symbol} you decided to sell.`, "Leave TP/SL unticked. Review, then confirm."] },
+    ] },
+    { title: "Optional: buy back lower", steps: [
+      { title: "Buy-back levels (the short's targets)", body: ["If you want the coin back cheaper, place Limit BUY orders at the short's targets with the dollars from the sale:", ...s.tps.map((tp, i) => `Buy ${["about a third", "about a third", "the rest"][i] ?? "a part"} at ${fmtUsd(tp)} (${pct(tp, s.entry)} from the sell)`), "Each buy can then get its own TP/SL bracket the normal way (take profit above, stop below)."] },
+      { title: "When the bearish idea is wrong", body: [`If price closes above ${fmtUsd(s.stop)}${s.stop2 ? ` (wider: ${fmtUsd(s.stop2)})` : ""}, the sell signal failed. If you still want the coin, that is where you would buy back instead of waiting for lower prices.`, "Set a price alert there in AsheSignal (Alerts, price above) so you do not have to watch."] },
+    ] },
+    { title: "Rules that save accounts", steps: [
+      { title: "Do not", body: ["Use leverage or margin you do not understand to try to short on spot.", "Panic-sell everything on one signal if the coin is a long-term holding.", "Buy back at market in a falling move: use the limit levels."] },
+    ] },
+  ];
+  return { venue, market: "spot", marketNote: `${meta.label} spot: a SHORT setup means sell or reduce what you hold. No bracket on the sell; the short's levels become buy-back and invalidation levels.`, pair, sections: steps, glossary: [
+    { term: "Limit order", meaning: "An order that only executes at your price or better." },
+    { term: "Buy back", meaning: "Buying the coin again later, ideally lower than you sold." },
+    { term: "Invalidation", meaning: "The price where the idea is clearly wrong; for a sell signal it is above the current price." },
+  ] };
+}
+
 export function buildGuide(venue: VenueId, market: Market, s: GuideSetup): Guide {
   const ui = UI[venue];
+  if (s.side === "SHORT" && market === "spot" && !VENUE_META[venue].canShort && !ui.shortOnSpot) return spotSellGuide(venue, s);
   const meta = VENUE_META[venue];
   const quote = meta.quotes[0];
   const pair = market === "perp" ? (venue === "okx" ? `${s.symbol}-${quote}-SWAP` : venue === "kraken" ? `PF_${s.symbol === "BTC" ? "XBT" : s.symbol}USD` : `${s.symbol}${quote} Perp`) : meta.instrument(s.symbol, quote);

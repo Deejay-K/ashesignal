@@ -384,3 +384,24 @@ Run `supabase/schema.sql` again (adds `telegram_users.learn`). Re-open `/api/tel
 ## 39. Stage 40.1 - signals and patterns on the chart image
 
 The chart PNG (Telegram cards, new-confirmed signals, website "Chart" buttons) now runs the engine on the candles it draws and shows the signals too: EMA 20 and EMA 50, the detected patterns (up to three: confirmed first, then forming, then recently completed) with their trendlines, channels, necklines and pivot points (HH, HL, L, 1, 2...) in green for bullish and red for bearish with a name tag, the breakout or breakdown level, and a bottom strip with the outlook and score, trend, RSI, MACD cross, volume vs average, the setup's side, kind, confidence and R, and the pattern list.
+
+## 40. Stage 40.2 - SHORT setups on spot-only exchanges (Coinbase)
+
+A SHORT cannot be opened on Coinbase spot, and a TP/SL bracket on a sell order expects the opposite levels, which made the guide's numbers look broken (stop above price, target below). On spot-only exchanges the trade guide and the order ticket now treat a SHORT as "sell what you hold": a limit sell in the sell zone with no TP/SL, optional limit buy-backs at the short's targets (each can get a normal bracket), and a price alert at the short's stop where the sell signal fails. The guide also opens on Spot by default for spot-only exchanges.
+
+## 41. Stage 41 - one source of truth for Confirmed signals
+
+Before this stage three parts of the app each decided "Confirmed" on their own. The screener (the hourly scan that sends the Telegram signal) used one exchange's candles; the bot's coin card re-analysed from your own exchange's candles with a different candle count and showed the raw chart verdict; the website re-checked every Confirmed row with the strict entry gates ten minutes later. A setup sitting right on a threshold could be sent as a signal, read "speculative" on the card a minute later, and be removed from the website on the next page load. The AI chat ran yet another live scan of its own.
+
+Now the screener row is the signal, and everything reads it:
+
+- **A Confirmed signal stays Confirmed, with the levels that were sent**, until one of these ends it: the stop is reached, TP1 is reached, the score fades back toward neutral (confirmation band minus 20), the engine flips to the other side, the market regime turns against it, or it gets too old (36 candles on 1h, 30 on 4h, 10 on 1d). The rule is `holdCheck()` in `src/lib/market/signal-state.ts`; the screener, the website re-check, the bot card and the share page all call it.
+- **The bot card says where the coin stands in the signal system first**: "CONFIRMED signal, sent 2h ago, still active", or "Was Confirmed, signal ended 40m ago" with the reason, or "passes the chart checks, not a signal yet" when the live chart looks good but the scan has not sent it (the scan also checks the higher timeframe, the engine's record and the market regime).
+- `/coin SOL` with no timeframe opens the timeframe that has the Confirmed signal. The card also lists other Confirmed timeframes of the same coin.
+- Copy setup, Size it, I took it and the alert buttons use the signal's levels while it is active.
+- The share page (`/s/<coin>/<tf>`, the "Full page" button) shows the same status banner and levels.
+- The AI chat reads the same list as the website and the Trades button.
+- All verdicts use the same candles (default exchange order, 300 candles). Your exchange setting still decides which coins are listed for you and the trading pair names.
+- Follow-up messages: "no longer confirms" is only sent for a faded score, a flip or a regime change. A signal that ended at its stop or TP1 gets the stop or TP1 message instead.
+
+No database change and no new environment variables. Signals that are Confirmed at the moment you deploy keep their status and get frozen levels from the next scan on.

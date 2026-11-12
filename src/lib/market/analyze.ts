@@ -19,10 +19,16 @@ export interface MultiTfAnalysis {
   generatedAt: number;
 }
 
-export async function analyzeAsset(ref: AssetRef, tfs: Timeframe[] = ANALYSIS_TFS): Promise<MultiTfAnalysis> {
+/** Analysis from the same candles the screener uses (default exchange order, same candle count), so a card and the
+ *  signal list cannot disagree because of the data source. Use this wherever a setup verdict is shown. */
+export function analyzeScreen(ref: { symbol?: string; coingeckoId?: string }, tfs: Timeframe[]): Promise<MultiTfAnalysis> {
+  return analyzeAsset({ symbol: ref.symbol, coingeckoId: ref.coingeckoId }, tfs, 300);
+}
+
+export async function analyzeAsset(ref: AssetRef, tfs: Timeframe[] = ANALYSIS_TFS, limit = 500): Promise<MultiTfAnalysis> {
   const results = await Promise.all(
     tfs.map(async (tf) => {
-      const o = await getOhlcv(ref, tf, 500);
+      const o = await getOhlcv(ref, tf, limit);
       const a = o.candles.length ? analyzeTimeframe(tf, o.candles) : null;
       return { tf, o, a };
     }),

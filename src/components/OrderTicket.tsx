@@ -16,7 +16,12 @@ export default function OrderTicket({ venue, symbol, side, entry, stop, tps, uni
   const n = Number(u.replace(",", ".")) || 0;
   const parts = [0.3, 0.3, 0.4];
   const stopLimit = long ? stop * 0.995 : stop * 1.005;
-  const rows: { label: string; order: string; note?: string }[] = [
+  const spotSell = !long && !vm.canShort;
+  const rows: { label: string; order: string; note?: string }[] = spotSell ? [
+    { label: "1. Sell what you hold", order: `SELL ${pair} · Limit · price ${fmtUsd(entry)}${n ? ` · amount ${fmtNum(n, 6)} ${symbol}` : " · amount: the part you decided to sell"}`, note: "No TP/SL on this order: after the sell there is no position to protect. Leave the TP/SL box unticked." },
+    ...tps.map((tp, i) => ({ label: `${i + 2}. Optional buy back ${i + 1}`, order: `BUY ${pair} · Limit · price ${fmtUsd(tp)}${n ? ` · amount ${fmtNum(n * parts[i], 6)} ${symbol}` : ` · ${Math.round(parts[i] * 100)}% of what you sold`}`, note: i === 0 ? "Only if you want the coin back cheaper. Each buy can get its own TP/SL (take profit above, stop below)." : undefined })),
+    { label: `${tps.length + 2}. Alert, not an order`, order: `Price alert: ${symbol} above ${fmtUsd(stop)}`, note: "Above this the sell signal failed. If you still want the coin, that is the level to buy back at." },
+  ] : [
     { label: "1. Entry", order: `${long ? "BUY" : "SELL"} ${pair} · Limit · price ${fmtUsd(entry)}${n ? ` · amount ${fmtNum(n, 6)} ${symbol}` : ""}${leverage > 1 ? ` · ${leverage}x isolated` : ""}`, note: "Place it inside the entry zone. If price is already past the zone, do not chase: set the limit at the zone edge and wait." },
     { label: "2. Stop loss", order: `${long ? "SELL" : "BUY"} ${pair} · Stop-limit · stop ${fmtUsd(stop)} · limit ${fmtUsd(stopLimit)}${n ? ` · amount ${fmtNum(n, 6)} ${symbol}` : ""}`, note: `Right after the entry fills. The limit sits ${long ? "0.5% under" : "0.5% over"} the stop so it fills in a fast move. On exchanges with "attached" or "bracket" orders (Coinbase Advanced, Bybit, OKX), add it on the entry ticket instead.` },
     ...tps.map((tp, i) => ({ label: `${i + 3}. Take profit ${i + 1}`, order: `${long ? "SELL" : "BUY"} ${pair} · Limit · price ${fmtUsd(tp)}${n ? ` · amount ${fmtNum(n * parts[i], 6)} ${symbol} (${Math.round(parts[i] * 100)}%)` : ` · ${Math.round(parts[i] * 100)}% of the position`}`, note: i === 0 ? "When this fills, move the stop-loss order to the entry price (break-even)." : i === 1 ? "When this fills, trail the stop under the last swing low (or over the last swing high on a short)." : "Let the last part run to here; cancel any remaining stop after it fills." })),
@@ -37,7 +42,7 @@ export default function OrderTicket({ venue, symbol, side, entry, stop, tps, uni
           </li>
         ))}
       </ol>
-      <p className="text-[11px] text-fg-3">Sizes assume the 30 / 30 / 40 split. {vm.canShort ? "" : `${vm.label} is spot only: SHORT tickets cannot be placed there.`} Check the minimum order size on the pair; tiny splits may be below it, in which case use two parts instead of three.</p>
+      <p className="text-[11px] text-fg-3">{spotSell ? `${vm.label} is spot only, so this SHORT is shown as a sell of coins you hold, with optional buy-backs at the short's targets.` : "Sizes assume the 30 / 30 / 40 split."} Check the minimum order size on the pair; tiny splits may be below it, in which case use two parts instead of three.</p>
     </div>
   );
 }

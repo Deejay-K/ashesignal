@@ -6,7 +6,8 @@ import { tgSend, tgPhoto, tgCardImages, fetchImage, tgEdit, tgAnswerCallback, tg
 import { answer } from "./ai/assistant";
 import { globalConditions, summarize } from "./market/conditions";
 import { marketRegime } from "./market/regime";
-import { analyzeAsset } from "./market/analyze";
+import { analyzeScreen } from "./market/analyze";
+import { signalView, ago } from "./market/signal-state";
 import { search as cgSearch, getMarketsByIds } from "./providers/coingecko";
 import { getFearGreed } from "./providers/feargreed";
 import { loadDiscovery, tradeableOn } from "./market/discovery";
@@ -231,7 +232,7 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "help": return help(c);
     case "exchange": return a ? setExchange(c, a) : exchange(c, "");
     case "coin": return coin(c, a, (b as Timeframe) || undefined);
-    case "setup": return setupCard(c, a, (b as Timeframe) || "4h");
+    case "setup": return setupCard(c, a, (b as Timeframe) || null);
     case "scan": return scanCard(c, a);
     case "wa": return whaleAlert(c, a);
     case "copy": return copySetup(c, a, (b as Timeframe) || "4h");
@@ -495,30 +496,53 @@ async function coin(c: ChatCtx, arg: string, tfArg?: Timeframe) {
   await tgTyping(c.chatId);
   const cn = await resolveCoin(coinQ);
   if (!cn) return tgSend(c.chatId, `I could not find "${esc(coinQ)}".`, { html: true });
-  return setupCard(c, cn.id, tf ?? "4h", cn);
+  return setupCard(c, cn.id, tf ?? null, cn);
 }
 
-async function setupCard(c: ChatCtx, id: string, tf: Timeframe, known?: { id: string; symbol: string; name: string }) {
+/** The plan every button acts on: the frozen levels of an active Confirmed signal, else the live setup. One rule,
+ *  same candles as the screener, so Copy, Size, Take and the alerts always match the card and the signal message. */
+async function planFor(c: ChatCtx, cn: { id: string; symbol: string }, tf: Timeframe) {
+  const [sig, a] = await Promise.all([safe(signalView(c.sb, cn, tf)), safe(analyzeScreen({ symbol: cn.symbol, coingeckoId: cn.id }, [tf]))]);
+  const tt = a.ok ? a.data.timeframes[tf] : null;
+  const t = tt && !("unavailable" in tt) ? tt : null;
+  const view = sig.ok ? sig.data : null;
+  const s = view?.status === "active" && view.setup ? view.setup : t?.setup ?? null;
+  return { t, s, sig: view };
+}
+
+async function setupCard(c: ChatCtx, id: string, tfIn: Timeframe | null, known?: { id: string; symbol: string; name: string }) {
   await tgTyping(c.chatId);
   const cn = known ?? (await resolveCoin(id));
   if (!cn) return tgSend(c.chatId, "Coin not found.");
-  const a = await safe(analyzeAsset({ symbol: cn.symbol, coingeckoId: cn.id, venue: c.venue }, ["1h", "4h", "1d"]));
+  const [sigR, a] = await Promise.all([safe(signalView(c.sb, cn, tfIn)), safe(analyzeScreen({ symbol: cn.symbol, coingeckoId: cn.id }, ["1h", "4h", "1d"]))]);
   if (!a.ok) return tgSend(c.chatId, `Could not load ${esc(cn.symbol)}: ${esc(a.error)}`, { html: true });
+  const sig = sigR.ok ? sigR.data : null;
+  const tf: Timeframe = sig?.tf ?? tfIn ?? "4h";
   const t = a.data.timeframes[tf];
   const listings = await venueListings();
   const vs = venuesFor(cn.symbol, listings, c.venue);
   const where = vs.includes(c.venue) ? `Listed on ${VENUE_META[c.venue].label}` : vs.length ? `Not on ${VENUE_META[c.venue].label}; on ${vs.map((v) => VENUE_META[v].label).join(", ")}` : "DEX only";
   const tfRow: Keyboard[number] = (["1h", "4h", "1d"] as Timeframe[]).map((x) => ({ text: (x === tf ? "• " : "") + x, callback_data: `coin:${ref(cn)}:${x}` }));
   if (!t || "unavailable" in t) return tgSend(c.chatId, `<b>${esc(cn.name)} (${esc(cn.symbol)})</b> ${tf}: no data. ${esc(a.data.consensus.summary)}`, { html: true, keyboard: [tfRow, [{ text: "Menu", callback_data: "menu" }]] });
-  const s = t.setup;
+  const active = sig?.status === "active" && !!sig.setup;
+  const s = active ? sig!.setup! : t.setup;
+  // Which line of the signal system this card sits on. This is the answer to "the bot said Confirmed, why does the
+  // card say something else": the card now states the signal's own status first.
+  let statusLine = "";
+  if (active) statusLine = `\n\n✅ <b>CONFIRMED signal</b> · sent ${esc(ago(sig!.since))} · still active\nLevels are the ones from the signal. It stays Confirmed until the stop or TP1 is reached, or the score fades.`;
+  else if (sig?.status === "ended") statusLine = `\n\n⌛ <b>Was Confirmed</b>, signal ended ${esc(ago(sig.endedAt))}.${sig.endReason ? `\n${esc(sig.endReason)}` : ""}\nBelow is the live read, not the old signal.`;
+  if (sig?.others.length) statusLine += `\n✅ Also Confirmed on: ${sig.others.map((o) => `${o.tf}${o.side ? ` (${o.side})` : ""}`).join(", ")} (tap the timeframe below).`;
   const head = `<b>${esc(cn.name)} (${esc(cn.symbol)})</b> · ${fmtUsd(t.price)} · ${tf}\n${t.outlook === "strongly bullish" || t.outlook === "bullish" ? "🟢" : t.outlook.includes("bear") ? "🔴" : "🟡"} ${esc(t.outlook)} (score ${t.score > 0 ? "+" : ""}${t.score}) · trend ${esc(t.trend.direction)} · RSI ${t.momentum.rsi.toFixed(0)} · vol ${t.volume.ratio.toFixed(2)}x\n${esc(a.data.consensus.summary)}\n${esc(where)}`;
   const levels = t.levels.slice(0, 4).map((l) => `${l.kind === "support" ? "S" : "R"} ${fmtUsd(l.price)}`).join(" · ");
   const pats = [...t.patterns.confirmed.map((p) => `${p.name} ✓`), ...t.patterns.forming.map((p) => `${p.name} (forming)`)].slice(0, 3).join(", ");
   let body = `\n<b>Levels:</b> ${esc(levels || "none")}${pats ? `\n<b>Patterns:</b> ${esc(pats)}` : ""}`;
   const kb: Keyboard = [tfRow];
   if (s) {
-    const tag = s.kind === "confirmed" ? "✅ CONFIRMED" : s.kind === "speculative" ? "⚠️ speculative" : "👀 watch";
+    // A live setup that passes the single-timeframe gates is not a signal yet: the screener also checks the higher
+    // timeframe, the engine's record and the market regime, and only its scan sends the signal.
+    const tag = active ? "✅ CONFIRMED" : s.kind === "confirmed" ? "🟡 passes the chart checks, not a signal yet" : s.kind === "speculative" ? "⚠️ speculative" : "👀 watch";
     body += `\n\n<b>${s.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} setup · ${tag}</b> · conf ${s.confidence}% · ${s.riskRewardTp2}R · ${esc(s.style)}\nEntry: ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}\n${s.takeProfits.slice(0, 3).map((x) => `${x.label}: ${fmtUsd(x.price)} (${x.rr}R)`).join("\n")}\n${s.stopLosses.map((x) => `${x.label}: ${fmtUsd(x.price)}`).join(" · ")}\nLeverage: ${s.leverage.recommended}x recommended (max ${s.leverage.maxSafe}x)`;
+    if (!active && s.kind === "confirmed") body += `\n<b>Not a signal yet:</b> ${esc(sig?.screened === false ? "this coin is outside the top 100 the screener scans, so no signals are sent for it. Treat it as your own read." : "the scan runs about once an hour per coin and also checks the higher timeframe, the engine's record and the market regime. If it still holds then, the signal is sent.")}`;
     if (s.kind !== "confirmed" && s.quality.confirmGaps.length) body += `\n<b>Missing for Confirmed:</b> ${esc(s.quality.confirmGaps[0])}`;
     if (s.kind === "watch" && s.quality.issues.length) body += `\n<b>Why only watch:</b> ${esc(s.quality.issues[0])}`;
     if (s.invalidation?.length) body += `\n<b>Invalidated if:</b> ${esc(s.invalidation[0])}`;
@@ -528,28 +552,27 @@ async function setupCard(c: ChatCtx, id: string, tf: Timeframe, known?: { id: st
     kb.push([{ text: "📋 Copy setup", callback_data: `copy:${ref(cn)}:${tf}` }, { text: "📐 Size it", callback_data: `size:${s.entry.mid}:${s.stopLosses[0].price}` }]);
     kb.push([{ text: "✍️ I took it", callback_data: `take:${ref(cn)}:${tf}:real` }, { text: "🧪 Paper trade", callback_data: `take:${ref(cn)}:${tf}:paper` }]);
     kb.push([{ text: "🔔 Alert at TP1/SL", callback_data: `alerttp:${ref(cn)}:${tf}` }, { text: "🔔 Entering zone", callback_data: `zonealert:${ref(cn)}:${tf}` }]);
-    kb.push([...(s.kind !== "confirmed" ? [{ text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }] : []), { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
+    kb.push([...(!active ? [{ text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }] : []), { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
     const guide = link(`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), symbol: cn.symbol, leverage: String(s.leverage.recommended), venue: c.venue })}`);
     kb.push([{ text: "📖 How to place it", url: guide ?? "https://t.me" }, { text: "🌐 Full page", url: link(`/s/${cn.id}/${tf}`) ?? "https://t.me" }]);
     // Candle chart with the setup drawn on it first (short caption: Telegram caps captions at 1024 chars), then the full card.
     const chart = link(`/api/chart?${new URLSearchParams({ symbol: cn.symbol, id: cn.id, tf, side: s.side, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? "") })}`);
-    const og = link(`/api/og?${new URLSearchParams({ symbol: cn.symbol, tf, side: s.side, kind: s.kind, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? s.stopLosses[0].price), rr: String(s.riskRewardTp2), lev: String(s.leverage.recommended), conf: String(s.confidence), style: s.style, theme: "foundry" })}`);
+    const og = link(`/api/og?${new URLSearchParams({ symbol: cn.symbol, tf, side: s.side, kind: active ? "confirmed" : s.kind === "confirmed" ? "unconfirmed" : s.kind, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? s.stopLosses[0].price), rr: String(s.riskRewardTp2), lev: String(s.leverage.recommended), conf: String(s.confidence), style: s.style, theme: "foundry" })}`);
     // The share card (same PNG as the website's share button) and the chart with levels, as one album above the card text.
     const [cardImg, chartImg] = await Promise.all([og ? fetchImage(og) : null, chart ? fetchImage(chart) : null]);
-    await tgCardImages(c.chatId, { card: cardImg, chart: chartImg }, `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> · ${esc(s.kind)} · conf ${s.confidence}% · ${s.riskRewardTp2}R`);
+    await tgCardImages(c.chatId, { card: cardImg, chart: chartImg }, `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> · ${active ? "CONFIRMED signal" : s.kind === "confirmed" ? "not a signal yet" : esc(s.kind)} · conf ${s.confidence}% · ${s.riskRewardTp2}R`);
     if (og) kb.push([{ text: "🖼 Open share card", url: og }]);
   } else {
     body += `\n\nNo tradeable setup on ${tf}.`;
     kb.push([{ text: "🌐 Full page", url: link(`/s/${cn.id}/${tf}`) ?? "https://t.me" }, { text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }, { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
   }
   kb.push([{ text: "Menu", callback_data: "menu" }]);
-  return tgSend(c.chatId, head + body, { html: true, keyboard: kb });
+  return tgSend(c.chatId, head + statusLine + body, { html: true, keyboard: kb });
 }
 
 async function copySetup(c: ChatCtx, id: string, tf: Timeframe) {
   const cn = await resolveCoin(id); if (!cn) return tgSend(c.chatId, "Coin not found.");
-  const a = await safe(analyzeAsset({ symbol: cn.symbol, coingeckoId: cn.id, venue: c.venue }, [tf]));
-  const t = a.ok ? a.data.timeframes[tf] : null; const s = t && !("unavailable" in t) ? t.setup : null;
+  const { s } = await planFor(c, cn, tf);
   if (!s) return tgSend(c.chatId, "No setup to copy right now.");
   const vm = VENUE_META[c.venue];
   const txt = [`${cn.symbol} ${s.side} ${tf} - ${s.kind} - AsheSignal`, `Pair on ${vm.label}: ${vm.instrument(cn.symbol, vm.quotes[0])}`, `Entry: ${fmtUsd(s.entry.low)} - ${fmtUsd(s.entry.high)}`, ...s.takeProfits.map((x) => `${x.label}: ${fmtUsd(x.price)} (${x.rr}R)`), ...s.stopLosses.map((x) => `${x.label}: ${fmtUsd(x.price)}`), `Leverage: ${s.leverage.recommended}x (max ${s.leverage.maxSafe}x)`, `Sizing: risk 1% of account between entry and SL1`, `Manual trading only. Not financial advice.`].join("\n");
@@ -645,8 +668,7 @@ async function alertCreate(c: ChatCtx, arg: string) {
 async function alertFromSetup(c: ChatCtx, id: string, tf: Timeframe) {
   if (!c.userId) return needLink(c);
   const cn = await resolveCoin(id); if (!cn) return tgSend(c.chatId, "Coin not found.");
-  const a = await safe(analyzeAsset({ symbol: cn.symbol, coingeckoId: cn.id, venue: c.venue }, [tf]));
-  const t = a.ok ? a.data.timeframes[tf] : null; const s = t && !("unavailable" in t) ? t.setup : null;
+  const { s } = await planFor(c, cn, tf);
   if (!s) return tgSend(c.chatId, "No setup to alert on.");
   const okTp = await createAlert(c, { asset_key: `cg:${cn.id}`, symbol: cn.symbol, type: s.side === "LONG" ? "price_above" : "price_below", params: { price: s.takeProfits[0].price }, asset_ref: { symbol: cn.symbol, id: cn.id }, timeframe: tf });
   const okSl = await createAlert(c, { asset_key: `cg:${cn.id}`, symbol: cn.symbol, type: s.side === "LONG" ? "price_below" : "price_above", params: { price: s.stopLosses[0].price }, asset_ref: { symbol: cn.symbol, id: cn.id }, timeframe: tf });
@@ -655,8 +677,7 @@ async function alertFromSetup(c: ChatCtx, id: string, tf: Timeframe) {
 async function alertZone(c: ChatCtx, id: string, tf: Timeframe) {
   if (!c.userId) return needLink(c);
   const cn = await resolveCoin(id); if (!cn) return tgSend(c.chatId, "Coin not found.");
-  const a = await safe(analyzeAsset({ symbol: cn.symbol, coingeckoId: cn.id, venue: c.venue }, [tf]));
-  const t = a.ok ? a.data.timeframes[tf] : null; const s = t && !("unavailable" in t) ? t.setup : null;
+  const { s } = await planFor(c, cn, tf);
   if (!s) return tgSend(c.chatId, "No entry zone to watch.");
   const ok = await createAlert(c, { asset_key: `cg:${cn.id}`, symbol: cn.symbol, type: "entry_zone", params: { low: s.entry.low, high: s.entry.high, side: s.side }, asset_ref: { symbol: cn.symbol, id: cn.id }, timeframe: tf, channels: ["push", "email", "telegram"] });
   return tgSend(c.chatId, ok ? `🔔 I will tell you when ${esc(cn.symbol)} comes into the entry zone ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}.` : "Could not save the alert.", { html: true });
@@ -681,8 +702,7 @@ async function takeStart(c: ChatCtx, arg: string, tf: Timeframe = "4h", paper = 
     const deep = me ? `https://t.me/${me}?start=take_${encodeURIComponent(ref(cn))}_${tf}_${paper ? "paper" : "real"}` : null;
     return tgSend(c.chatId, `${who(c)}Let's record ${esc(cn.symbol)} in private so the group stays clean.`, { html: true, keyboard: deep ? [[{ text: "✍️ Continue in private chat", url: deep }]] : undefined });
   }
-  const a = await safe(analyzeAsset({ symbol: cn.symbol, coingeckoId: cn.id, venue: c.venue }, [tf]));
-  const t = a.ok ? a.data.timeframes[tf] : null; const s = t && !("unavailable" in t) ? t.setup : null;
+  const { t, s } = await planFor(c, cn, tf);
   const state = { flow: "take", step: "fill", coin: cn, tf, paper, setup: s ? { side: s.side, kind: s.kind, entry: s.entry, takeProfits: s.takeProfits.map((x) => ({ price: x.price })), stopLosses: s.stopLosses.map((x) => ({ price: x.price })), rr: s.riskRewardTp2, confidence: s.confidence, leverage: s.leverage } : null, price: t && !("unavailable" in t) ? t.price : null };
   await setState(c, state);
   return tgSend(c.chatId, `${paper ? "🧪 <b>Paper trade</b>" : "✍️ <b>Record trade</b>"}: ${esc(cn.symbol)} ${s ? `${s.side} ${tf} (${esc(s.kind)}, SL ${fmtUsd(s.stopLosses[0].price)}, TP1 ${fmtUsd(s.takeProfits[0].price)})` : tf}\n\nStep 1 of 3: what was your <b>fill price</b>?${state.price ? ` (current ${fmtUsd(state.price)}; send "." to use it)` : ""}\nSend /cancel to stop.`, { html: true });
@@ -955,7 +975,7 @@ export async function handleInline(sb: SupabaseClient, q: { id: string; query: s
     }
     const cn = classifyAddress(first) === "unknown" ? await resolveCoin(first) : null;
     if (cn) {
-      const a = await safe(analyzeAsset({ symbol: cn.symbol, coingeckoId: cn.id, venue }, ["4h", "1d"]));
+      const a = await safe(analyzeScreen({ symbol: cn.symbol, coingeckoId: cn.id }, ["4h", "1d"]));
       if (a.ok) for (const tf of ["4h", "1d"] as Timeframe[]) {
         const t = a.data.timeframes[tf]; if (!t || "unavailable" in t) continue;
         const s = t.setup;
@@ -1093,7 +1113,7 @@ async function compare(c: ChatCtx, arg: string) {
   await tgTyping(c.chatId);
   const [a, b] = await Promise.all([resolveCoin(parts[0]), resolveCoin(parts[1])]);
   if (!a || !b) return tgSend(c.chatId, `Could not find ${!a ? esc(parts[0]) : esc(parts[1])}.`, { html: true });
-  const [ra, rb] = await Promise.all([safe(analyzeAsset({ symbol: a.symbol, coingeckoId: a.id, venue: c.venue }, [tf])), safe(analyzeAsset({ symbol: b.symbol, coingeckoId: b.id, venue: c.venue }, [tf]))]);
+  const [ra, rb] = await Promise.all([safe(analyzeScreen({ symbol: a.symbol, coingeckoId: a.id }, [tf])), safe(analyzeScreen({ symbol: b.symbol, coingeckoId: b.id }, [tf]))]);
   const row = (cn: { symbol: string }, r: typeof ra) => {
     const t = r.ok ? r.data.timeframes[tf] : null; if (!t || "unavailable" in t) return `<b>${esc(cn.symbol)}</b>: no data`;
     const s = t.setup; const z = s ? zoneStatus(t.price, s.entry, s.side) : null;
@@ -1294,7 +1314,7 @@ async function freeText(c: ChatCtx, text: string) {
     const explicit = m && (m[1] === "$" || (m[2] === m[2].toUpperCase() && /[A-Z]/.test(m[2])));
     if (m && explicit && !/^(OK|YES|NO|HI|HELP|MENU)$/.test(m[2].toUpperCase())) {
       const cn = await resolveCoin(m[2]);
-      if (cn && cn.symbol.toUpperCase() === m[2].toUpperCase()) return setupCard(c, cn.id, (m[3] as Timeframe) || "4h", cn);
+      if (cn && cn.symbol.toUpperCase() === m[2].toUpperCase()) return setupCard(c, cn.id, (m[3] as Timeframe) || null, cn);
     }
   }
   return aiChat(c, text);
