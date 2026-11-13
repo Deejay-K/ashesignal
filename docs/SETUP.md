@@ -477,3 +477,16 @@ No database change and no new environment variables.
 - **Patterns**: tapping a pattern chip under the chart still shows or hides it on the chart, and Squixi now explains it: which way it leans, what its status means, the trigger level, target and cancel level, why it got its confidence, and what to do. Each pattern in the list below the chart has its own 🦑 as well.
 - **Page hints**: the first time someone opens a kind of page (dashboard, token, Trading Discovery, size calculator, guide, plan, portfolio, alerts, track record, scanner, academy) Squixi gives one short hint. Once per device per page kind, never during the tour. "Stop page tips" in the bubble or "Tips on/off" in the Ask panel turns them, and the waving, off. The 🦑 buttons always work.
 - **Adding lines for the mascot**: everything it says is in `src/lib/mascot.ts`. Any component can make it speak with `squixiSay({ title, text, rows, notes, actions })`.
+
+## 49. Stage 47 - animated mascot: idle, pointing, waving
+
+SquixiMutation now has three animations, all 32-frame seamless loops built from the original artwork:
+
+- **Idle** (`public/brand/squixi-idle.webp`): the original loop. Plays when the mascot is just standing there: for about four seconds after a bubble is closed, and while the mouse is on the Ask button or on the mascot.
+- **Pointing** (`squixi-point.webp`): one arm raised with the index finger up, wagging gently. Plays while explaining a trade or a pattern.
+- **Waving** (`squixi-wave.webp`): raised fist rocking side to side. Plays for page hints and the occasional hello.
+- **Reactions** (CSS): a small hop each time a new message starts, a lean toward the bubble for the first seconds of talking, a jump when the mouse touches the mascot.
+
+How the raised arm was made: on every frame the original arm and glove are removed (and the bit of leg they covered is redrawn), then a new rubber-hose arm is drawn from the shoulder and the mascot's own glove is placed at the end of it, with a finger added for pointing. The body keeps its original movement underneath. The script that does this is not part of the app; the three files are simply images. To replace any pose with hand-drawn animation later, drop in a file with the same name and size (130 x 250, transparent).
+
+The three files (about 300 KB each) are fetched the first time the mascot appears, not with the page.

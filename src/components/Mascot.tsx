@@ -19,13 +19,17 @@ export default function Mascot() {
   const [msg, setMsg] = useState<SquixiMsg | null>(null);
   const [out, setOut] = useState(false);   // character visible
   const [peek, setPeek] = useState(false); // quick hello without a bubble
+  const [linger, setLinger] = useState(false); // stands around idle for a moment (after talking, or while the Ask button is hovered)
+  const [hop, setHop] = useState(0);       // bumps on every new message so the little jump replays
+  const lingerT = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stay = (ms: number) => { if (lingerT.current) clearTimeout(lingerT.current); setLinger(true); lingerT.current = setTimeout(() => setLinger(false), ms); };
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hold = useRef(false);
   const left = useRef(0);
   const started = useRef(0);
 
   const clear = () => { if (timer.current) { clearTimeout(timer.current); timer.current = null; } };
-  const close = useCallback(() => { clear(); setOut(false); setTimeout(() => setMsg(null), 260); }, []);
+  const close = useCallback(() => { clear(); setOut(false); setTimeout(() => setMsg(null), 260); if (lingerT.current) clearTimeout(lingerT.current); setLinger(true); lingerT.current = setTimeout(() => setLinger(false), 4500); }, []);
   const arm = useCallback((ms: number) => { clear(); left.current = ms; started.current = Date.now(); timer.current = setTimeout(() => { if (!hold.current) close(); }, ms); }, [close]);
 
   // Anything on the page can make Squixi talk.
@@ -33,7 +37,7 @@ export default function Mascot() {
     const on = (e: Event) => {
       const m = (e as CustomEvent<SquixiMsg>).detail;
       if (!m?.title) return;
-      setPeek(false); setMsg(m); setOut(true);
+      setPeek(false); setMsg(m); setOut(true); setHop((h) => h + 1);
       arm(m.holdMs ?? (m.kind === "tip" ? 14_000 : 60_000));
     };
     window.addEventListener(SQUIXI_EVENT, on);
@@ -76,19 +80,26 @@ export default function Mascot() {
 
   useEffect(() => { const on = (e: KeyboardEvent) => { if (e.key === "Escape") close(); }; window.addEventListener("keydown", on); return () => window.removeEventListener("keydown", on); }, [close]);
 
-  if (path.startsWith("/login")) return null;
   const pause = () => { hold.current = true; if (timer.current) { left.current = Math.max(4000, left.current - (Date.now() - started.current)); clear(); } };
   const resume = () => { hold.current = false; if (msg && !timer.current) arm(left.current || 8000); };
   const muteTips = () => { try { localStorage.setItem(SQUIXI_TIPS_KEY, "off"); } catch { /* ignore */ } close(); };
   const show = out && !!msg;
+  // Which animation plays: pointing finger while explaining something, a wave for hints and hellos, the idle
+  // loop when just standing there.
+  const pose: "point" | "wave" | "idle" = show ? (msg?.kind === "tip" ? "wave" : "point") : peek ? "wave" : "idle";
+  const visible = show || peek || linger;
+  // The animation files are only fetched once the mascot first appears, so they never slow the page load.
+  const [ever, setEver] = useState(false);
+  useEffect(() => { if (visible) setEver(true); }, [visible]);
 
+  if (path.startsWith("/login")) return null;
   return (
     <>
-      <button className="ask-fab" onClick={() => { close(); squixiAsk(); }} aria-label={`Ask ${SQUIXI}`}>
+      <button className="ask-fab" onClick={() => { close(); squixiAsk(); }} onMouseEnter={() => stay(6000)} onFocus={() => stay(6000)} aria-label={`Ask ${SQUIXI}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/brand/squixi-head.png" alt="" className="ask-fab-face" width={26} height={26} />Ask
       </button>
-      <div className={`squixi ${show ? "squixi-out" : ""} ${peek && !show ? "squixi-peek" : ""}`} onMouseEnter={pause} onMouseLeave={resume} onTouchStart={pause}>
+      <div className={`squixi ${show ? "squixi-out" : ""} ${peek && !show ? "squixi-peek" : ""} ${linger && !show && !peek ? "squixi-idle" : ""}`} data-pose={pose} onMouseEnter={() => { pause(); if (!show) stay(6000); }} onMouseLeave={resume} onTouchStart={pause}>
         {msg ? (
           <div className="squixi-bubble" role="status" aria-live="polite">
             <div className="squixi-head">
@@ -109,9 +120,15 @@ export default function Mascot() {
             </div>
           </div>
         ) : null}
-        <button type="button" className="squixi-char" onClick={() => (show ? close() : squixiAsk())} aria-label={show ? "Close" : `Ask ${SQUIXI}`} tabIndex={show || peek ? 0 : -1}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/brand/squixi.webp" alt={SQUIXI} width={133} height={260} loading="lazy" decoding="async" />
+        <button type="button" className="squixi-char" onClick={() => (show ? close() : squixiAsk())} aria-label={show ? "Close" : `Ask ${SQUIXI}`} tabIndex={visible ? 0 : -1}>
+          {/* Three loops of the same character, stacked; only the current pose is shown. They are fetched the first
+              time the mascot appears, not with the page. */}
+          <span key={hop} className="squixi-poses">
+            {ever && (["idle", "point", "wave"] as const).map((k) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={k} src={`/brand/squixi-${k}.webp`} alt={k === "idle" ? SQUIXI : ""} width={130} height={250} decoding="async" data-k={k} />
+            ))}
+          </span>
         </button>
       </div>
     </>

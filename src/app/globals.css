@@ -357,7 +357,15 @@ table tbody tr:hover td { background: rgba(159,176,192,.06); }
 @media (min-width: 1280px) { .squixi { --sq-h: 140px; } }
 @media (max-height: 520px) { .squixi { --sq-h: 72px; } }
 .squixi-char { order: 2; flex: 0 0 auto; height: var(--sq-h); padding: 0; border: 0; background: none; cursor: pointer; pointer-events: none; opacity: 0; transform: translateY(40%) scale(.2); transform-origin: 80% 100%; transition: transform .28s cubic-bezier(.3,1.6,.5,1), opacity .2s; filter: drop-shadow(0 6px 14px rgba(0,0,0,.45)); }
-.squixi-char img { display: block; height: 100%; width: auto; }
+.squixi-poses { position: relative; display: block; height: 100%; aspect-ratio: 130 / 250; transform-origin: 50% 100%; }
+.squixi-poses img { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; }
+.squixi[data-pose="idle"] .squixi-poses img[data-k="idle"], .squixi[data-pose="point"] .squixi-poses img[data-k="point"], .squixi[data-pose="wave"] .squixi-poses img[data-k="wave"] { opacity: 1; }
+/* A little hop each time Squixi starts a new message, a lean toward the bubble while talking, a jump on hover. */
+.squixi-out .squixi-poses { animation: squixi-hop .55s cubic-bezier(.3,1.5,.5,1) both, squixi-talk 1.6s ease-in-out .55s 3; }
+@keyframes squixi-hop { 0% { transform: translateY(0) scale(1, 1); } 25% { transform: translateY(0) scale(1.08, .9); } 55% { transform: translateY(-16%) scale(.96, 1.06); } 100% { transform: none; } }
+@keyframes squixi-talk { 0%, 100% { transform: none; } 50% { transform: rotate(-3deg) scale(1.02, .98); } }
+.squixi-char:hover .squixi-poses, .squixi-char:focus-visible .squixi-poses { animation: squixi-hop .5s cubic-bezier(.3,1.5,.5,1); }
+.squixi-idle .squixi-char { opacity: 1; transform: none; pointer-events: auto; }
 .squixi-out .squixi-char, .squixi-peek .squixi-char { opacity: 1; transform: none; pointer-events: auto; }
 .squixi-peek .squixi-char { animation: squixi-wave 2.6s ease-in-out both; }
 @keyframes squixi-wave { 0% { transform: translateY(60%) scale(.6); opacity: 0; } 14% { transform: translateY(-4%) scale(1.04); opacity: 1; } 22%, 78% { transform: none; opacity: 1; } 50% { transform: rotate(-4deg); } 100% { transform: translateY(60%) scale(.6); opacity: 0; } }
@@ -377,5 +385,5 @@ table tbody tr:hover td { background: rgba(159,176,192,.06); }
 .squixi-notes { margin: 8px 0 0; padding-left: 16px; list-style: disc; display: grid; gap: 4px; }
 .squixi-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--border); }
 .squixi-mute { margin-left: auto; font-size: 11px; color: var(--fg-3); text-decoration: underline; background: none; border: 0; cursor: pointer; }
-@media (prefers-reduced-motion: reduce) { .squixi-char, .squixi-bubble { transition: opacity .15s; transform: none; } .squixi-peek .squixi-char { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .squixi-char, .squixi-bubble { transition: opacity .15s; transform: none; } .squixi-peek .squixi-char, .squixi-out .squixi-poses, .squixi-char:hover .squixi-poses { animation: none; } }
 @media print { .squixi, .ask-fab { display: none; } }
