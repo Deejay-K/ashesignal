@@ -47,6 +47,8 @@ export function adviseLeverage(i: { entry: number; sl1: number; sl2: number; kin
   if (i.atrPct > 0.08) { cap = Math.min(cap, 2); rationale.push(`ATR is ${(i.atrPct * 100).toFixed(1)}% per candle: cap 2x.`); }
   else if (i.atrPct > 0.04) { cap = Math.min(cap, 3); rationale.push(`ATR is ${(i.atrPct * 100).toFixed(1)}% per candle: cap 3x.`); }
   if (i.tf === "1m" || i.tf === "5m") { cap = Math.min(cap, 5); rationale.push("Scalp timeframe: cap 5x (stops are tight; slippage matters more than leverage)."); }
+  // Stage 49: short timeframes have stops about one candle away, so a normal wick decides the trade. Less leverage there.
+  else if (i.tf === "15m" || i.tf === "30m" || i.tf === "1h") { cap = Math.min(cap, 5); rationale.push("1h and shorter: cap 5x (the stop is close and a single wick can reach it)."); }
   if (i.confidence < 45) { cap = Math.min(cap, 2); rationale.push(`Confidence ${i.confidence}%: cap 2x.`); }
   const recommended = Math.max(1, Math.min(maxSafe, cap));
   const conservative = Math.max(1, Math.floor(recommended / 2));
@@ -110,8 +112,16 @@ export interface TimeframeAnalysis {
 const MIN_CANDLES = 60;
 
 /** Confirmation gate thresholds. Defaults are the production rules; the Engine Lab varies them. */
-export interface GateOptions { band?: number; volMin?: number; stretchMax?: number; tp1Min?: number; tp2Min?: number }
-export const DEFAULT_GATES: Required<GateOptions> = { band: 35, volMin: 0.8, stretchMax: 2.5, tp1Min: 1, tp2Min: 1.5 };
+export interface GateOptions {
+  band?: number; volMin?: number; stretchMax?: number; tp1Min?: number; tp2Min?: number;
+  /** Smallest distance from the far edge of the entry zone to SL1, in ATRs (one ATR = one average candle). */
+  slMinAtr?: number;
+  /** How far past a support or resistance level a structural stop sits, in ATRs. */
+  slBufAtr?: number;
+}
+// Stage 49: the stop distances are now settings, so the Engine Lab can test wider stops on real data before the
+// live rules change. The defaults are the values the engine has always used, so live signals are unchanged.
+export const DEFAULT_GATES: Required<GateOptions> = { band: 35, volMin: 0.8, stretchMax: 2.5, tp1Min: 1, tp2Min: 1.5, slMinAtr: 0.8, slBufAtr: 0.3 };
 
 /** Runtime overrides adopted from the Engine Lab (loaded from engine_config by src/lib/engine-config.ts). */
 let runtimeGates: Partial<GateOptions> = {};
@@ -362,6 +372,7 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
   let tps: { price: number; basis: string; reliable: boolean }[] = [];
   let sl1Reliable = true;
   let sl2Reliable = true;
+  const slMin = i.gates.slMinAtr, slBuf = i.gates.slBufAtr;
 
   if (side === "LONG") {
     const s1 = sups[0];
@@ -379,12 +390,12 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
     const below = sups.filter((s) => s.price < entry.low);
     // structural stop: under the broken level for breakout entries (a close back below it is the invalidation),
     // else under the nearest support if it is within 2.5 ATR, else a 1.5 ATR stop
-    const structL = entry.type === "breakout" ? entry.low - i.atrNow * 0.8 : below[0] ? below[0].price - i.atrNow * 0.3 : null;
-    sl1Reliable = structL != null && entry.low - structL <= i.atrNow * 2.5;
-    sl1 = sl1Reliable ? Math.min(structL!, entry.low - i.atrNow * 0.8) : entry.low - i.atrNow * 1.5;
-    const struct2L = below.find((b) => b.price - i.atrNow * 0.3 < sl1 - i.atrNow * 0.5 && entry.low - b.price <= i.atrNow * 4.5);
+    const structL = entry.type === "breakout" ? entry.low - i.atrNow * slMin : below[0] ? below[0].price - i.atrNow * slBuf : null;
+    sl1Reliable = structL != null && entry.low - structL <= i.atrNow * (slMin + 1.7);
+    sl1 = sl1Reliable ? Math.min(structL!, entry.low - i.atrNow * slMin) : entry.low - i.atrNow * (slMin + 0.7);
+    const struct2L = below.find((b) => b.price - i.atrNow * slBuf < sl1 - i.atrNow * 0.5 && entry.low - b.price <= i.atrNow * (slMin + 3.7));
     sl2Reliable = !!struct2L;
-    sl2 = struct2L ? struct2L.price - i.atrNow * 0.3 : sl1 - i.atrNow * 1.0;
+    sl2 = struct2L ? struct2L.price - i.atrNow * slBuf : sl1 - i.atrNow * 1.0;
     const above = ress.filter((r) => r.price > entry.high + i.atrNow * 1.0);
     tps = [
       { price: above[0]?.price ?? entry.mid + i.atrNow * 2, basis: above[0] ? `nearest resistance (${above[0].touches} touches)` : "2x ATR extension (no structural level)", reliable: !!above[0] },
@@ -409,12 +420,12 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
       reasons.push("No clean rally level nearby - scale in near market with a tight ATR stop.");
     }
     const above = ress.filter((r) => r.price > entry.high);
-    const structS = entry.type === "breakout" ? entry.high + i.atrNow * 0.8 : above[0] ? above[0].price + i.atrNow * 0.3 : null;
-    sl1Reliable = structS != null && structS - entry.high <= i.atrNow * 2.5;
-    sl1 = sl1Reliable ? Math.max(structS!, entry.high + i.atrNow * 0.8) : entry.high + i.atrNow * 1.5;
-    const struct2S = above.find((b) => b.price + i.atrNow * 0.3 > sl1 + i.atrNow * 0.5 && b.price - entry.high <= i.atrNow * 4.5);
+    const structS = entry.type === "breakout" ? entry.high + i.atrNow * slMin : above[0] ? above[0].price + i.atrNow * slBuf : null;
+    sl1Reliable = structS != null && structS - entry.high <= i.atrNow * (slMin + 1.7);
+    sl1 = sl1Reliable ? Math.max(structS!, entry.high + i.atrNow * slMin) : entry.high + i.atrNow * (slMin + 0.7);
+    const struct2S = above.find((b) => b.price + i.atrNow * slBuf > sl1 + i.atrNow * 0.5 && b.price - entry.high <= i.atrNow * (slMin + 3.7));
     sl2Reliable = !!struct2S;
-    sl2 = struct2S ? struct2S.price + i.atrNow * 0.3 : sl1 + i.atrNow * 1.0;
+    sl2 = struct2S ? struct2S.price + i.atrNow * slBuf : sl1 + i.atrNow * 1.0;
     const below = sups.filter((s) => s.price < entry.low - i.atrNow * 1.0);
     tps = [
       { price: below[0]?.price ?? entry.mid - i.atrNow * 2, basis: below[0] ? `nearest support (${below[0].touches} touches)` : "2x ATR extension (no structural level)", reliable: !!below[0] },
@@ -429,9 +440,9 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
 
   let risk = Math.abs(entry.mid - sl1);
   if (risk <= 0) {
-    sl1 = side === "LONG" ? entry.mid - i.atrNow * 1.5 : entry.mid + i.atrNow * 1.5;
+    sl1 = side === "LONG" ? entry.mid - i.atrNow * (slMin + 0.7) : entry.mid + i.atrNow * (slMin + 0.7);
     sl1Reliable = false;
-    risk = i.atrNow * 1.5;
+    risk = i.atrNow * (slMin + 0.7);
     issues.push("Level structure too tight for a structural stop; SL1 is a 1.5x ATR stop.");
   }
   const takeProfits = tps.map((t, idx) => ({ label: `TP${idx + 1}`, price: t.price, basis: t.basis, rr: round2(Math.abs(t.price - entry.mid) / risk), reliable: t.reliable }));
@@ -455,7 +466,7 @@ function buildSetup(i: SetupInput): { setup: Setup | null; setupReason: string }
   if (issues.length) kind = "watch";
 
   const stopLosses = [
-    { label: "SL1", price: sl1, basis: sl1Reliable ? (entry.type === "breakout" ? (side === "LONG" ? "0.8 ATR below the broken level" : "0.8 ATR above the broken level") : side === "LONG" ? "below nearest support + 0.3 ATR" : "above nearest resistance + 0.3 ATR") : "1.5x ATR stop (no structural level within 2.5 ATR)", pctFromEntry: round2(((sl1 - entry.mid) / entry.mid) * 100), reliable: sl1Reliable },
+    { label: "SL1", price: sl1, basis: sl1Reliable ? (entry.type === "breakout" ? (side === "LONG" ? `${slMin} ATR below the broken level` : `${slMin} ATR above the broken level`) : side === "LONG" ? `below nearest support + ${slBuf} ATR` : `above nearest resistance + ${slBuf} ATR`) : `${(slMin + 0.7).toFixed(1)}x ATR stop (no structural level within ${(slMin + 1.7).toFixed(1)} ATR)`, pctFromEntry: round2(((sl1 - entry.mid) / entry.mid) * 100), reliable: sl1Reliable },
     { label: "SL2", price: sl2, basis: sl2Reliable ? "wider structural stop (second level)" : "SL1 plus 1x ATR (no second structural level)", pctFromEntry: round2(((sl2 - entry.mid) / entry.mid) * 100), reliable: sl2Reliable },
   ];
 

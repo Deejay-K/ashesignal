@@ -11,7 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getMarketsByIds } from "./providers/coingecko";
 import { venueListings, venuesFor, VENUE_IDS, type VenueId } from "./venues";
 import { loadRecipients, canReceive } from "./telegram-broadcast";
-import { tgSend, esc, type Keyboard } from "./telegram";
+import { tgSend, tgPhoto, fetchImage, esc, type Keyboard } from "./telegram";
 import { fmtUsd } from "./format";
 import { safe } from "./fetch";
 import { deliver } from "./alerts/notify";
@@ -147,8 +147,18 @@ export async function runFollowups(sb: SupabaseClient, budgetMs = 40_000): Promi
     if (e.type === "lost") await notifyJournal(sb, r, e).catch(() => {});
     const listed = listingsUnknown ? ([...VENUE_IDS] as VenueId[]) : venuesFor(r.symbol, listings, null);
     const kb: Keyboard = [[{ text: "🔎 Full card", callback_data: `setup:${r.coingecko_id.length <= 36 ? r.coingecko_id : `~${r.symbol}`}:${r.timeframe}` }, ...(link("/") ? [{ text: "🌐 Full page", url: link(`/s/${r.coingecko_id}/${r.timeframe}`)! }, { text: "Journal", url: link("/setups")! }] : [])]];
+    // TP2 and TP3 come with a shareable result card (rendered once, then Telegram's file id is reused).
+    let card: Blob | string | null = null;
+    if ((e.type === "tp2" || e.type === "tp3") && link("/")) {
+      const lvl = e.type === "tp2" ? r.tp2 : r.tp3;
+      card = await fetchImage(link(`/api/result-card?${new URLSearchParams({ symbol: r.symbol, tf: r.timeframe, side: r.side, entry: String((Number(r.entry_low) + Number(r.entry_high)) / 2), exit: String(lvl), sl: String(r.sl1 ?? ""), level: e.type.toUpperCase(), hours: String((Date.now() - Date.parse(r.emitted_at)) / 3_600_000) })}`)!);
+    }
     for (const rc of recipients) {
-      if (!canReceive(rc, listed, r.side)) continue;
+      if (!canReceive(rc, listed, r.side, { timeframe: r.timeframe, confidence: r.confidence })) continue;
+      if (card) {
+        const id = await tgPhoto(rc.chatId, card, text.length <= 1000 ? text : text.slice(0, 990), kb);
+        if (id) { card = id; sent++; await new Promise((res) => setTimeout(res, 50)); continue; }
+      }
       if (await tgSend(rc.chatId, text, { html: true, keyboard: kb })) sent++;
       await new Promise((res) => setTimeout(res, 50));
     }

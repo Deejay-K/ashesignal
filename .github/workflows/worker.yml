@@ -40,3 +40,5 @@ jobs:
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/lab?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Weekly review (Sundays, at each user's digest hour)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/review?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Weekly public recap (Sunday evening UTC, once per week)
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/recap?secret=${{ secrets.CRON_SECRET }}" || true

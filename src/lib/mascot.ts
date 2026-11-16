@@ -66,7 +66,7 @@ export function setupBriefing(o: { symbol: string; id?: string | null; tf: strin
   s.takeProfits.slice(0, 3).forEach((t, i) => rows.push({ k: t.label ?? `TP${i + 1}`, v: `${fmtUsd(t.price)}  (${pct(t.price, mid)}${t.rr != null ? `, ${t.rr}R` : ""})`, tone: "up" }));
   s.stopLosses.slice(0, 2).forEach((t, i) => rows.push({ k: t.label ?? `SL${i + 1}`, v: `${fmtUsd(t.price)}  (${pct(t.price, mid)})`, tone: "down" }));
   if (rr != null) rows.push({ k: "Reward to risk", v: `${rr}R to TP2 (you aim to make ${rr}x what you risk)` });
-  if (s.confidence != null) rows.push({ k: "Confidence", v: `${s.confidence}%` });
+  if (s.confidence != null) rows.push({ k: "Setup score", v: `${s.confidence}/100 (how many checks lined up, not a win chance)` });
   rows.push({ k: "Leverage", v: vm.canShort ? `${s.leverage?.recommended ?? 1}x suggested${s.leverage?.maxSafe ? `, never above ${s.leverage.maxSafe}x` : ""}` : `1x (${vm.label} is spot, no leverage)` });
   if (s.holdingPeriod) rows.push({ k: "Hold time", v: s.holdingPeriod });
   const notes: string[] = [];

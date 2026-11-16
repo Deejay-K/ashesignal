@@ -565,3 +565,9 @@ alter table telegram_users add column if not exists ai_chat jsonb;
 
 -- Stage 40: Academy progress per Telegram user
 alter table telegram_users add column if not exists learn jsonb;
+
+-- ---------- Stage 49: per-person signal filters ----------
+-- Which Confirmed Trades a Telegram user or group wants: {"tfs":["4h","1d"],"longsOnly":true,"minScore":70}.
+-- Empty or null means everything, exactly as before.
+alter table telegram_users add column if not exists sig_filters jsonb;
+alter table telegram_chats add column if not exists sig_filters jsonb;

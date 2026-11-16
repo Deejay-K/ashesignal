@@ -136,3 +136,4 @@ All tables have RLS: `auth.uid() = user_id`.
 | 45 | nav.ts sections + sectionsOf, SubNav per section, Fold (dashboard sections), Tour, shared-fetch.ts (one request per URL per page), loadDiscoveryCached, headline.ts shared by /api/headline and the bot |
 | 46 | lib/mascot.ts (squixiSay, setupBriefing, patternBriefing, page tips), Mascot component (pop-out character + bubble + Ask button), 🦑 buttons in AnalysisPanel and OpportunityCard, AskDrawer opened by event |
 | 48 | followups.ts: state-based cancellation (endedState against coin_metrics + category_history), live re-check of open signals via signalView each run, wick stop/TP1 messages, journal notify |
+| 49 | gates slMinAtr/slBufAtr + Lab stop variants, leverage cap on short timeframes, same-bet warning and SignalFilters in telegram-broadcast, recap.ts + /api/cron/recap, /api/result-card, /api/status + /status, bot signalFilter/recap/explainSetup, squid buttons on journal and radar |

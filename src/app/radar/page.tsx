@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { squixiSay } from "@/lib/mascot";
 import Link from "next/link";
 import { Disclaimer, Section, StatCard } from "@/components/ui";
 import { fmtUsd, timeAgo } from "@/lib/format";
@@ -49,7 +50,8 @@ export default function RadarPage() {
               {x.spot ? <span className={`pill ${x.spot.inZone ? "pill-mint" : "pill-gray"}`}>spot {x.spot.tier}{x.spot.inZone ? " · in zone" : ""}</span> : null}
               {x.change24h != null ? <span className={`pill pill-gray ${x.change24h >= 0 ? "up" : "down"}`}>{x.change24h >= 0 ? "+" : ""}{Number(x.change24h).toFixed(1)}% 24h</span> : null}
             </div>
-            <p className={`text-sm ${toneText(x.tone)}`}>{x.action}</p>
+            <p className={`text-sm ${toneText(x.tone)}`}>{x.action} <button type="button" className="squixi-btn squixi-btn-sm ml-1 align-middle" aria-label={`SquixiMutation explains ${x.symbol}`} title="SquixiMutation explains what this means for your coin"
+              onClick={() => squixiSay({ kind: "info", title: `${x.symbol} in your portfolio`, text: x.action, rows: [{ k: "You hold", v: `${fmtUsd(x.valueUsd)} (${x.pct.toFixed(0)}% of your portfolio)` }, ...x.views.map((v) => ({ k: `${v.tf} chart`, v: `${v.outlook ?? "no read"}${v.score != null ? ` (score ${v.score > 0 ? "+" : ""}${v.score})` : ""}${v.category === "confirmed" ? `, Confirmed ${v.side ?? ""}` : v.category === "watching" ? ", being watched" : ""}`, tone: (v.score ?? 0) >= 15 ? ("up" as const) : (v.score ?? 0) <= -15 ? ("down" as const) : undefined }))], notes: [...x.flags, x.tone === "down" ? "A sell or protect signal is not an order to dump everything. Decide the price where you would be wrong, and reduce to a size you are calm holding." : x.tone === "up" ? "A positive read is not a reason to add more than you planned. Size first, then buy." : "No signal means no action is needed. Holding is a decision too.", "I explain, you decide. Not financial advice."], actions: x.coingeckoId ? [{ label: "Open chart", href: `/token/${x.coingeckoId}` }, { label: "DCA plan", href: `/dca?id=${x.coingeckoId}` }] : [] })}>🦑</button></p>
             {x.flags.length ? <p className="text-xs text-amber">⚠ {x.flags.join(" · ")}</p> : null}
             <div className="flex flex-wrap gap-1.5 text-[11px]">
               {x.coingeckoId ? <Link className="btn-ghost !py-1 !text-[11px]" href={`/s/${x.coingeckoId}/4h`}>Setup page</Link> : null}

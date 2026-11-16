@@ -28,7 +28,7 @@ export async function ensureEngineConfig(): Promise<Required<GateOptions>> {
 export function sanitize(v: Record<string, unknown>): Partial<GateOptions> {
   const out: Partial<GateOptions> = {};
   const num = (k: keyof GateOptions, lo: number, hi: number) => { const x = Number(v[k]); if (Number.isFinite(x) && x >= lo && x <= hi) out[k] = x; };
-  num("band", 10, 90); num("volMin", 0, 3); num("stretchMax", 0.5, 6); num("tp1Min", 0.3, 3); num("tp2Min", 0.5, 5);
+  num("band", 10, 90); num("volMin", 0, 3); num("stretchMax", 0.5, 6); num("tp1Min", 0.3, 3); num("tp2Min", 0.5, 5); num("slMinAtr", 0.5, 3); num("slBufAtr", 0.1, 1.5);
   return out;
 }
 

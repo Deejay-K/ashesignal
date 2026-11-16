@@ -506,3 +506,19 @@ Now the follow-up worker (every 5 minutes) does two things for every open signal
 Other details: one cancellation message per signal, never repeated. Signals that ended more than 6 hours ago (for example before this version was installed) are closed quietly, so there is no burst of old news after deploying. If price had reached the entry zone, the trade keeps being tracked to TP or stop after the cancellation. People who logged the trade on the website and have no Telegram linked get the cancellation in the app (bell and push).
 
 No database change and no new environment variables. Needs the GitHub Actions worker to be running (Actions tab, "worker" every 5 minutes).
+
+## 51. Stage 49 - signal quality tools, status page, result cards, filters, recap
+
+**One database change:** run `supabase/schema.sql` once (it adds `sig_filters` to `telegram_users` and `telegram_chats`). Everything except the signal filters works without it. No new environment variables. The worker file changed (one new step), so commit `.github/workflows/worker.yml` too.
+
+1. **Signal quality**
+   - **Wider stops in the Engine Lab, live rules unchanged.** The stop distances are now settings (`slMinAtr`, `slBufAtr`). Their defaults are the values the engine has always used (0.8 and 0.3 of an average candle), so live signals are exactly as before. Three new Lab variants test 1.2, 1.5 and 2.0, with the minimum-reward rules scaled to match. Give the Lab a day or two, then compare win rate and expectancy with "Production rules" on the Lab page. If one clearly wins, adopt it there; that changes the live rules without a new deploy.
+   - **Same-bet warning.** A new Confirmed Trade that points the same way as another one still open says so: "Same bet as ETH 1h (short, still open). These coins move together: split your 1% risk between them, do not stack it."
+   - **"Setup score 87/100", not "Confidence 87%".** In signal messages, bot cards and the mascot's explanation, with the note that it counts how many checks lined up and is not a win chance.
+   - **Leverage on 1h and shorter is capped at 5x** (was 10x). 4h and 1d are unchanged.
+2. **Status page** (`/status`, More menu, admins only: your email must be in `ADMIN_EMAILS`). Shows whether the worker ran recently, whether follow-ups are being checked, when the last signal went out, how many people receive signals, and whether CoinGecko, the exchange candles, Fear and Greed and the AI are answering. Also at `/api/status?secret=CRON_SECRET`.
+3. **Result cards.** When a signal reaches TP2 or TP3, the Telegram message comes with a shareable card: coin, direction, percent move and R from the middle of the entry zone, entry, target, stop and time taken. It states that this is the result of the published plan, before leverage. Needs `NEXT_PUBLIC_SITE_URL`.
+4. **Per-person signal filters.** In the bot: Signals screen. Each person (or group) picks timeframes (1h, 4h, 1d), longs only or both, and a minimum setup score (any, 60, 70, 80). Follow-ups only come for signals that passed the filters.
+5. **Bot.** "🦑 Squixi explains it" on every coin card gives the same walk-through as the website's squid button. New "Signals recap" and "Track record" buttons in the Trading menu, `/recap` command. Ask is "Ask SquixiMutation".
+6. **Squixi in more places.** A 🦑 on every journal trade (explains that trade's plan) and on every holdings radar row (explains what the read means for a coin you hold).
+7. **Weekly recap.** Every Sunday from 18:00 UTC, once, everyone with signals on gets the week's Confirmed Trades graded: sent, reached TP1 or better, stopped, cancelled, still open, hit rate, best and stopped names, plus a plain block to paste into Root. On demand: `/recap` in the bot, or `/api/cron/recap?secret=CRON_SECRET&force=1` to send it now (`&dry=1` to only see it).

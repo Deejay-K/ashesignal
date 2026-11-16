@@ -9,6 +9,9 @@ import { marketRegime } from "./market/regime";
 import { analyzeScreen } from "./market/analyze";
 import { signalView, ago } from "./market/signal-state";
 import { buildHeadline } from "./headline";
+import { cleanFilters, filtersLabel, FILTER_TFS, type SignalFilters } from "./telegram-broadcast";
+import { buildRecap } from "./recap";
+import { setupBriefing, SQUIXI } from "./mascot";
 import { search as cgSearch, getMarketsByIds } from "./providers/coingecko";
 import { getFearGreed } from "./providers/feargreed";
 import { loadDiscovery, tradeableOn } from "./market/discovery";
@@ -60,6 +63,7 @@ function menuFor(c: ChatCtx, id: MenuId = "main"): Keyboard {
       [{ text: "👤 My trades", callback_data: "me" }, { text: "✍️ Record trade", callback_data: "ask:take" }],
       [{ text: "📒 Journal", callback_data: "journal" }, { text: "🌡 My risk", callback_data: "heat" }],
       [{ text: "📅 Week review", callback_data: "review" }, { text: "📐 Size a trade", callback_data: "ask:size" }],
+      [{ text: "📊 Signals recap", callback_data: "recap" }, { text: "🏆 Track record", callback_data: "record" }],
       [{ text: "📡 Holdings radar", callback_data: "radar" }, { text: "📖 Trade guide", callback_data: "guide" }],
       BACK,
     ];
@@ -189,6 +193,7 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/events": case "/calendar": return events(c);
     case "/heat": return heat(c);
     case "/record": case "/trackrecord": return record(c);
+    case "/recap": case "/week": return recap(c);
     case "/leaderboard": case "/lb": return leaderboard(c);
     case "/optin": return optIn(c, true);
     case "/optout": return optIn(c, false);
@@ -256,6 +261,9 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "events": return events(c);
     case "heat": return heat(c);
     case "record": return record(c);
+    case "recap": return recap(c);
+    case "sigf": return signalFilter(c, a ?? "", b ?? "");
+    case "explain": return explainSetup(c, a, (b as Timeframe) || "4h");
     case "leaderboard": return leaderboard(c);
     case "optin": return optIn(c, a !== "0");
     case "top": return top(c);
@@ -460,7 +468,7 @@ async function category(c: ChatCtx, cat: "confirmed" | "watching" | "speculative
     const s = (i.detail as any)?.setup;
     if (cat === "spot") { const sp = i.spot!; const z = sp.analysis.accumulation; const inZone = i.price != null && i.price >= z.low && i.price <= z.high; return `${n}. <b>${esc(i.symbol)}</b> ${esc(sp.tier)} · score ${sp.score} · ${fmtUsd(i.price)}\n   zone ${fmtUsd(z.low)} to ${fmtUsd(z.high)}${inZone ? " · <b>in zone</b>" : ""}`; }
     if (cat === "speculative") { const sp = i.spec!; return `${n}. <b>${esc(i.symbol)}</b> ${esc(i.chain ?? "")} · ${fmtUsd(i.price)} · liq ${fmtUsd(i.liquidity, { compact: true })} · risk ${esc(i.risk)}\n   ${esc(sp.attention[0] ?? "")}`; }
-    if (s) return `${n}. <b>${esc(i.symbol)}</b> ${s.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} ${esc(i.timeframe)} · conf ${s.confidence}% · ${s.rr}R\n   entry ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)} · SL ${fmtUsd(s.stopLosses[0]?.price)} · TP1 ${fmtUsd(s.takeProfits[0]?.price)}${cat === "watching" && (i.detail as any)?.watch?.[0] ? `\n   watching: ${esc((i.detail as any).watch[0].what)}` : ""}`;
+    if (s) return `${n}. <b>${esc(i.symbol)}</b> ${s.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} ${esc(i.timeframe)} · score ${s.confidence}/100 · ${s.rr}R\n   entry ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)} · SL ${fmtUsd(s.stopLosses[0]?.price)} · TP1 ${fmtUsd(s.takeProfits[0]?.price)}${cat === "watching" && (i.detail as any)?.watch?.[0] ? `\n   watching: ${esc((i.detail as any).watch[0].what)}` : ""}`;
     return `${n}. <b>${esc(i.symbol)}</b> ${esc(i.timeframe ?? "")}`;
   });
   const kb: Keyboard = [];
@@ -552,7 +560,7 @@ async function setupCard(c: ChatCtx, id: string, tfIn: Timeframe | null, known?:
     // A live setup that passes the single-timeframe gates is not a signal yet: the screener also checks the higher
     // timeframe, the engine's record and the market regime, and only its scan sends the signal.
     const tag = active ? "✅ CONFIRMED" : s.kind === "confirmed" ? "🟡 passes the chart checks, not a signal yet" : s.kind === "speculative" ? "⚠️ speculative" : "👀 watch";
-    body += `\n\n<b>${s.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} setup · ${tag}</b> · conf ${s.confidence}% · ${s.riskRewardTp2}R · ${esc(s.style)}\nEntry: ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}\n${s.takeProfits.slice(0, 3).map((x) => `${x.label}: ${fmtUsd(x.price)} (${x.rr}R)`).join("\n")}\n${s.stopLosses.map((x) => `${x.label}: ${fmtUsd(x.price)}`).join(" · ")}\nLeverage: ${s.leverage.recommended}x recommended (max ${s.leverage.maxSafe}x)`;
+    body += `\n\n<b>${s.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} setup · ${tag}</b> · score ${s.confidence}/100 · ${s.riskRewardTp2}R · ${esc(s.style)}\nEntry: ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}\n${s.takeProfits.slice(0, 3).map((x) => `${x.label}: ${fmtUsd(x.price)} (${x.rr}R)`).join("\n")}\n${s.stopLosses.map((x) => `${x.label}: ${fmtUsd(x.price)}`).join(" · ")}\nLeverage: ${s.leverage.recommended}x recommended (max ${s.leverage.maxSafe}x)`;
     if (!active && s.kind === "confirmed") body += `\n<b>Not a signal yet:</b> ${esc(sig?.screened === false ? "this coin is outside the top 100 the screener scans, so no signals are sent for it. Treat it as your own read." : "the scan runs about once an hour per coin and also checks the higher timeframe, the engine's record and the market regime. If it still holds then, the signal is sent.")}`;
     if (s.kind !== "confirmed" && s.quality.confirmGaps.length) body += `\n<b>Missing for Confirmed:</b> ${esc(s.quality.confirmGaps[0])}`;
     if (s.kind === "watch" && s.quality.issues.length) body += `\n<b>Why only watch:</b> ${esc(s.quality.issues[0])}`;
@@ -561,6 +569,7 @@ async function setupCard(c: ChatCtx, id: string, tfIn: Timeframe | null, known?:
     if (z.state !== "unknown") body += `\n<b>${z.state === "in" ? "🟢" : z.tone === "down" ? "🔴" : "🟡"} Now:</b> ${esc(z.label)}. ${esc(z.advice)}`;
     if (s.side === "SHORT" && !VENUE_META[c.venue].canShort) body += `\n\n${esc(VENUE_META[c.venue].label)} is spot only: treat this SHORT as a sell/reduce signal if you hold ${esc(cn.symbol)}.`;
     kb.push([{ text: "📋 Copy setup", callback_data: `copy:${ref(cn)}:${tf}` }, { text: "📐 Size it", callback_data: `size:${s.entry.mid}:${s.stopLosses[0].price}` }]);
+    kb.push([{ text: "🦑 Squixi explains it", callback_data: `explain:${ref(cn)}:${tf}` }]);
     kb.push([{ text: "✍️ I took it", callback_data: `take:${ref(cn)}:${tf}:real` }, { text: "🧪 Paper trade", callback_data: `take:${ref(cn)}:${tf}:paper` }]);
     kb.push([{ text: "🔔 Alert at TP1/SL", callback_data: `alerttp:${ref(cn)}:${tf}` }, { text: "🔔 Entering zone", callback_data: `zonealert:${ref(cn)}:${tf}` }]);
     kb.push([...(!active ? [{ text: "🔔 When it confirms", callback_data: `confirmalert:${ref(cn)}` }] : []), { text: "⭐ Watch", callback_data: `watch:${ref(cn)}` }]);
@@ -571,7 +580,7 @@ async function setupCard(c: ChatCtx, id: string, tfIn: Timeframe | null, known?:
     const og = link(`/api/og?${new URLSearchParams({ symbol: cn.symbol, tf, side: s.side, kind: active ? "confirmed" : s.kind === "confirmed" ? "unconfirmed" : s.kind, entryLow: String(s.entry.low), entryHigh: String(s.entry.high), tp1: String(s.takeProfits[0].price), tp2: String(s.takeProfits[1].price), tp3: String(s.takeProfits[2].price), sl1: String(s.stopLosses[0].price), sl2: String(s.stopLosses[1]?.price ?? s.stopLosses[0].price), rr: String(s.riskRewardTp2), lev: String(s.leverage.recommended), conf: String(s.confidence), style: s.style, theme: "foundry" })}`);
     // The share card (same PNG as the website's share button) and the chart with levels, as one album above the card text.
     const [cardImg, chartImg] = await Promise.all([og ? fetchImage(og) : null, chart ? fetchImage(chart) : null]);
-    await tgCardImages(c.chatId, { card: cardImg, chart: chartImg }, `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> · ${active ? "CONFIRMED signal" : s.kind === "confirmed" ? "not a signal yet" : esc(s.kind)} · conf ${s.confidence}% · ${s.riskRewardTp2}R`);
+    await tgCardImages(c.chatId, { card: cardImg, chart: chartImg }, `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> · ${active ? "CONFIRMED signal" : s.kind === "confirmed" ? "not a signal yet" : esc(s.kind)} · score ${s.confidence}/100 · ${s.riskRewardTp2}R`);
     if (og) kb.push([{ text: "🖼 Open share card", url: og }]);
   } else {
     body += `\n\nNo tradeable setup on ${tf}.`;
@@ -948,11 +957,66 @@ async function signals(c: ChatCtx, arg: string) {
     if (c.isGroup) await c.sb.from("telegram_chats").upsert({ chat_id: c.chatId, broadcast: want, updated_at: new Date().toISOString() });
     else await c.sb.from("telegram_users").upsert({ tg_user_id: c.tgUserId, user_id: c.userId, venue: c.venue, broadcast: want, updated_at: new Date().toISOString() });
   }
-  const { data } = await c.sb.from(table).select("broadcast").eq(keyCol, keyVal).maybeSingle();
+  // sig_filters arrives with the Stage 49 schema; without it the toggle still works and the filters say so.
+  const full = await c.sb.from(table).select("broadcast, sig_filters").eq(keyCol, keyVal).maybeSingle();
+  const hasFilters = !full.error;
+  const data = hasFilters ? full.data : (await c.sb.from(table).select("broadcast").eq(keyCol, keyVal).maybeSingle()).data;
   const on = data?.broadcast !== false;
+  const f = cleanFilters((data as { sig_filters?: unknown } | null)?.sig_filters);
   const scope = c.isGroup ? "this group" : "you";
-  return tgSend(c.chatId, `${who(c)}<b>📣 Confirmed-trade signals for ${scope}: ${on ? "ON" : "OFF"}</b>\n${on ? `Every time the engine confirms a new trade${c.isGroup ? "" : ` tradeable on ${esc(VENUE_META[c.venue].label)}`}, one message arrives here with the share card, the full copy-trade block and the action buttons.` : "No automatic messages. Commands and alerts still work."}`, { html: true, keyboard: [[{ text: on ? "🔕 Turn off" : "🔔 Turn on", callback_data: `signals:${on ? "off" : "on"}` }, { text: "Settings", callback_data: "settings" }]] });
+  const tfOn = (t: string) => !f.tfs || f.tfs.includes(t);
+  const kb: Keyboard = [[{ text: on ? "🔕 Turn off" : "🔔 Turn on", callback_data: `signals:${on ? "off" : "on"}` }, { text: "Settings", callback_data: "settings" }]];
+  if (on && hasFilters) {
+    kb.push(FILTER_TFS.map((t) => ({ text: `${tfOn(t) ? "✅" : "⬜"} ${t}`, callback_data: `sigf:tf:${t}` })));
+    kb.push([{ text: `${f.longsOnly ? "⬜" : "✅"} Shorts too`, callback_data: `sigf:side:${f.longsOnly ? "all" : "long"}` }, { text: `${f.longsOnly ? "✅" : "⬜"} Longs only`, callback_data: "sigf:side:long" }]);
+    kb.push([0, 60, 70, 80].map((n) => ({ text: `${(f.minScore ?? 0) === n ? "✅" : "⬜"} ${n ? `${n}+` : "Any"}`, callback_data: `sigf:score:${n}` })));
+  }
+  const filt = on ? (hasFilters ? `\n\n<b>You receive:</b> ${esc(filtersLabel(f))}.\nRows below: timeframes, direction, minimum setup score. Follow-ups (TP, stop, cancelled) only come for signals you received.` : "\n\nSignal filters need the latest database update (run supabase/schema.sql once).") : "";
+  return tgSend(c.chatId, `${who(c)}<b>📣 Confirmed-trade signals for ${scope}: ${on ? "ON" : "OFF"}</b>\n${on ? `Every time the engine confirms a new trade${c.isGroup ? "" : ` tradeable on ${esc(VENUE_META[c.venue].label)}`}, one message arrives here with the share card, the full copy-trade block and the action buttons.` : "No automatic messages. Commands and alerts still work."}${filt}`, { html: true, keyboard: kb });
 }
+
+/** One tap on a filter button: change it, then show the signals screen again. */
+async function signalFilter(c: ChatCtx, key: string, val: string) {
+  const table = c.isGroup ? "telegram_chats" : "telegram_users";
+  const keyCol = c.isGroup ? "chat_id" : "tg_user_id";
+  const keyVal = c.isGroup ? c.chatId : c.tgUserId;
+  const cur = await c.sb.from(table).select("sig_filters").eq(keyCol, keyVal).maybeSingle();
+  if (cur.error) return tgSend(c.chatId, "Signal filters need the latest database update: run supabase/schema.sql once in Supabase, then try again.");
+  const f: SignalFilters = cleanFilters(cur.data?.sig_filters);
+  if (key === "tf") {
+    const all = [...FILTER_TFS] as string[];
+    const now = new Set(f.tfs ?? all);
+    if (now.has(val)) now.delete(val); else now.add(val);
+    if (!now.size) return tgSend(c.chatId, "Keep at least one timeframe on. To stop all signals, use Turn off.");
+    f.tfs = all.filter((t) => now.has(t));
+  } else if (key === "side") f.longsOnly = val === "long";
+  else if (key === "score") f.minScore = Number(val) || 0;
+  const clean = cleanFilters(f);
+  if (c.isGroup) await c.sb.from("telegram_chats").upsert({ chat_id: c.chatId, sig_filters: clean, updated_at: new Date().toISOString() });
+  else await c.sb.from("telegram_users").upsert({ tg_user_id: c.tgUserId, user_id: c.userId, venue: c.venue, sig_filters: clean, updated_at: new Date().toISOString() });
+  return signals(c, "");
+}
+
+/** The week's broadcast signals, graded, with a block to paste into Root or anywhere else. */
+async function recap(c: ChatCtx) {
+  await tgTyping(c.chatId);
+  const r = await safe(buildRecap(c.sb));
+  if (!r.ok) return tgSend(c.chatId, `Could not build the recap: ${esc(r.error)}`, { html: true });
+  return tgSend(c.chatId, `${r.data.html}\n\n<pre>${esc(r.data.plain)}</pre>\nLong-press the block to copy it. The same recap is sent automatically every Sunday evening.`, { html: true, keyboard: [[{ text: "🏆 Track record", callback_data: "record" }, { text: "Menu", callback_data: "menu" }]] });
+}
+
+/** Squixi's plain-language walk through one trade: the same explanation as the 🦑 button on the website. */
+async function explainSetup(c: ChatCtx, id: string, tf: Timeframe) {
+  await tgTyping(c.chatId);
+  const cn = await resolveCoin(id); if (!cn) return tgSend(c.chatId, "Coin not found.");
+  const { t, s, sig } = await planFor(c, cn, tf);
+  const m = setupBriefing({ symbol: cn.symbol, id: cn.id, tf, price: t?.price ?? null, setup: s, outlook: t?.outlook ?? null, score: t?.score ?? null, venue: c.venue, isSignal: sig?.status === "active" });
+  const rows = (m.rows ?? []).map((r) => `<b>${esc(r.k)}:</b> ${esc(r.v)}`).join("\n");
+  const notes = (m.notes ?? []).map((n) => `• ${esc(n)}`).join("\n");
+  const text = `🦑 <b>${esc(SQUIXI)}</b>\n<b>${esc(m.title)}</b>\n${m.text ? `${esc(m.text)}\n` : ""}${rows ? `\n${rows}\n` : ""}${notes ? `\n${notes}` : ""}`;
+  return tgSend(c.chatId, text.slice(0, 3900), { html: true, keyboard: s ? [[{ text: "📐 Size it", callback_data: `size:${s.entry.mid}:${s.stopLosses[0].price}` }, { text: "📋 Copy setup", callback_data: `copy:${ref(cn)}:${tf}` }], [{ text: "🤖 Ask Squixi more", callback_data: "askai" }]] : [[{ text: "🤖 Ask Squixi", callback_data: "askai" }]] });
+}
+
 async function settingsSet(c: ChatCtx, key: string, val?: string) {
   if (key === "unlink") return unlink(c);
   if (!c.userId) return needLink(c);
@@ -990,8 +1054,8 @@ export async function handleInline(sb: SupabaseClient, q: { id: string; query: s
       if (a.ok) for (const tf of ["4h", "1d"] as Timeframe[]) {
         const t = a.data.timeframes[tf]; if (!t || "unavailable" in t) continue;
         const s = t.setup;
-        const title = s ? `${cn.symbol} ${s.side} ${tf} · ${s.kind} · conf ${s.confidence}%` : `${cn.symbol} ${tf} · ${t.outlook} · no setup`;
-        const body = s ? `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> (${esc(s.kind)}, conf ${s.confidence}%, ${s.riskRewardTp2}R)\nPrice ${fmtUsd(t.price)}\nEntry ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}\n${s.takeProfits.slice(0, 3).map((x) => `${x.label} ${fmtUsd(x.price)}`).join(" · ")}\n${s.stopLosses.map((x) => `${x.label} ${fmtUsd(x.price)}`).join(" · ")}\n${esc(a.data.consensus.summary)}\n<i>AsheSignal. Manual trading only. Not financial advice.</i>` : `<b>${esc(cn.symbol)} ${tf}</b>: ${esc(t.outlook)} (score ${t.score > 0 ? "+" : ""}${t.score}), RSI ${t.momentum.rsi.toFixed(0)}, price ${fmtUsd(t.price)}.\n${esc(a.data.consensus.summary)}\n<i>AsheSignal. Not financial advice.</i>`;
+        const title = s ? `${cn.symbol} ${s.side} ${tf} · ${s.kind} · score ${s.confidence}/100` : `${cn.symbol} ${tf} · ${t.outlook} · no setup`;
+        const body = s ? `<b>${esc(cn.symbol)} ${s.side} ${tf}</b> (${esc(s.kind)}, score ${s.confidence}/100, ${s.riskRewardTp2}R)\nPrice ${fmtUsd(t.price)}\nEntry ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}\n${s.takeProfits.slice(0, 3).map((x) => `${x.label} ${fmtUsd(x.price)}`).join(" · ")}\n${s.stopLosses.map((x) => `${x.label} ${fmtUsd(x.price)}`).join(" · ")}\n${esc(a.data.consensus.summary)}\n<i>AsheSignal. Manual trading only. Not financial advice.</i>` : `<b>${esc(cn.symbol)} ${tf}</b>: ${esc(t.outlook)} (score ${t.score > 0 ? "+" : ""}${t.score}), RSI ${t.momentum.rsi.toFixed(0)}, price ${fmtUsd(t.price)}.\n${esc(a.data.consensus.summary)}\n<i>AsheSignal. Not financial advice.</i>`;
         results.push({ type: "article", id: `${cn.id}-${tf}`, title, description: s ? `Entry ${fmtUsd(s.entry.low)}-${fmtUsd(s.entry.high)}, SL ${fmtUsd(s.stopLosses[0].price)}, TP1 ${fmtUsd(s.takeProfits[0].price)}` : a.data.consensus.summary.slice(0, 80), input_message_content: { message_text: body, parse_mode: "HTML" }, reply_markup: link("/") ? { inline_keyboard: [[{ text: `Open ${cn.symbol} on AsheSignal`, url: link(`/token/${cn.id}?tf=${tf}`)! }]] } : undefined });
       }
     }
@@ -1128,7 +1192,7 @@ async function compare(c: ChatCtx, arg: string) {
   const row = (cn: { symbol: string }, r: typeof ra) => {
     const t = r.ok ? r.data.timeframes[tf] : null; if (!t || "unavailable" in t) return `<b>${esc(cn.symbol)}</b>: no data`;
     const s = t.setup; const z = s ? zoneStatus(t.price, s.entry, s.side) : null;
-    return `<b>${esc(cn.symbol)}</b> ${fmtUsd(t.price)}\n  ${esc(t.outlook)} (score ${t.score > 0 ? "+" : ""}${t.score}) · trend ${esc(t.trend.direction)} · RSI ${t.momentum.rsi.toFixed(0)} · vol ${t.volume.ratio.toFixed(2)}x\n  ${s ? `${s.side} ${esc(s.kind)} · conf ${s.confidence}% · ${s.riskRewardTp2}R · ${z && z.state !== "unknown" ? esc(z.label) : ""}` : "no setup"}`;
+    return `<b>${esc(cn.symbol)}</b> ${fmtUsd(t.price)}\n  ${esc(t.outlook)} (score ${t.score > 0 ? "+" : ""}${t.score}) · trend ${esc(t.trend.direction)} · RSI ${t.momentum.rsi.toFixed(0)} · vol ${t.volume.ratio.toFixed(2)}x\n  ${s ? `${s.side} ${esc(s.kind)} · score ${s.confidence}/100 · ${s.riskRewardTp2}R · ${z && z.state !== "unknown" ? esc(z.label) : ""}` : "no setup"}`;
   };
   const pick = (() => { const ta = ra.ok ? ra.data.timeframes[tf] : null, tb = rb.ok ? rb.data.timeframes[tf] : null; const sa = ta && !("unavailable" in ta) ? ta.setup : null, sb2 = tb && !("unavailable" in tb) ? tb.setup : null; const score = (s: any) => (s ? (s.kind === "confirmed" ? 100 : s.kind === "speculative" ? 20 : 50) + s.confidence : 0); const qa = score(sa), qb = score(sb2); if (!qa && !qb) return "Neither has a setup right now."; return qa === qb ? "Equal on paper; pick the one in its entry zone." : `Cleaner setup right now: <b>${esc(qa > qb ? a.symbol : b.symbol)}</b>.`; })();
   return tgSend(c.chatId, `${who(c)}<b>⚖️ ${esc(a.symbol)} vs ${esc(b.symbol)}</b> (${tf})\n\n${row(a, ra)}\n\n${row(b, rb)}\n\n${pick}`, { html: true, keyboard: [[{ text: `${a.symbol} card`, callback_data: `setup:${ref(a)}:${tf}` }, { text: `${b.symbol} card`, callback_data: `setup:${ref(b)}:${tf}` }], [{ text: "Menu", callback_data: "menu" }]] });
@@ -1351,7 +1415,7 @@ async function aiReset(c: ChatCtx) {
 }
 async function askAiPrompt(c: ChatCtx) {
   const examples = ["Is BTC still bullish on the 4h?", "What can I trade today on my exchange?", "Why is SOL only watching and not confirmed?", "Explain a stop-limit order like I'm new", "How are my trades doing?"];
-  return tgSend(c.chatId, `${who(c)}<b>🤖 Ask me anything</b> about the crypto market, a coin, your trades or how to trade.\n${c.isGroup ? "In a group, <b>reply to this message</b> (or mention me) with your question." : "Just type your question."} You can also reply to any card or signal I send to ask about it, and keep replying to my answers to continue the conversation.\n\nTry:\n${examples.map((e) => `• ${esc(e)}`).join("\n")}`, { html: true, keyboard: [[{ text: "🧹 New chat", callback_data: "newchat" }, { text: "Menu", callback_data: "menu" }]] });
+  return tgSend(c.chatId, `${who(c)}<b>🦑 Ask ${esc(SQUIXI)} anything</b> about the crypto market, a coin, your trades or how to trade.\n${c.isGroup ? "In a group, <b>reply to this message</b> (or mention me) with your question." : "Just type your question."} You can also reply to any card or signal I send to ask about it, and keep replying to my answers to continue the conversation.\n\nTry:\n${examples.map((e) => `• ${esc(e)}`).join("\n")}`, { html: true, keyboard: [[{ text: "🧹 New chat", callback_data: "newchat" }, { text: "Menu", callback_data: "menu" }]] });
 }
 
 async function aiChat(c: ChatCtx, text: string) {

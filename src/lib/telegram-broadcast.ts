@@ -24,7 +24,7 @@ export function signalCopyText(sig: ConfirmedSignal, venue: VenueId, listed: Ven
     `Entry: ${fmtUsd(s.entry.low)} - ${fmtUsd(s.entry.high)}`,
     ...s.takeProfits.slice(0, 3).map((t) => `${t.label}: ${fmtUsd(t.price)} (${t.rr}R)`),
     ...s.stopLosses.map((t) => `${t.label}: ${fmtUsd(t.price)}`),
-    `R:R to TP2: ${s.riskRewardTp2}R - Confidence: ${s.confidence}%`,
+    `R:R to TP2: ${s.riskRewardTp2}R - Setup score: ${s.confidence}/100 (how many checks lined up, not a win chance)`,
     `Leverage: ${s.leverage.recommended}x recommended (max ${s.leverage.maxSafe}x)${vm.canShort ? "" : " - spot: 1x"}`,
     `Size: risk 1% of account between entry and SL1`,
     `Plan: limit order in the zone, stop attached, take 30/30/40 at TP1/2/3, stop to break-even after TP1`,
@@ -48,33 +48,66 @@ function keyboard(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[]): Keyb
   return kb;
 }
 
-function caption(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[], forGroup: boolean): string {
+function caption(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[], forGroup: boolean, same: string[] = []): string {
   const s = sig.setup; const vm = VENUE_META[venue];
-  const head = `✅ <b>NEW CONFIRMED TRADE</b>\n<b>${esc(sig.symbol)}</b> ${s.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} ${esc(sig.timeframe)} · conf ${s.confidence}% · ${s.riskRewardTp2}R${forGroup ? `\nListed on: ${listed.map((v) => VENUE_META[v].label).join(", ") || "DEX only"}` : `\nOn ${esc(vm.label)}${vm.canShort ? "" : " (spot)"}`}`;
+  const head = `✅ <b>NEW CONFIRMED TRADE</b>\n<b>${esc(sig.symbol)}</b> ${s.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} ${esc(sig.timeframe)} · score ${s.confidence}/100 · ${s.riskRewardTp2}R${forGroup ? `\nListed on: ${listed.map((v) => VENUE_META[v].label).join(", ") || "DEX only"}` : `\nOn ${esc(vm.label)}${vm.canShort ? "" : " (spot)"}`}`;
   const why = sig.qualifies[0] ? `\n${esc(sig.qualifies[0])}` : "";
   const pre = `\n<pre>${esc(signalCopyText(sig, venue, listed))}</pre>`;
+  const bet = same.length ? `\n⚠️ <b>Same bet as ${esc(same.join(", "))}</b> (${s.side === "LONG" ? "long" : "short"}, still open). These coins move together: split your 1% risk between them, do not stack it.` : "";
   const foot = `\nLong-press the block to copy. Manual trading only. Not financial advice.`;
-  let out = head + why + pre + foot;
-  if (out.length > 1000) out = head + pre + foot; // Telegram caption limit is 1024
+  let out = head + why + bet + pre + foot;
+  if (out.length > 1000) out = head + bet + pre + foot; // Telegram caption limit is 1024
+  if (out.length > 1000) out = head + pre + foot;
   return out;
 }
 
-export interface Recipient { chatId: string; venue: VenueId; group: boolean }
+/** Per-person (or per-group) choice of which signals to receive. Empty = everything, as before. */
+export interface SignalFilters { tfs?: string[]; longsOnly?: boolean; minScore?: number }
+export const FILTER_TFS = ["1h", "4h", "1d"] as const;
+export function cleanFilters(v: unknown): SignalFilters {
+  const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const out: SignalFilters = {};
+  if (Array.isArray(o.tfs)) { const t = o.tfs.filter((x): x is string => typeof x === "string" && (FILTER_TFS as readonly string[]).includes(x)); if (t.length && t.length < FILTER_TFS.length) out.tfs = t; }
+  if (o.longsOnly === true) out.longsOnly = true;
+  const m = Number(o.minScore); if (Number.isFinite(m) && m > 0 && m <= 95) out.minScore = Math.round(m);
+  return out;
+}
+/** Does a signal pass someone's personal filters? */
+export function passesFilters(f: SignalFilters | undefined, sig: { timeframe: string; side: string; confidence?: number | null }): boolean {
+  if (!f) return true;
+  if (f.tfs?.length && !f.tfs.includes(sig.timeframe)) return false;
+  if (f.longsOnly && sig.side !== "LONG") return false;
+  if (f.minScore && sig.confidence != null && sig.confidence < f.minScore) return false;
+  return true;
+}
+export function filtersLabel(f: SignalFilters | undefined): string {
+  if (!f || (!f.tfs && !f.longsOnly && !f.minScore)) return "all Confirmed Trades";
+  return [f.tfs ? `${f.tfs.join(", ")} only` : "all timeframes", f.longsOnly ? "longs only" : "longs and shorts", f.minScore ? `score ${f.minScore}+` : "any score"].join(" · ");
+}
+export interface Recipient { chatId: string; venue: VenueId; group: boolean; filters?: SignalFilters }
 export function recipientsFrom(users: any[] | null, groups: any[] | null): Recipient[] {
   return [
-    ...(users ?? []).map((u) => ({ chatId: String(u.tg_user_id), venue: (isVenueId(u.venue) ? u.venue : "binance") as VenueId, group: false })),
-    ...(groups ?? []).map((g) => ({ chatId: String(g.chat_id), venue: "binance" as VenueId, group: true })),
+    ...(users ?? []).map((u) => ({ chatId: String(u.tg_user_id), venue: (isVenueId(u.venue) ? u.venue : "binance") as VenueId, group: false, filters: cleanFilters(u.sig_filters) })),
+    ...(groups ?? []).map((g) => ({ chatId: String(g.chat_id), venue: "binance" as VenueId, group: true, filters: cleanFilters(g.sig_filters) })),
   ];
 }
-export async function loadRecipients(sb: SupabaseClient): Promise<Recipient[]> {
-  const [{ data: users }, { data: groups }] = await Promise.all([
-    sb.from("telegram_users").select("tg_user_id, venue").eq("broadcast", true),
-    sb.from("telegram_chats").select("chat_id").eq("broadcast", true),
+/** Everyone with signals switched on. Falls back to the old columns if schema.sql has not been re-run yet. */
+async function loadRaw(sb: SupabaseClient): Promise<{ users: any[] | null; groups: any[] | null }> {
+  const [u, g] = await Promise.all([
+    sb.from("telegram_users").select("tg_user_id, venue, sig_filters").eq("broadcast", true),
+    sb.from("telegram_chats").select("chat_id, sig_filters").eq("broadcast", true),
   ]);
+  const users = u.error ? (await sb.from("telegram_users").select("tg_user_id, venue").eq("broadcast", true)).data : u.data;
+  const groups = g.error ? (await sb.from("telegram_chats").select("chat_id").eq("broadcast", true)).data : g.data;
+  return { users, groups };
+}
+export async function loadRecipients(sb: SupabaseClient): Promise<Recipient[]> {
+  const { users, groups } = await loadRaw(sb);
   return recipientsFrom(users, groups);
 }
 /** Who should hear about a coin: everyone with signals on whose exchange lists it (SHORTs skipped on spot-only). */
-export function canReceive(r: Recipient, listed: VenueId[], side: "LONG" | "SHORT"): boolean {
+export function canReceive(r: Recipient, listed: VenueId[], side: "LONG" | "SHORT", sig?: { timeframe: string; confidence?: number | null }): boolean {
+  if (sig && !passesFilters(r.filters, { ...sig, side })) return false;
   if (r.group) return listed.length > 0;
   if (!listed.includes(r.venue)) return false;
   if (side === "SHORT" && !VENUE_META[r.venue].canShort) return false;
@@ -87,11 +120,16 @@ export function canReceive(r: Recipient, listed: VenueId[], side: "LONG" | "SHOR
  */
 export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedSignal[], opts: { maxMessages?: number; onlyChat?: string; test?: boolean } = {}): Promise<{ sent: number; recipients: number; skipped: number }> {
   if (!TELEGRAM_ENABLED() || !signals.length) return { sent: 0, recipients: 0, skipped: 0 };
-  const [{ data: users }, { data: groups }, listings] = await Promise.all([
-    sb.from("telegram_users").select("tg_user_id, venue").eq("broadcast", true),
-    sb.from("telegram_chats").select("chat_id").eq("broadcast", true),
-    venueListings(),
-  ]);
+  const [{ users, groups }, listings] = await Promise.all([loadRaw(sb), venueListings()]);
+  // "Same bet" check: other Confirmed Trades in the same direction that are still open (or in this same batch).
+  // Crypto majors move together, so two shorts are one idea with double the risk unless the size is split.
+  const { data: openNow } = opts.test ? { data: [] as any[] } : await sb.from("signal_followups").select("symbol, side, timeframe, emitted_at").is("closed_at", null).is("sl_at", null).is("lost_at", null).gt("emitted_at", new Date(Date.now() - 36 * 3_600_000).toISOString()).limit(50);
+  const sameBet = (sig: ConfirmedSignal): string[] => {
+    const others = new Set<string>();
+    for (const o of openNow ?? []) if (o.side === sig.setup.side && o.symbol !== sig.symbol) others.add(`${o.symbol} ${o.timeframe}`);
+    for (const o of signals) if (o !== sig && o.setup.side === sig.setup.side && o.symbol !== sig.symbol) others.add(`${o.symbol} ${o.timeframe}`);
+    return [...others].slice(0, 4);
+  };
   let recipients = recipientsFrom(users, groups);
   if (opts.onlyChat) recipients = recipients.filter((r) => r.chatId === opts.onlyChat);
   // Remember each broadcast so the follow-up worker can report zone entry, TP1, TP2, SL and lost confirmation.
@@ -113,12 +151,13 @@ export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedS
     let imgs: { card?: Blob | string | null; chart?: Blob | string | null } = { card: cardBlob, chart: chartBlob };
     for (const r of recipients) {
       if (sent >= max) return { sent, recipients: recipients.length, skipped };
+      if (!opts.onlyChat && !passesFilters(r.filters, { timeframe: sig.timeframe, side: sig.setup.side, confidence: sig.setup.confidence })) { skipped++; continue; } // their own filters
       if (!r.group) {
         if (!listed.includes(r.venue)) { skipped++; continue; }           // not tradeable on their exchange
         if (sig.setup.side === "SHORT" && !VENUE_META[r.venue].canShort) { skipped++; continue; } // spot only
       } else if (!listed.length) { skipped++; continue; }
       const venue = r.group ? (listed[0] ?? "binance") : r.venue;
-      const text = caption(sig, venue, listed, r.group);
+      const text = caption(sig, venue, listed, r.group, sameBet(sig));
       const kb = keyboard(sig, venue, listed);
       if (og) kb.push([{ text: "🖼 Open share card", url: og }]);
       const ids = await tgCardImages(r.chatId, imgs, `✅ <b>NEW CONFIRMED: ${esc(sig.symbol)} ${sig.setup.side} ${esc(sig.timeframe)}</b>`);

@@ -47,6 +47,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { section: "Results", href: "/performance", label: "Engine performance", hint: "Signal hit rates" },
       { section: "Results", href: "/simulator", label: "Strategy simulator", hint: "What taking every signal would have done" },
       { section: "Results", href: "/lab", label: "Engine Lab", hint: "Rule variants, backtests" },
+      { section: "Results", href: "/status", label: "System status", hint: "Is the worker running? (owner)" },
     ],
   },
 ];

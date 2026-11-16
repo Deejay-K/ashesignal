@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { currentVenue } from "@/lib/venue-pref";
+import { squixiSay, setupBriefing } from "@/lib/mascot";
 import Link from "next/link";
 import { fmtNum, fmtUsd, timeAgo } from "@/lib/format";
 import { Disclaimer, Empty, Section, StatCard } from "@/components/ui";
@@ -167,6 +169,9 @@ function TradeRow({ r, onPatch, onClose, onDelete }: { r: Row; onPatch: (b: Reco
         <span className={`pill ${r.kind === "confirmed" ? "pill-mint" : "pill-gray"}`}>{r.kind}</span>
         {r.paper ? <span className="pill pill-amber">paper</span> : r.exchange ? <span className="pill pill-gray">{isVenueId(r.exchange) ? VENUE_META[r.exchange].label : r.exchange}</span> : null}
         <span className={`pill ${statusTone}`}>{r.status}</span>
+        <button type="button" className="squixi-btn squixi-btn-sm" aria-label="SquixiMutation explains this trade" title="SquixiMutation explains this trade's plan"
+          onClick={() => squixiSay(setupBriefing({ symbol: r.symbol, id: r.asset_key.startsWith("cg:") ? r.asset_key.slice(3) : null, tf: r.timeframe, venue: currentVenue(), category: r.kind === "confirmed" ? "confirmed" : null,
+            setup: { side: r.side, kind: r.kind, entry: { low: Number(r.entry_low), high: Number(r.entry_high) }, takeProfits: [r.tp1, r.tp2, r.tp3].filter((x): x is number => x != null).map((p, i) => ({ label: `TP${i + 1}`, price: Number(p) })), stopLosses: [r.sl1, r.sl2].filter((x): x is number => x != null).map((p, i) => ({ label: `SL${i + 1}`, price: Number(p) })), rr: r.rr, confidence: r.confidence, leverage: { recommended: r.leverage ?? 1 } } }))}>🦑</button>
         <span className="ml-auto text-xs text-fg-3">{r.taken_at ? `taken ${timeAgo(Date.parse(r.taken_at))}` : `saved ${timeAgo(Date.parse(r.created_at))}`}{r.last_checked_at ? ` · checked ${timeAgo(Date.parse(r.last_checked_at))}` : ""}</span>
       </div>
       <div className="num mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-4 lg:grid-cols-6">

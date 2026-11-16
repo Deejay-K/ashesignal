@@ -129,6 +129,7 @@ export function linkCode(): string {
 export const COMMANDS = [
   { command: "menu", description: "Main menu with buttons" },
   { command: "trades", description: "Confirmed trades you can place on your exchange" },
+  { command: "recap", description: "This week's signals, graded" },
   { command: "watching", description: "Setups that are close but not confirmed" },
   { command: "spec", description: "Speculative opportunities (high risk)" },
   { command: "spot", description: "Long-term spot picks and their zones" },
