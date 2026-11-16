@@ -138,3 +138,4 @@ All tables have RLS: `auth.uid() = user_id`.
 | 48 | followups.ts: state-based cancellation (endedState against coin_metrics + category_history), live re-check of open signals via signalView each run, wick stop/TP1 messages, journal notify |
 | 49 | gates slMinAtr/slBufAtr + Lab stop variants, leverage cap on short timeframes, same-bet warning and SignalFilters in telegram-broadcast, recap.ts + /api/cron/recap, /api/result-card, /api/status + /status, bot signalFilter/recap/explainSetup, squid buttons on journal and radar |
 | 50 | /card result card studio (client canvas, own background picture, formats, always-on AsheSignal mark), card-presets.ts, /api/result-card personal mode, journal "Share result", bot resultCard |
+| 51 | nickname.ts (cleanNickname, autoAlias, publicName), /api/ticker (closed journal trades, nickname + percent only), ResultsTicker strip in the layout, NicknameSetting on the account page |

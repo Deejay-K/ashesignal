@@ -8,6 +8,7 @@ import ThemeFavicon from "@/components/ThemeFavicon";
 import BottomNav from "@/components/BottomNav";
 import AskDrawer from "@/components/AskDrawer";
 import Mascot from "@/components/Mascot";
+import ResultsTicker from "@/components/ResultsTicker";
 import { THEME_BOOT } from "@/lib/themes";
 
 
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeFavicon />
         <SiteBanner />
         <Nav />
+        <ResultsTicker />
         <main className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-4 sm:py-5">{children}</main>
         <BottomNav />
         <Mascot />

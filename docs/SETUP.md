@@ -539,3 +539,14 @@ No database change and no new environment variables.
 - **In the bot:** closing a trade now offers "Share result card", and the Journal has "Share my last result". The bot sends the card as a picture, with buttons to step through the backgrounds and to show or hide the dollar amount (hidden by default), plus a link to the studio for an own picture, colours and caption.
 - **Honest labelling.** Personal cards say "Personal result shared by <name>" and that the numbers are the trader's own. The cards the bot posts for its own signals at TP2 and TP3 are unchanged and still say they are the result of the published plan.
 - Files: `src/app/card/page.tsx`, `src/lib/card-presets.ts`, `src/app/api/result-card/route.tsx` (now also accepts `mine=1`, `bg`, `usd`, `lev`, `name`).
+
+## 53. Stage 51 - members' results ticker and public nicknames
+
+No database change (it uses the existing `display_name` column and the `preferences` field) and no new environment variables.
+
+- **Results strip.** A thin strip under the header on every page scrolls members' latest closed trades, wins and losses alike: nickname, coin, long or short, timeframe and the percent result, with a running count of wins and losses. It pauses under the mouse or a finger, loops without a jump, stands still (scrollable by hand) for people who turned motion off, and hides itself when there is nothing to show. Tapping "Member results" opens the result card page.
+- **What it shows and what it never shows.** Shown: nickname, coin, direction, timeframe, percent. Never shown: email, real name, amounts of money, position size, balance. Paper trades are left out. Trades come from members' own journals (closed in the last 30 days, newest first, at most four per member so one person cannot fill the strip).
+- **Public nickname** (Account page, "Public nickname"). 3 to 20 characters: letters, numbers, spaces, dots, dashes, underscores. Emails, links, phone-like numbers and names that look like staff ("admin", "AsheSignal", "support" and so on) are refused. Until someone picks a nickname they appear under an automatic alias such as `Trader-7K2Q`, which is made from the account and reveals nothing.
+- **Opt out.** The same setting has a checkbox "Show my closed trades on the results strip". It is on by default; unticking it removes that member's trades from the strip within a minute or two.
+- **Honest labelling.** These are results members logged themselves. The strip is titled "Member results", not "verified results". The engine's own graded record is still the Track record page.
+- Files: `src/lib/nickname.ts`, `src/app/api/ticker/route.ts`, `src/components/ResultsTicker.tsx`, `src/components/NicknameSetting.tsx`.

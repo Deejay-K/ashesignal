@@ -13,17 +13,20 @@ import RiskLimits from "@/components/RiskLimits";
 import DiscordSettings from "@/components/DiscordSettings";
 import TelegramSettings from "@/components/TelegramSettings";
 import NotifyPrefs from "@/components/NotifyPrefs";
+import NicknameSetting from "@/components/NicknameSetting";
 
 export default function AccountPage() {
   const sb = supabaseBrowser();
   const router = useRouter();
   const [email, setEmail] = useState<string | null | undefined>(undefined);
+  const [userId, setUserId] = useState("");
   const [counts, setCounts] = useState<{ watch: number; setups: number; alerts: number } | null>(null);
 
   useEffect(() => {
     if (!sb) return setEmail(null);
     sb.auth.getUser().then(async ({ data }) => {
       setEmail(data.user?.email ?? null);
+      setUserId(data.user?.id ?? "");
       if (!data.user) return;
       const [w, s, a] = await Promise.all([fetch("/api/me/watchlist").then((r) => r.json()), fetch("/api/me/setups").then((r) => r.json()), fetch("/api/me/alerts").then((r) => r.json())]);
       setCounts({ watch: w.items?.length ?? 0, setups: s.setups?.length ?? 0, alerts: a.alerts?.length ?? 0 });
@@ -71,6 +74,9 @@ export default function AccountPage() {
         ))}
       </div>
       <p className="text-sm text-fg-2">New here? The <Link href="/glossary" className="link">glossary</Link> explains every label in the app.</p>
+      <Section title="Public nickname">
+        {userId ? <NicknameSetting userId={userId} /> : null}
+      </Section>
       {venueSection}
       <Section title="Exchange connections (read-only)">
         <p className="mb-2 text-xs text-fg-3">Connect the exchanges you use. Keys are verified read-only, encrypted at rest and only ever used to read balances and trade history; AsheSignal never places orders. Balances and realized P&L show on the Portfolio page.</p>

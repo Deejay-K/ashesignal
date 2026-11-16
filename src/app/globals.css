@@ -387,3 +387,21 @@ table tbody tr:hover td { background: rgba(159,176,192,.06); }
 .squixi-mute { margin-left: auto; font-size: 11px; color: var(--fg-3); text-decoration: underline; background: none; border: 0; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .squixi-char, .squixi-bubble { transition: opacity .15s; transform: none; } .squixi-peek .squixi-char, .squixi-out .squixi-poses, .squixi-char:hover .squixi-poses { animation: none; } }
 @media print { .squixi, .ask-fab { display: none; } }
+
+/* ---------- Stage 51: members' results ticker ---------- */
+.results-ticker { display: flex; align-items: stretch; height: 30px; border-bottom: 1px solid var(--border); background: var(--bg-2); font-size: 12px; overflow: hidden; }
+.rt-label { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding: 0 10px; font-weight: 700; color: var(--fg); background: var(--bg-3); border-right: 1px solid var(--border); white-space: nowrap; z-index: 1; }
+.rt-live { width: 7px; height: 7px; border-radius: 999px; background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+.rt-count { font-weight: 500; color: var(--fg-3); }
+@media (max-width: 479px) { .rt-count { display: none; } .rt-label { padding: 0 8px; } }
+.rt-window { position: relative; flex: 1; min-width: 0; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
+.rt-track { display: inline-flex; align-items: center; height: 100%; white-space: nowrap; will-change: transform; animation: rt-scroll 60s linear infinite; }
+.results-ticker:hover .rt-track, .results-ticker:active .rt-track, .results-ticker:focus-within .rt-track { animation-play-state: paused; }
+@keyframes rt-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.rt-item { display: inline-flex; align-items: center; gap: 6px; padding: 0 16px; border-right: 1px solid var(--border); height: 100%; }
+.rt-name { color: var(--fg-2); font-weight: 600; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.rt-sym { color: var(--fg); font-weight: 700; }
+.rt-long, .rt-short { color: var(--fg-3); }
+.rt-pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .rt-track { animation: none; } .rt-window { overflow-x: auto; scrollbar-width: none; } .rt-item[aria-hidden="true"] { display: none; } }
+@media print { .results-ticker { display: none; } }

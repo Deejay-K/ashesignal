@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabase/server";
+import { cleanNickname } from "@/lib/nickname";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,12 @@ export async function PUT(req: NextRequest) {
   const allowed = ["display_name", "trading_balance", "portfolio_value", "risk_pct", "max_exposure_pct", "default_leverage", "preferences", "digest_enabled", "digest_hour", "plan_enabled", "plan_hour", "discord_webhook"];
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   for (const k of allowed) if (k in b) patch[k] = b[k];
+  if ("display_name" in patch) {
+    // The nickname is public (results ticker), so it is checked: no emails, links, phone numbers or staff names.
+    const c = cleanNickname(patch.display_name);
+    if (!c.ok) return NextResponse.json({ error: c.error }, { status: 400 });
+    patch.display_name = c.value;
+  }
   if ("discord_webhook" in patch) {
     const w = patch.discord_webhook == null || patch.discord_webhook === "" ? null : String(patch.discord_webhook).trim();
     if (w && !/^https:\/\/(discord\.com|discordapp\.com)\/api\/webhooks\/\d+\/[\w-]+$/.test(w)) return NextResponse.json({ error: "That is not a Discord webhook URL (it should look like https://discord.com/api/webhooks/123/abc...)." }, { status: 400 });
