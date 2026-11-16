@@ -490,3 +490,19 @@ SquixiMutation now has three animations, all 32-frame seamless loops built from 
 How the raised arm was made: on every frame the original arm and glove are removed (and the bit of leg they covered is redrawn), then a new rubber-hose arm is drawn from the shoulder and the mascot's own glove is placed at the end of it, with a finger added for pointing. The body keeps its original movement underneath. The script that does this is not part of the app; the three files are simply images. To replace any pose with hand-drawn animation later, drop in a file with the same name and size (130 x 250, transparent).
 
 The three files (about 300 KB each) are fetched the first time the mascot appears, not with the page.
+
+## 50. Stage 48 - cancelled Confirmed Trades are always announced
+
+Before this stage a "no longer confirms" message existed, but it was only sent if the worker happened to run within 15 minutes of the change, and never when a signal ended by a quick wick to its stop or TP1, or by old age. In practice most cancellations were never announced.
+
+Now the follow-up worker (every 5 minutes) does two things for every open signal:
+
+1. **Re-checks it against live candles**, with the same rule the screener uses, so an ended signal is noticed within minutes instead of at the screener's next visit (about once an hour per coin).
+2. **Compares it with its screener row.** If that row is no longer the same Confirmed signal, everyone who received the signal gets one message:
+   - `🚫 SOL SHORT 1h: Confirmed Trade CANCELLED (momentum faded)` with the engine's reason and what to do: cancel the unfilled limit order if price never reached the zone, tighten or close if you are in, or keep managing from break-even if TP1 was already hit.
+   - Reasons covered: momentum faded, the chart flipped side, the market regime turned, the signal got too old, a newer signal replaced it, the coin left the scan list.
+   - A stop or TP1 that was touched only by a candle wick between two checks now gets its "stop hit" or "TP1 hit" message too (marked "a candle wick reached it").
+
+Other details: one cancellation message per signal, never repeated. Signals that ended more than 6 hours ago (for example before this version was installed) are closed quietly, so there is no burst of old news after deploying. If price had reached the entry zone, the trade keeps being tracked to TP or stop after the cancellation. People who logged the trade on the website and have no Telegram linked get the cancellation in the app (bell and push).
+
+No database change and no new environment variables. Needs the GitHub Actions worker to be running (Actions tab, "worker" every 5 minutes).
