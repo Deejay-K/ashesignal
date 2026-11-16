@@ -522,3 +522,20 @@ No database change and no new environment variables. Needs the GitHub Actions wo
 5. **Bot.** "🦑 Squixi explains it" on every coin card gives the same walk-through as the website's squid button. New "Signals recap" and "Track record" buttons in the Trading menu, `/recap` command. Ask is "Ask SquixiMutation".
 6. **Squixi in more places.** A 🦑 on every journal trade (explains that trade's plan) and on every holdings radar row (explains what the read means for a coin you hold).
 7. **Weekly recap.** Every Sunday from 18:00 UTC, once, everyone with signals on gets the week's Confirmed Trades graded: sent, reached TP1 or better, stopped, cancelled, still open, hit rate, best and stopped names, plus a plain block to paste into Root. On demand: `/recap` in the bot, or `/api/cron/recap?secret=CRON_SECRET&force=1` to send it now (`&dry=1` to only see it).
+
+## 52. Stage 50 - traders share their own result cards
+
+No database change and no new environment variables.
+
+- **Card studio** (`/card`, More menu, Tools, "Result card"). A trader builds a picture of their own trade: coin, direction, entry, exit, optional stop (for the R number), leverage, dollar result and hours held. They choose:
+  - the shape: wide (X, Telegram, Root), square (Instagram post) or story (Instagram, TikTok);
+  - the background: eight presets (Foundry, Gold, Midnight, Ember, Aurora, Sunset, Terminal, Paper) or **their own picture**, with a slider to darken it so the text reads;
+  - the accent colour (presets or any colour);
+  - whether the dollar amount and the R number are shown, their name or handle, and a caption.
+  Then Share (the phone's share sheet), Download PNG or Copy image.
+- **The AsheSignal mark is always on the card**, top-left on its own dark plate so it stays readable on any background. It cannot be switched off or covered by the options.
+- **Private by design.** The card is drawn on the trader's own device. A picture used as background is never uploaded, and nothing about the card is stored.
+- **From the journal:** every closed trade has a "Share result" button that opens the studio with that trade's fill, exit, stop, leverage, result and holding time already filled in.
+- **In the bot:** closing a trade now offers "Share result card", and the Journal has "Share my last result". The bot sends the card as a picture, with buttons to step through the backgrounds and to show or hide the dollar amount (hidden by default), plus a link to the studio for an own picture, colours and caption.
+- **Honest labelling.** Personal cards say "Personal result shared by <name>" and that the numbers are the trader's own. The cards the bot posts for its own signals at TP2 and TP3 are unchanged and still say they are the result of the published plan.
+- Files: `src/app/card/page.tsx`, `src/lib/card-presets.ts`, `src/app/api/result-card/route.tsx` (now also accepts `mine=1`, `bg`, `usd`, `lev`, `name`).

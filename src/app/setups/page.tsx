@@ -185,6 +185,7 @@ function TradeRow({ r, onPatch, onClose, onDelete }: { r: Row; onPatch: (b: Reco
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         {r.taken && !r.exit_price ? <button className="btn" onClick={onClose}>{r.paper ? "Close paper trade" : "Close at my exit"}</button> : null}
         {r.taken && !r.exit_price ? <button className="btn-ghost" title="The order never filled or you changed your mind: the setup goes back to Saved and nothing counts in your stats." onClick={() => onPatch({ id: r.id, taken: false, status: "open" })}>Didn't take it / cancel</button> : null}
+        {r.taken && r.exit_price ? <Link className="btn" href={`/card?${new URLSearchParams({ symbol: r.symbol, tf: r.timeframe, side: r.side, entry: String(fill), exit: String(r.exit_price), ...(r.sl1 != null ? { sl: String(r.sl1) } : {}), ...(r.leverage && r.leverage > 1 ? { lev: String(r.leverage) } : {}), ...(r.realized_usd != null ? { usd: String(Math.round(Number(r.realized_usd) * 100) / 100) } : {}), ...(r.taken_at && r.exit_at ? { hours: String(Math.max(1, Math.round((Date.parse(r.exit_at) - Date.parse(r.taken_at)) / 3_600_000))) } : {}) })}`}>🖼 Share result</Link> : null}
         {r.taken && r.exit_price ? <button className="btn-ghost" onClick={() => onPatch({ id: r.id, reopen: true })}>Reopen</button> : null}
         {!r.taken ? <button className="btn-ghost" onClick={() => onPatch({ id: r.id, taken: true })}>Mark as taken</button> : null}
         <label className="flex items-center gap-1 text-fg-3">Status

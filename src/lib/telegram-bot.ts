@@ -11,6 +11,7 @@ import { signalView, ago } from "./market/signal-state";
 import { buildHeadline } from "./headline";
 import { cleanFilters, filtersLabel, FILTER_TFS, type SignalFilters } from "./telegram-broadcast";
 import { buildRecap } from "./recap";
+import { CARD_BGS } from "./card-presets";
 import { setupBriefing, SQUIXI } from "./mascot";
 import { search as cgSearch, getMarketsByIds } from "./providers/coingecko";
 import { getFearGreed } from "./providers/feargreed";
@@ -262,6 +263,7 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "heat": return heat(c);
     case "record": return record(c);
     case "recap": return recap(c);
+    case "card": return resultCard(c, a, Number(b) || 0, d === "1");
     case "sigf": return signalFilter(c, a ?? "", b ?? "");
     case "explain": return explainSetup(c, a, (b as Timeframe) || "4h");
     case "leaderboard": return leaderboard(c);
@@ -656,7 +658,7 @@ async function journal(c: ChatCtx) {
   const { data } = await c.sb.from("saved_setups").select("symbol, side, timeframe, status, taken_at, fill_price, size_usd, realized_usd, realized_r, exit_reason, paper").eq("user_id", c.userId).eq("taken", true).order("taken_at", { ascending: false }).limit(10);
   if (!data?.length) return tgSend(c.chatId, "No trades recorded yet. Use /take SOL after placing a trade, or the ✍️ button on a setup card.");
   const lines = data.map((t) => `${t.paper ? "🧪" : t.realized_r == null ? "⏳" : Number(t.realized_r) > 0 ? "✅" : "❌"} <b>${esc(t.symbol)}</b> ${t.side} ${esc(t.timeframe)} · ${esc(t.status)}${t.fill_price ? ` · fill ${fmtUsd(Number(t.fill_price))}` : ""}${t.size_usd ? ` · ${fmtUsd(Number(t.size_usd))}` : ""}${t.realized_r != null ? ` · <b>${Number(t.realized_r) > 0 ? "+" : ""}${t.realized_r}R</b> (${Number(t.realized_usd) >= 0 ? "+" : ""}${fmtUsd(Number(t.realized_usd))})` : ""}`);
-  return tgSend(c.chatId, `<b>📒 Journal (last ${data.length})</b>\n${lines.join("\n")}`, { html: true, keyboard: [[{ text: "Open journal", url: link("/setups") ?? "https://t.me" }, { text: "Menu", callback_data: "menu" }]] });
+  return tgSend(c.chatId, `<b>📒 Journal (last ${data.length})</b>\n${lines.join("\n")}`, { html: true, keyboard: [[{ text: "🖼 Share my last result", callback_data: "card:last:0:0" }], [{ text: "Open journal", url: link("/setups") ?? "https://t.me" }, { text: "Menu", callback_data: "menu" }]] });
 }
 
 async function alertsList(c: ChatCtx) {
@@ -824,8 +826,42 @@ async function closeStep(c: ChatCtx, text: string): Promise<boolean> {
   const r = pnl != null && riskUsd > 0 ? Math.round((pnl / riskUsd) * 100) / 100 : riskPerUnit > 0 ? Math.round((((exit - fill) * dir) / riskPerUnit) * 100) / 100 : null;
   const now = new Date().toISOString();
   await c.sb.from("saved_setups").update({ exit_price: exit, exit_at: now, exit_reason: "manual", realized_usd: pnl, realized_r: r, ...(row.resolved_at ? {} : { status: "closed", resolved_at: now }) }).eq("id", row.id);
-  await tgSend(c.chatId, `🏁 Closed ${esc(row.symbol)} ${row.side} at ${fmtUsd(exit)}${pnl != null ? `: <b>${pnl >= 0 ? "+" : ""}${fmtUsd(pnl)}</b>` : ""}${r != null ? ` (${r > 0 ? "+" : ""}${r}R)` : ""}. ${pnl != null && pnl >= 0 ? "Nice." : "Logged; losses that respect the stop are part of the plan."}`, { html: true, keyboard: [[{ text: "My trades", callback_data: "me" }, { text: "Weekly review", callback_data: "review" }]] });
+  await tgSend(c.chatId, `🏁 Closed ${esc(row.symbol)} ${row.side} at ${fmtUsd(exit)}${pnl != null ? `: <b>${pnl >= 0 ? "+" : ""}${fmtUsd(pnl)}</b>` : ""}${r != null ? ` (${r > 0 ? "+" : ""}${r}R)` : ""}. ${pnl != null && pnl >= 0 ? "Nice." : "Logged; losses that respect the stop are part of the plan."}`, { html: true, keyboard: [[{ text: "🖼 Share result card", callback_data: `card:${row.id}:0:0` }], [{ text: "My trades", callback_data: "me" }, { text: "Weekly review", callback_data: "review" }]] });
   return true;
+}
+
+/**
+ * A trader's own result as a picture: their fill, their exit, their profit. Buttons under it change the background
+ * and show or hide the dollar amount; the website's card studio does the rest (own picture, colours, caption).
+ */
+async function resultCard(c: ChatCtx, id: string, bgIndex: number, showUsd: boolean) {
+  if (!c.userId) return needLink(c);
+  const { data: row } = id === "last"
+    ? await c.sb.from("saved_setups").select("*").eq("user_id", c.userId).eq("taken", true).not("exit_price", "is", null).order("exit_at", { ascending: false }).limit(1).maybeSingle()
+    : await c.sb.from("saved_setups").select("*").eq("id", id).eq("user_id", c.userId).maybeSingle();
+  if (!row || row.exit_price == null) return tgSend(c.chatId, "No closed trade to make a card from yet. Close a trade first (My trades, then Close), then tap Share result card.");
+  await tgTyping(c.chatId);
+  const bg = CARD_BGS[((bgIndex % CARD_BGS.length) + CARD_BGS.length) % CARD_BGS.length];
+  const fill = Number(row.fill_price ?? (Number(row.entry_low) + Number(row.entry_high)) / 2);
+  const hours = row.taken_at && row.exit_at ? Math.max(1, Math.round((Date.parse(row.exit_at) - Date.parse(row.taken_at)) / 3_600_000)) : null;
+  const lev = Number(row.leverage_used ?? 0) > 1 ? Number(row.leverage_used) : null;
+  const base: Record<string, string> = { symbol: row.symbol, tf: row.timeframe, side: row.side, entry: String(fill), exit: String(row.exit_price) };
+  if (row.sl1 != null) base.sl = String(row.sl1);
+  if (lev) base.lev = String(lev);
+  if (hours) base.hours = String(hours);
+  const usd = row.realized_usd != null ? Math.round(Number(row.realized_usd) * 100) / 100 : null;
+  const img = new URLSearchParams({ ...base, mine: "1", bg: bg.id, name: c.firstName ?? "", ...(showUsd && usd != null ? { usd: String(usd) } : {}) });
+  const studio = link(`/card?${new URLSearchParams({ ...base, ...(usd != null ? { usd: String(usd) } : {}), bg: bg.id })}`);
+  const url = link(`/api/result-card?${img}`);
+  const blob = url ? await fetchImage(url) : null;
+  const kb: Keyboard = [
+    [{ text: `🎨 Background: ${bg.label} (next)`, callback_data: `card:${row.id}:${bgIndex + 1}:${showUsd ? 1 : 0}` }],
+    ...(usd != null ? [[{ text: showUsd ? "🙈 Hide the $ amount" : "💵 Show the $ amount", callback_data: `card:${row.id}:${bgIndex}:${showUsd ? 0 : 1}` }]] : []),
+    ...(studio ? [[{ text: "✏️ Customise (own picture, colours, caption)", url: studio }]] : []),
+  ];
+  const caption = `<b>${esc(row.symbol)} ${row.side} ${esc(row.timeframe)}</b>: your result card. Forward it or save the picture to share it anywhere.`;
+  if (blob && (await tgPhoto(c.chatId, blob, caption, kb))) return;
+  return tgSend(c.chatId, `Could not draw the card right now.${studio ? " You can still make it on the website:" : ""}`, { html: true, keyboard: studio ? [[{ text: "✏️ Open the card studio", url: studio }]] : undefined });
 }
 
 // ---------- watchlist ----------

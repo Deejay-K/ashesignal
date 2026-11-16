@@ -40,6 +40,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { section: "Tools", href: "/risk", label: "Position size", hint: "How much to buy for the risk you accept" },
       { section: "Tools", href: "/guide", label: "Trade guide", hint: "Place it on your exchange, step by step" },
       { section: "Tools", href: "/dca", label: "DCA planner", hint: "Spread a spot buy across the zone" },
+      { section: "Tools", href: "/card", label: "Result card", hint: "Share your own trade as a picture" },
       { section: "Learn", href: "/learn", label: "Academy", hint: "Short lessons with quizzes" },
       { section: "Learn", href: "/glossary", label: "Glossary", hint: "Every label explained" },
       { section: "Learn", href: "/welcome", label: "Guided setup", hint: "Exchange, risk, notifications, Telegram" },
