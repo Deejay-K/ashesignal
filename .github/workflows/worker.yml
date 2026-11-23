@@ -28,6 +28,10 @@ jobs:
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/whales?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Screener metrics (10 coins per tick, rotates)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/screen?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Deliver queued signals (every recipient decision logged; resumes on the next tick)
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/deliver?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Grade finished signals from candles (each outcome written once)
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/settle?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Speculative opportunities (stalest candidates first, 45 s budget)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/spec?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Spot investment picks (stalest coins first, 45 s budget)

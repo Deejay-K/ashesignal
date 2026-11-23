@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { buildRecap, weekId } from "@/lib/recap";
 import { loadRecipients } from "@/lib/telegram-broadcast";
-import { tgSend, esc } from "@/lib/telegram";
+import { tgSend } from "@/lib/telegram";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -28,10 +28,12 @@ export async function GET(req: NextRequest) {
   // Mark first, so a slow send can never produce two recaps.
   await sb.from("engine_config").upsert({ key: "recap_last", value: { week: wk, at: now.toISOString() }, note: "weekly recap sent", updated_at: now.toISOString() });
   const recipients = await loadRecipients(sb);
-  let sent = 0;
+  let sent = 0, failed = 0;
   for (const r of recipients) {
-    if (await tgSend(r.chatId, `${recap.html}\n\n<pre>${esc(recap.plain)}</pre>\nLong-press the block to copy it for Root or anywhere else.`, { html: true })) sent++;
-    await new Promise((res) => setTimeout(res, 60));
+    for (const m of recap.messages) {
+      if (await tgSend(r.chatId, m, { html: true })) sent++; else failed++;
+      await new Promise((res) => setTimeout(res, 60));
+    }
   }
-  return NextResponse.json({ ok: true, week: wk, sent, recipients: recipients.length, total: recap.total });
+  return NextResponse.json({ ok: true, week: wk, sent, failed, recipients: recipients.length, messages: recap.messages.length, total: recap.total, delivered: recap.delivered.signals, legacy: recap.legacy });
 }

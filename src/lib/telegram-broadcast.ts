@@ -32,7 +32,7 @@ export function signalCopyText(sig: ConfirmedSignal, venue: VenueId, listed: Ven
   return lines.join("\n");
 }
 
-function keyboard(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[]): Keyboard {
+export function keyboard(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[]): Keyboard {
   const s = sig.setup; const id = sig.coingeckoId.length <= 36 ? sig.coingeckoId : `~${sig.symbol}`; const tf = sig.timeframe;
   const guide = link(`/guide?${new URLSearchParams({ side: s.side, entry: String(s.entry.mid), entryLow: String(s.entry.low), entryHigh: String(s.entry.high), stop: String(s.stopLosses[0].price), tp1: String(s.takeProfits[0]?.price ?? ""), tp2: String(s.takeProfits[1]?.price ?? ""), tp3: String(s.takeProfits[2]?.price ?? ""), symbol: sig.symbol, leverage: String(s.leverage.recommended), venue })}`);
   const tv = listed.includes(venue) ? venue : listed[0];
@@ -48,7 +48,7 @@ function keyboard(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[]): Keyb
   return kb;
 }
 
-function caption(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[], forGroup: boolean, same: string[] = []): string {
+export function caption(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[], forGroup: boolean, same: string[] = []): string {
   const s = sig.setup; const vm = VENUE_META[venue];
   const head = `✅ <b>NEW CONFIRMED TRADE</b>\n<b>${esc(sig.symbol)}</b> ${s.side === "LONG" ? "🟢 LONG" : "🔴 SHORT"} ${esc(sig.timeframe)} · score ${s.confidence}/100 · ${s.riskRewardTp2}R${forGroup ? `\nListed on: ${listed.map((v) => VENUE_META[v].label).join(", ") || "DEX only"}` : `\nOn ${esc(vm.label)}${vm.canShort ? "" : " (spot)"}`}`;
   const why = sig.qualifies[0] ? `\n${esc(sig.qualifies[0])}` : "";
@@ -59,6 +59,13 @@ function caption(sig: ConfirmedSignal, venue: VenueId, listed: VenueId[], forGro
   if (out.length > 1000) out = head + bet + pre + foot; // Telegram caption limit is 1024
   if (out.length > 1000) out = head + pre + foot;
   return out;
+}
+
+/** The chart and the share-card image links for a signal (the same links the Telegram card uses). */
+export function mediaUrls(sig: ConfirmedSignal): { chart?: string; og?: string } {
+  const chart = link(`/api/chart?${new URLSearchParams({ symbol: sig.symbol, id: sig.coingeckoId, tf: sig.timeframe, side: sig.setup.side, entryLow: String(sig.setup.entry.low), entryHigh: String(sig.setup.entry.high), tp1: String(sig.setup.takeProfits[0]?.price ?? ""), tp2: String(sig.setup.takeProfits[1]?.price ?? ""), tp3: String(sig.setup.takeProfits[2]?.price ?? ""), sl1: String(sig.setup.stopLosses[0].price), sl2: String(sig.setup.stopLosses[1]?.price ?? "") })}`);
+  const og = link(`/api/og?${new URLSearchParams({ symbol: sig.symbol, tf: sig.timeframe, side: sig.setup.side, kind: "confirmed", entryLow: String(sig.setup.entry.low), entryHigh: String(sig.setup.entry.high), tp1: String(sig.setup.takeProfits[0]?.price ?? ""), tp2: String(sig.setup.takeProfits[1]?.price ?? ""), tp3: String(sig.setup.takeProfits[2]?.price ?? ""), sl1: String(sig.setup.stopLosses[0].price), sl2: String(sig.setup.stopLosses[1]?.price ?? sig.setup.stopLosses[0].price), rr: String(sig.setup.riskRewardTp2), lev: String(sig.setup.leverage.recommended), conf: String(sig.setup.confidence), style: sig.setup.style, theme: "foundry" })}`);
+  return { chart, og };
 }
 
 /** Per-person (or per-group) choice of which signals to receive. Empty = everything, as before. */
@@ -144,8 +151,7 @@ export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedS
   let sent = 0, skipped = 0;
   for (const sig of signals) {
     const listed = listingsUnknown ? ([...VENUE_IDS] as VenueId[]) : venuesFor(sig.symbol, listings, null);
-    const chart = link(`/api/chart?${new URLSearchParams({ symbol: sig.symbol, id: sig.coingeckoId, tf: sig.timeframe, side: sig.setup.side, entryLow: String(sig.setup.entry.low), entryHigh: String(sig.setup.entry.high), tp1: String(sig.setup.takeProfits[0]?.price ?? ""), tp2: String(sig.setup.takeProfits[1]?.price ?? ""), tp3: String(sig.setup.takeProfits[2]?.price ?? ""), sl1: String(sig.setup.stopLosses[0].price), sl2: String(sig.setup.stopLosses[1]?.price ?? "") })}`);
-    const og = link(`/api/og?${new URLSearchParams({ symbol: sig.symbol, tf: sig.timeframe, side: sig.setup.side, kind: "confirmed", entryLow: String(sig.setup.entry.low), entryHigh: String(sig.setup.entry.high), tp1: String(sig.setup.takeProfits[0]?.price ?? ""), tp2: String(sig.setup.takeProfits[1]?.price ?? ""), tp3: String(sig.setup.takeProfits[2]?.price ?? ""), sl1: String(sig.setup.stopLosses[0].price), sl2: String(sig.setup.stopLosses[1]?.price ?? sig.setup.stopLosses[0].price), rr: String(sig.setup.riskRewardTp2), lev: String(sig.setup.leverage.recommended), conf: String(sig.setup.confidence), style: sig.setup.style, theme: "foundry" })}`);
+    const { chart, og } = mediaUrls(sig);
     // Render both images once per signal; after the first upload Telegram's file_ids are reused for everyone else.
     const [cardBlob, chartBlob] = await Promise.all([og ? fetchImage(og) : null, chart ? fetchImage(chart) : null]);
     let imgs: { card?: Blob | string | null; chart?: Blob | string | null } = { card: cardBlob, chart: chartBlob };

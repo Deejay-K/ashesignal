@@ -8,10 +8,10 @@ const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}
 export type Button = { text: string; url?: string; callback_data?: string };
 export type Keyboard = Button[][];
 
-async function call<T = unknown>(method: string, body: Record<string, unknown>): Promise<{ ok: boolean; result?: T; description?: string }> {
+async function call<T = unknown>(method: string, body: Record<string, unknown>): Promise<{ ok: boolean; result?: T; description?: string; parameters?: { retry_after?: number } }> {
   try {
     const res = await fetch(`${API()}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
-    return (await res.json()) as { ok: boolean; result?: T; description?: string };
+    return (await res.json()) as { ok: boolean; result?: T; description?: string; parameters?: { retry_after?: number } };
   } catch (e) { return { ok: false, description: String(e) }; }
 }
 
@@ -21,8 +21,19 @@ export const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replac
 /** Persistent buttons under the text box (Telegram "reply keyboard"); their labels arrive as plain messages. */
 export const REPLY_KEYBOARD: string[][] = [["☀️ Plan", "✅ Trades"], ["🔍 Coin", "👤 Me"], ["🤖 Ask AI", "📋 Menu"]];
 
-export async function tgSend(chatId: string, text: string, opts: { url?: string; label?: string; keyboard?: Keyboard; html?: boolean; replyKeyboard?: string[][] | "remove"; replyTo?: number } = {}): Promise<boolean> {
-  if (!TELEGRAM_ENABLED()) return false;
+export type SendOpts = { url?: string; label?: string; keyboard?: Keyboard; html?: boolean; replyKeyboard?: string[][] | "remove"; replyTo?: number };
+export type SendResult = { ok: boolean; error?: string; retryAfter?: number };
+
+/** Send and say what happened: the Telegram error text, and the rate-limit wait when Telegram asks for one. */
+export async function tgSendDetailed(chatId: string, text: string, opts: SendOpts = {}): Promise<SendResult> {
+  if (!TELEGRAM_ENABLED()) return { ok: false, error: "TELEGRAM_BOT_TOKEN is not set" };
+  const first = await sendOnce(chatId, text, opts);
+  if (first.ok || !opts.html) return first;
+  // HTML rejected (bad entity): retry as plain text, keeping the buttons
+  return sendOnce(chatId, text.replace(/<[^>]+>/g, ""), { ...opts, html: false });
+}
+
+async function sendOnce(chatId: string, text: string, opts: SendOpts): Promise<SendResult> {
   const body: Record<string, unknown> = { chat_id: chatId, text: text.slice(0, 4000), disable_web_page_preview: true };
   if (opts.replyTo) body.reply_parameters = { message_id: opts.replyTo, allow_sending_without_reply: true };
   if (opts.html) body.parse_mode = "HTML";
@@ -31,10 +42,11 @@ export async function tgSend(chatId: string, text: string, opts: { url?: string;
   else if (opts.replyKeyboard) body.reply_markup = { keyboard: opts.replyKeyboard.map((r) => r.map((t) => ({ text: t }))), resize_keyboard: true, is_persistent: true, input_field_placeholder: "Tap a button, or type a coin" };
   else if (kb.length) body.reply_markup = { inline_keyboard: kb };
   const r = await call("sendMessage", body);
-  if (!r.ok && opts.html) { // HTML rejected (bad entity): retry as plain text
-    return (await call("sendMessage", { chat_id: chatId, text: text.replace(/<[^>]+>/g, "").slice(0, 4000), disable_web_page_preview: true, ...(kb.length ? { reply_markup: { inline_keyboard: kb } } : {}) })).ok;
-  }
-  return r.ok;
+  return r.ok ? { ok: true } : { ok: false, error: r.description ?? "unknown Telegram error", retryAfter: r.parameters?.retry_after };
+}
+
+export async function tgSend(chatId: string, text: string, opts: SendOpts = {}): Promise<boolean> {
+  return (await tgSendDetailed(chatId, text, opts)).ok;
 }
 
 /** Download one of our own images (share card, chart) so we can upload it; Telegram's own fetch of a slow
@@ -130,6 +142,7 @@ export const COMMANDS = [
   { command: "menu", description: "Main menu with buttons" },
   { command: "trades", description: "Confirmed trades you can place on your exchange" },
   { command: "recap", description: "This week's signals, graded" },
+  { command: "speculative", description: "Early setups before they are confirmed (off by default)" },
   { command: "watching", description: "Setups that are close but not confirmed" },
   { command: "spec", description: "Speculative opportunities (high risk)" },
   { command: "spot", description: "Long-term spot picks and their zones" },

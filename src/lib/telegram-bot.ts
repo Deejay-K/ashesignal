@@ -11,6 +11,7 @@ import { signalView, ago } from "./market/signal-state";
 import { buildHeadline } from "./headline";
 import { cleanFilters, filtersLabel, FILTER_TFS, type SignalFilters } from "./telegram-broadcast";
 import { buildRecap } from "./recap";
+import { PRESETS, PRESET_IDS, type PresetId } from "./ledger";
 import { CARD_BGS } from "./card-presets";
 import { setupBriefing, SQUIXI } from "./mascot";
 import { search as cgSearch, getMarketsByIds } from "./providers/coingecko";
@@ -195,6 +196,7 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/heat": return heat(c);
     case "/record": case "/trackrecord": return record(c);
     case "/recap": case "/week": return recap(c);
+    case "/speculative": case "/spec": return speculative(c, arg);
     case "/leaderboard": case "/lb": return leaderboard(c);
     case "/optin": return optIn(c, true);
     case "/optout": return optIn(c, false);
@@ -273,6 +275,7 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "digest": return digestNow(c);
     case "settings": return a ? settingsSet(c, a, b) : settings(c);
     case "signals": return signals(c, a ?? "");
+    case "spec": return speculative(c, a ?? "");
     case "takesave": return takeFinish(c, a === "yes");
     case "rm": return removeTrade(c, a, true);
     case "untake": return removeTrade(c, a, false);
@@ -1002,6 +1005,7 @@ async function signals(c: ChatCtx, arg: string) {
   const scope = c.isGroup ? "this group" : "you";
   const tfOn = (t: string) => !f.tfs || f.tfs.includes(t);
   const kb: Keyboard = [[{ text: on ? "🔕 Turn off" : "🔔 Turn on", callback_data: `signals:${on ? "off" : "on"}` }, { text: "Settings", callback_data: "settings" }]];
+  if (!c.isGroup) kb.push([{ text: "🔍 Speculative alerts", callback_data: "spec" }]);
   if (on && hasFilters) {
     kb.push(FILTER_TFS.map((t) => ({ text: `${tfOn(t) ? "✅" : "⬜"} ${t}`, callback_data: `sigf:tf:${t}` })));
     kb.push([{ text: `${f.longsOnly ? "⬜" : "✅"} Shorts too`, callback_data: `sigf:side:${f.longsOnly ? "all" : "long"}` }, { text: `${f.longsOnly ? "✅" : "⬜"} Longs only`, callback_data: "sigf:side:long" }]);
@@ -1033,12 +1037,38 @@ async function signalFilter(c: ChatCtx, key: string, val: string) {
   return signals(c, "");
 }
 
-/** The week's broadcast signals, graded, with a block to paste into Root or anywhere else. */
+/** The week's signals, graded from the ledger: delivered first, then not delivered, then combined. */
 async function recap(c: ChatCtx) {
   await tgTyping(c.chatId);
   const r = await safe(buildRecap(c.sb));
   if (!r.ok) return tgSend(c.chatId, `Could not build the recap: ${esc(r.error)}`, { html: true });
-  return tgSend(c.chatId, `${r.data.html}\n\n<pre>${esc(r.data.plain)}</pre>\nLong-press the block to copy it. The same recap is sent automatically every Sunday evening.`, { html: true, keyboard: [[{ text: "🏆 Track record", callback_data: "record" }, { text: "Menu", callback_data: "menu" }]] });
+  const msgs = r.data.messages;
+  for (let i = 0; i < msgs.length; i++) {
+    const last = i === msgs.length - 1;
+    await tgSend(c.chatId, last ? `${msgs[i]}\nLong-press a block to copy it. The same recap goes out every Sunday evening.` : msgs[i], { html: true, keyboard: last ? [[{ text: "🏆 Track record", callback_data: "record" }, { text: "Menu", callback_data: "menu" }]] : undefined });
+  }
+}
+
+/** Speculative alerts: off, or one of the fixed presets. Private chats only. */
+async function speculative(c: ChatCtx, arg: string) {
+  if (c.isGroup) return tgSend(c.chatId, "Speculative alerts are personal: open a private chat with the bot and send /speculative there.");
+  const a = arg.trim().toLowerCase();
+  const want = (a === "off" || (PRESET_IDS as string[]).includes(a)) ? (a as PresetId | "off") : null;
+  if (want) {
+    const { error } = await c.sb.from("telegram_users").upsert({ tg_user_id: c.tgUserId, user_id: c.userId, venue: c.venue, spec_preset: want, updated_at: new Date().toISOString() });
+    if (error) return tgSend(c.chatId, "Speculative alerts need the latest database update: run supabase/schema.sql once in Supabase, then try again.");
+  }
+  const { data, error } = await c.sb.from("telegram_users").select("spec_preset, broadcast").eq("tg_user_id", c.tgUserId).maybeSingle();
+  if (error) return tgSend(c.chatId, "Speculative alerts need the latest database update: run supabase/schema.sql once in Supabase, then try again.");
+  const cur = (PRESET_IDS as string[]).includes(data?.spec_preset) ? data!.spec_preset as PresetId : "off";
+  const lines = PRESET_IDS.map((id) => { const p = PRESETS[id]; return `<b>${p.label}</b>: ${p.tfs.join(", ")} · R:R ${p.minRr === 0 ? "any" : `${p.minRr}+`} · stop max ${p.maxStopPct === Infinity ? "any" : `${p.maxStopPct}%`} · score ${p.minScore || "any"}+ · ${p.dailyCap === Infinity ? "no" : p.dailyCap} a day`; }).join("\n");
+  const note = data?.broadcast === false ? "\n\nYour Confirmed-trade signals are off, so speculative alerts are off too. Turn them on first." : "";
+  const kb: Keyboard = [
+    [{ text: `${cur === "off" ? "✅" : "⬜"} Off`, callback_data: "spec:off" }],
+    PRESET_IDS.map((id) => ({ text: `${cur === id ? "✅" : "⬜"} ${PRESETS[id].label}`, callback_data: `spec:${id}` })),
+    [{ text: "Menu", callback_data: "menu" }],
+  ];
+  return tgSend(c.chatId, `<b>🔍 Speculative alerts: ${cur === "off" ? "OFF" : PRESETS[cur].label}</b>\nEarly setups the engine has not confirmed yet. Off by default. Each preset has fixed limits, and every signal that a preset skips is logged with the reason. Only signals that reach you count in the recap's "delivered" figures.\n\n${lines}${note}`, { html: true, keyboard: kb });
 }
 
 /** Squixi's plain-language walk through one trade: the same explanation as the 🦑 button on the website. */

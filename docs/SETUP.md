@@ -550,3 +550,25 @@ No database change (it uses the existing `display_name` column and the `preferen
 - **Opt out.** The same setting has a checkbox "Show my closed trades on the results strip". It is on by default; unticking it removes that member's trades from the strip within a minute or two.
 - **Honest labelling.** These are results members logged themselves. The strip is titled "Member results", not "verified results". The engine's own graded record is still the Track record page.
 - Files: `src/lib/nickname.ts`, `src/app/api/ticker/route.ts`, `src/components/ResultsTicker.tsx`, `src/components/NicknameSetting.tsx`.
+
+## 54. Stage 52 - signal ledger: every delivery and outcome recorded, recap and speculative alerts
+
+**Database (run once):** paste `supabase/stage52.sql` into the Supabase SQL editor. It adds `signals`, `signal_deliveries`, `signal_outcomes` and `signal_issues`, plus `telegram_users.spec_preset` and `spec_tfs`. It is safe to run twice.
+
+**Worker:** two new steps in `.github/workflows/worker.yml`: `/api/cron/deliver` (right after the screener) and `/api/cron/settle`. No new environment variables.
+
+- **Why signals were lost.** The screener saved the coin as Confirmed before it sent the message, and the send was not logged per member. A run cut off by the time limit, a failed send, or a skipped member left no trace, and the next scan did not promote the signal again. Also, a SHORT is skipped for spot-only exchanges (Coinbase), and those skips were never saved.
+- **Queue first.** The screener writes each new Confirmed or speculative signal to `signals` before it saves the coin status. If the queue write fails, the status is not saved either, so the next scan retries.
+- **Sender.** `/api/cron/deliver` (`src/lib/delivery.ts`) writes one decision row per recipient: `sent`, `skipped`, `filtered` or `failed`, each with a reason. Telegram rate limits are honoured (`retry_after`). A temporary failure is retried on the next tick; a permanent one (user blocked the bot) is recorded as `failed`. A signal not finished within 6 hours is closed and logged in `signal_issues`. A recipient is never messaged twice.
+- **One-time stamps.** `broadcast_at` (first successful send) and `processed_at` (every recipient decided) are set once. A trigger refuses any later change. Levels cannot change. Deliveries, outcomes and issues cannot be updated or deleted.
+- **Grader.** `/api/cron/settle` (`src/lib/settle.ts`, rules in `src/lib/ledger.ts`) grades every signal from its own timeframe's candles, delivered or not, and writes the outcome once. R per trade: 0.30 x R at TP1, 0.30 x R at TP2, 0.40 x R at TP3 for the parts that filled; the rest closes at -1R (stop before TP1) or 0R (break-even after TP1). Stop is checked before targets in the same candle. Entry not reached within 24 hours is `no_fill` (excluded). Still open after the timeframe's candle limit is `expired` (closed at the last price).
+- **Recap.** Headline is what members received. Not delivered (speculative and internal) is shown separately, with a line for Confirmed signals that nobody received. Combined is a secondary line. Each is split by kind and timeframe, with win rate, average R, total R, max drawdown in R and longest losing streak. Messages are split under Telegram's 4096-character limit.
+- **Speculative alerts (off by default).** `/speculative` in a private chat, or the button on the signals screen. Presets (fixed in `src/lib/ledger.ts`, not tuned on past results):
+  - Conservative: 4h and 1d, R:R 2.0+, stop max 4%, score 65+, entry within 1%, 2 a day, 24h cooldown after a stop on the coin, 3R open risk, top 50 coins, $50M volume, must agree with the higher timeframe, quiet 23:00 to 07:00 UTC.
+  - Balanced: 1h, 4h and 1d, R:R 1.5+, stop max 6%, score 50+, entry within 2%, 4 a day, 12h cooldown, 5R open risk, top 100 coins, $20M volume, higher-timeframe disagreement labelled, quiet 00:00 to 06:00 UTC.
+  - All: 1h, 4h and 1d, no caps; entry within 3%.
+  - Members can also pick which of 1h, 4h and 1d they want, on top of the preset. Every signal a preset skips is logged with the reason.
+- **Not yet built:** a per-number custom preset, a pair watchlist, the speculative cancel message at 24 hours (the grader marks it `no_fill`; no message is sent), and quiet hours in each member's own timezone (UTC for now).
+- **Track record page** still reads the engine's own log (`signal_log`) and is unchanged. The recap and this ledger use full partial-exit R, so the two pages will differ until the Track record page is switched over.
+- **Tests:** `scripts/ledger-selftest.ts` (offline, 39 checks: grading, R, statistics, presets).
+- Files: `src/lib/ledger.ts`, `src/lib/delivery.ts`, `src/lib/settle.ts`, `src/lib/recap.ts`, `src/app/api/cron/deliver/route.ts`, `src/app/api/cron/settle/route.ts`, `src/app/api/cron/screen/route.ts`, `src/app/api/cron/recap/route.ts`, `src/lib/telegram-bot.ts`, `src/lib/telegram.ts`, `src/lib/telegram-broadcast.ts`, `supabase/stage52.sql`.
