@@ -11,7 +11,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getMarketsByIds } from "./providers/coingecko";
 import { venueListings, venuesFor, VENUE_IDS, type VenueId } from "./venues";
 import { loadRecipients, canReceive } from "./telegram-broadcast";
-import { tgSend, tgPhoto, fetchImage, esc, type Keyboard } from "./telegram";
+import { tgSendDetailed, tgPhoto, fetchImage, esc, type Keyboard, type SendOpts, type SendResult } from "./telegram";
+import { selectIn } from "./db-pages";
 import { fmtUsd } from "./format";
 import { safe } from "./fetch";
 import { deliver } from "./alerts/notify";
@@ -134,6 +135,24 @@ export async function runFollowups(sb: SupabaseClient, budgetMs = 40_000): Promi
   if (!events.length) return { checked: rows.length, events: 0, sent: 0 };
   const [recipients, listings] = await Promise.all([loadRecipients(sb), venueListings()]);
   const listingsUnknown = Object.values(listings).every((set) => !set || set.size === 0);
+  // Stage 54: follow-ups go to exactly the members who received the signal (from the delivery ledger). Follow-ups from
+  // before the ledger (no signal_id) keep the old rule: everyone whose exchange and filters would have received it.
+  const sigIds = [...new Set(events.map((e) => e.row.signal_id as string | null).filter((x): x is string => !!x))];
+  const deliveredTo = new Map<string, Set<string>>();
+  if (sigIds.length) {
+    // If this lookup fails, stop before any event is marked as done: the next run detects the same events again.
+    // (Falling back to "everyone" would message members who never received the signal.)
+    let got: any[];
+    try { got = await selectIn<any>(sigIds, (ch, a, b) => sb.from("signal_deliveries").select("id, signal_id, recipient").eq("status", "sent").in("signal_id", ch).order("id", { ascending: true }).range(a, b)); }
+    catch (e) { console.error(`[followups] recipient lookup failed, will retry: ${(e as Error).message}`); return { checked: rows.length, events: events.length, sent: 0 }; }
+    for (const d of got) (deliveredTo.get(d.signal_id) ?? deliveredTo.set(d.signal_id, new Set()).get(d.signal_id)!).add(String(d.recipient));
+    for (const id of sigIds) if (!deliveredTo.has(id)) deliveredTo.set(id, new Set()); // ledger signal nobody received: no follow-ups
+  }
+  const sendRetry = async (chatId: string, text: string, opts: SendOpts): Promise<SendResult> => {
+    let res = await tgSendDetailed(chatId, text, opts);
+    if (!res.ok && res.retryAfter && res.retryAfter <= 10 && Date.now() - started < budgetMs) { await new Promise((ok) => setTimeout(ok, res.retryAfter! * 1000)); res = await tgSendDetailed(chatId, text, opts); }
+    return res;
+  };
   let sent = 0;
   for (const e of events) {
     if (Date.now() - started > budgetMs) break;
@@ -153,14 +172,22 @@ export async function runFollowups(sb: SupabaseClient, budgetMs = 40_000): Promi
       const lvl = e.type === "tp2" ? r.tp2 : r.tp3;
       card = await fetchImage(link(`/api/result-card?${new URLSearchParams({ symbol: r.symbol, tf: r.timeframe, side: r.side, entry: String((Number(r.entry_low) + Number(r.entry_high)) / 2), exit: String(lvl), sl: String(r.sl1 ?? ""), level: e.type.toUpperCase(), hours: String((Date.now() - Date.parse(r.emitted_at)) / 3_600_000) })}`)!);
     }
-    for (const rc of recipients) {
-      if (!canReceive(rc, listed, r.side, { timeframe: r.timeframe, confidence: r.confidence })) continue;
+    const got = r.signal_id ? deliveredTo.get(r.signal_id) : undefined;
+    const targets = got ? recipients.filter((rc) => got.has(rc.chatId)) : recipients.filter((rc) => canReceive(rc, listed, r.side, { timeframe: r.timeframe, confidence: r.confidence }));
+    const log: Record<string, unknown>[] = [];
+    for (const rc of targets) {
       if (card) {
         const id = await tgPhoto(rc.chatId, card, text.length <= 1000 ? text : text.slice(0, 990), kb);
-        if (id) { card = id; sent++; await new Promise((res) => setTimeout(res, 50)); continue; }
+        if (id) { card = id; sent++; log.push({ followup_id: r.id, signal_id: r.signal_id ?? null, event: e.type, recipient: rc.chatId, status: "sent", reason: "Sent with result card" }); await new Promise((res) => setTimeout(res, 50)); continue; }
       }
-      if (await tgSend(rc.chatId, text, { html: true, keyboard: kb })) sent++;
+      const res = await sendRetry(rc.chatId, text, { html: true, keyboard: kb });
+      if (res.ok) sent++;
+      log.push({ followup_id: r.id, signal_id: r.signal_id ?? null, event: e.type, recipient: rc.chatId, status: res.ok ? "sent" : "failed", reason: res.ok ? "Sent" : `Telegram: ${(res.error ?? "unknown error").slice(0, 250)}` });
       await new Promise((res) => setTimeout(res, 50));
+    }
+    if (log.length) {
+      const { error: le } = await sb.from("followup_messages").insert(log);
+      if (le) console.error(`[followups] could not log ${log.length} ${e.type} message(s) for ${r.symbol}: ${le.message}`);
     }
   }
   return { checked: rows.length, events: events.length, sent };

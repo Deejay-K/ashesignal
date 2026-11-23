@@ -59,7 +59,7 @@ export default async function SetupPage({ params }: { params: Promise<{ id: stri
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-bold">{c.name} <span className="text-fg-3">{c.symbol}</span></h1>
         <span className="pill pill-gray">{tf}</span>
-        {s ? <><span className={`pill ${s.side === "LONG" ? "pill-mint" : "pill-red"}`}>{s.side}</span><span className={`pill ${kindCls}`}>{kindLabel}</span><span className="pill pill-gray">conf {s.confidence}%</span><span className="pill pill-gray">{s.riskRewardTp2}R to TP2</span></> : <span className="pill pill-gray">no setup on {tf}</span>}
+        {s ? <><span className={`pill ${s.side === "LONG" ? "pill-mint" : "pill-red"}`}>{s.side}</span><span className={`pill ${kindCls}`}>{kindLabel}</span><span className="pill pill-gray">score {s.confidence}/100</span><span className="pill pill-gray">{s.riskRewardTp2}R to TP2</span></> : <span className="pill pill-gray">no setup on {tf}</span>}
         {price != null ? <span className="num ml-auto text-sm text-fg-2">{fmtUsd(price)}</span> : null}
       </div>
       <div className="flex flex-wrap gap-1 text-xs">{TFS.map((x) => <Link key={x} href={`/s/${c.id}/${x}`} className={`btn-ghost !py-1 ${x === tf ? "!border-mint !text-mint" : ""}`}>{x}</Link>)}</div>

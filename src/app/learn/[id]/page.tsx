@@ -44,7 +44,7 @@ export default function LessonPage({ params }: { params: Promise<{ id: string }>
       </div>
       <div className="flex flex-wrap gap-2">
         {l.link ? <Link className="btn-ghost" href={l.link.href}>{l.link.label}</Link> : null}
-        {next ? <Link className="btn" href={`/learn/${next.id}`}>Next: {next.title}</Link> : <Link className="btn" href="/plan">Done: open today's plan</Link>}
+        {next ? <Link className="btn" href={`/learn/${next.id}`}>Next: {next.title}</Link> : <Link className="btn" href="/plan">Done: open today&apos;s plan</Link>}
       </div>
     </div>
   );

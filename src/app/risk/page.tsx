@@ -197,7 +197,7 @@ function Risk() {
             ) : (
               <p className="text-sm text-fg-3">Enter at least TP1 to see profits.</p>
             )}
-            {out.liquidationEstimate ? <p className="num mt-2 text-xs text-fg-3">Estimated liquidation around {fmtUsd(out.liquidationEstimate)} at {lev}x (the exchange's exact figure is shown in its order form; your stop must be well before it).</p> : null}
+            {out.liquidationEstimate ? <p className="num mt-2 text-xs text-fg-3">Estimated liquidation around {fmtUsd(out.liquidationEstimate)} at {lev}x (the exchange&apos;s exact figure is shown in its order form; your stop must be well before it).</p> : null}
           </div>
           {out.warnings.length ? (
             <ul className="list-disc space-y-1 pl-5 text-xs text-amber">{out.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>

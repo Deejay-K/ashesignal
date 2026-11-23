@@ -75,7 +75,7 @@ export default function SetupsPage() {
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <h1 className="text-xl font-bold">Trade journal</h1>
-          <p className="text-sm text-fg-2">Trades you actually took (recorded with "I took this trade") and setups you only saved to watch. Both are checked against live price every few minutes; the journal also carries your real fills, sizes and P&L.</p>
+          <p className="text-sm text-fg-2">Trades you actually took (recorded with &quot;I took this trade&quot;) and setups you only saved to watch. Both are checked against live price every few minutes; the journal also carries your real fills, sizes and P&L.</p>
         </div>
         <div className="ml-auto flex gap-1">
           <button className="btn-ghost text-xs" data-active={tab === "journal"} onClick={() => setTab("journal")}>Journal ({journal.length})</button>
@@ -138,7 +138,7 @@ export default function SetupsPage() {
           ) : null}
           <Section title={tab === "journal" ? "Your trades" : tab === "paper" ? "Paper trades (practice, no money)" : "Saved setups (not taken)"} right={list.length ? <button className="btn-ghost text-xs" onClick={() => downloadCsv(`ashesignal-${tab}.csv`, list.map((r) => ({ date: r.created_at, symbol: r.symbol, timeframe: r.timeframe, side: r.side, kind: r.kind, exchange: r.exchange, fill: r.fill_price, size_units: r.size_units, size_usd: r.size_usd, entry_low: r.entry_low, entry_high: r.entry_high, sl1: r.sl1, tp1: r.tp1, tp2: r.tp2, tp3: r.tp3, rr: r.rr, status: r.status, exit_price: r.exit_price, exit_reason: r.exit_reason, realized_usd: r.realized_usd, realized_r: r.realized_r, notes: r.notes })))}>Export CSV</button> : null}>
             {!list.length ? (
-              <Empty>{tab === "paper" ? <>No paper trades yet. Tick "Paper trade" in the "I took this trade" dialog to practise without money; results are graded the same way.</> : tab === "journal" ? <>No trades recorded yet. On any setup card or Trading Discovery card press <b>I took this trade</b> after placing it on your exchange.</> : <>No saved setups. Press "Save setup" on any analysis to watch one without taking it.</>}</Empty>
+              <Empty>{tab === "paper" ? <>No paper trades yet. Tick &quot;Paper trade&quot; in the &quot;I took this trade&quot; dialog to practise without money; results are graded the same way.</> : tab === "journal" ? <>No trades recorded yet. On any setup card or Trading Discovery card press <b>I took this trade</b> after placing it on your exchange.</> : <>No saved setups. Press &quot;Save setup&quot; on any analysis to watch one without taking it.</>}</Empty>
             ) : (
               <div className="space-y-2">
                 {list.map((r) => <TradeRow key={r.id} r={r} onPatch={patch} onClose={() => setClosing(r)} onDelete={async () => { await fetch(`/api/me/setups?id=${r.id}`, { method: "DELETE" }); load(); }} />)}
@@ -179,12 +179,12 @@ function TradeRow({ r, onPatch, onClose, onDelete }: { r: Row; onPatch: (b: Reco
         <div><span className="text-fg-3">Stop</span><div className="down">{fmtUsd(r.sl1)}</div></div>
         <div><span className="text-fg-3">Targets</span><div className="up">{fmtUsd(r.tp1)} / {fmtUsd(r.tp2)} / {fmtUsd(r.tp3)}</div></div>
         {r.taken ? <div><span className="text-fg-3">Size</span><div>{r.size_units ? `${fmtNum(r.size_units, 4)} (${fmtUsd(r.size_usd)})` : "-"}</div></div> : <div><span className="text-fg-3">R:R</span><div>{r.rr}R</div></div>}
-        {r.taken ? <div><span className="text-fg-3">At risk</span><div className="down">{r.risk_usd ? fmtUsd(r.risk_usd) : "-"}</div></div> : <div><span className="text-fg-3">Confidence</span><div>{r.confidence}%</div></div>}
+        {r.taken ? <div><span className="text-fg-3">At risk</span><div className="down">{r.risk_usd ? fmtUsd(r.risk_usd) : "-"}</div></div> : <div><span className="text-fg-3">Setup score</span><div>{r.confidence}/100</div></div>}
         <div><span className="text-fg-3">{r.exit_price ? "Result" : "Excursion"}</span><div>{r.exit_price ? <span className={(r.realized_usd ?? 0) >= 0 ? "up" : "down"}>{r.realized_usd != null ? `${r.realized_usd >= 0 ? "+" : ""}${fmtUsd(r.realized_usd)}` : ""} {r.realized_r != null ? `(${r.realized_r > 0 ? "+" : ""}${r.realized_r}R)` : ""}</span> : <span className="text-fg-2">+{r.max_favorable_pct ?? 0}% / -{r.max_adverse_pct ?? 0}%</span>}</div></div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
         {r.taken && !r.exit_price ? <button className="btn" onClick={onClose}>{r.paper ? "Close paper trade" : "Close at my exit"}</button> : null}
-        {r.taken && !r.exit_price ? <button className="btn-ghost" title="The order never filled or you changed your mind: the setup goes back to Saved and nothing counts in your stats." onClick={() => onPatch({ id: r.id, taken: false, status: "open" })}>Didn't take it / cancel</button> : null}
+        {r.taken && !r.exit_price ? <button className="btn-ghost" title="The order never filled or you changed your mind: the setup goes back to Saved and nothing counts in your stats." onClick={() => onPatch({ id: r.id, taken: false, status: "open" })}>Didn&apos;t take it / cancel</button> : null}
         {r.taken && r.exit_price ? <Link className="btn" href={`/card?${new URLSearchParams({ symbol: r.symbol, tf: r.timeframe, side: r.side, entry: String(fill), exit: String(r.exit_price), ...(r.sl1 != null ? { sl: String(r.sl1) } : {}), ...(r.leverage && r.leverage > 1 ? { lev: String(r.leverage) } : {}), ...(r.realized_usd != null ? { usd: String(Math.round(Number(r.realized_usd) * 100) / 100) } : {}), ...(r.taken_at && r.exit_at ? { hours: String(Math.max(1, Math.round((Date.parse(r.exit_at) - Date.parse(r.taken_at)) / 3_600_000))) } : {}) })}`}>🖼 Share result</Link> : null}
         {r.taken && r.exit_price ? <button className="btn-ghost" onClick={() => onPatch({ id: r.id, reopen: true })}>Reopen</button> : null}
         {!r.taken ? <button className="btn-ghost" onClick={() => onPatch({ id: r.id, taken: true })}>Mark as taken</button> : null}

@@ -76,9 +76,9 @@ export default function PushToggle() {
         <span className="w-28 text-fg-3">Morning plan</span>
         <div className="min-w-0 flex-1">
           <div className="rounded-lg border border-border bg-bg-2 p-2 text-xs">
-            <label className="flex items-center gap-2"><input type="checkbox" className="w-auto" checked={plan} onChange={async (e) => { setPlan(e.target.checked); await fetch("/api/me/profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ plan_enabled: e.target.checked }) }); }} /> Send me Today's plan every morning: stance, what to do with each open trade, confirmed setups in zone, risk budget</label>
+            <label className="flex items-center gap-2"><input type="checkbox" className="w-auto" checked={plan} onChange={async (e) => { setPlan(e.target.checked); await fetch("/api/me/profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ plan_enabled: e.target.checked }) }); }} /> Send me Today&apos;s plan every morning: stance, what to do with each open trade, confirmed setups in zone, risk budget</label>
             {plan ? <label className="mt-1 flex items-center gap-2 text-fg-3">Send at <select className="!w-auto !py-1" value={String(planHour)} onChange={async (e) => { const h = Number(e.target.value); setPlanHour(h); await fetch("/api/me/profile", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ plan_hour: h }) }); }}>{Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, "0")}:00 UTC ({new Date(Date.UTC(2026, 0, 1, h)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} local)</option>)}</select></label> : null}
-            <p className="mt-1 text-fg-3">Same content as the Plan page and the bot's /plan, delivered by push, email (when on) and Telegram.</p>
+            <p className="mt-1 text-fg-3">Same content as the Plan page and the bot&apos;s /plan, delivered by push, email (when on) and Telegram.</p>
           </div>
         </div>
       </div>

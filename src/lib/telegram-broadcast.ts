@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { TELEGRAM_ENABLED, tgSend, tgCardImages, fetchImage, esc, type Keyboard } from "./telegram";
 import { venueListings, venuesFor, tradeLink, VENUE_META, VENUE_IDS, isVenueId, type VenueId } from "./venues";
 import { fmtUsd } from "./format";
+import { selectAll } from "./db-pages";
 import type { Setup } from "./ta/analysis";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -100,12 +101,11 @@ export function recipientsFrom(users: any[] | null, groups: any[] | null): Recip
 }
 /** Everyone with signals switched on. Falls back to the old columns if schema.sql has not been re-run yet. */
 async function loadRaw(sb: SupabaseClient): Promise<{ users: any[] | null; groups: any[] | null }> {
-  const [u, g] = await Promise.all([
-    sb.from("telegram_users").select("tg_user_id, venue, sig_filters").eq("broadcast", true),
-    sb.from("telegram_chats").select("chat_id, sig_filters").eq("broadcast", true),
-  ]);
-  const users = u.error ? (await sb.from("telegram_users").select("tg_user_id, venue").eq("broadcast", true)).data : u.data;
-  const groups = g.error ? (await sb.from("telegram_chats").select("chat_id").eq("broadcast", true)).data : g.data;
+  // Paged and ordered (the API returns at most 1000 rows per request).
+  const read = (table: string, key: string, cols: string) => selectAll<any>((a, b) => sb.from(table).select(cols).eq("broadcast", true).order(key, { ascending: true }).range(a, b));
+  // A failed read throws (it must never look like "nobody to send to"): callers stop before marking anything as done.
+  const users = await read("telegram_users", "tg_user_id", "tg_user_id, venue, sig_filters").catch(() => read("telegram_users", "tg_user_id", "tg_user_id, venue"));
+  const groups = await read("telegram_chats", "chat_id", "chat_id, sig_filters").catch(() => read("telegram_chats", "chat_id", "chat_id"));
   return { users, groups };
 }
 export async function loadRecipients(sb: SupabaseClient): Promise<Recipient[]> {

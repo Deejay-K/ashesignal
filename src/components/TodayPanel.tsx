@@ -40,7 +40,7 @@ export default function TodayPanel() {
   return (
     <div className="today">
       <Link href="/plan" className="today-tile" style={{ borderColor: "var(--mint)" }}>
-        <span className="today-k">Today's plan</span>
+        <span className="today-k">Today&apos;s plan</span>
         <span className="today-v up">☀️</span>
         <span className="today-s">stance, what to do with each open trade, setups in zone, risk budget</span>
       </Link>

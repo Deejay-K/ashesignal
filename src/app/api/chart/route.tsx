@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
     if (a.momentum.macdCross) chips.push({ t: `MACD ${a.momentum.macdCross} cross`, c: a.momentum.macdCross === "bullish" ? C.up : C.down });
     chips.push({ t: `Volume ${a.volume.ratio.toFixed(1)}x`, c: a.volume.ratio >= 1.5 ? C.amber : C.fg2 });
     if (a.breakout.type) chips.push({ t: `${a.breakout.type === "breakout" ? "Breakout" : "Breakdown"} ${a.breakout.level ? money(a.breakout.level) : ""}`, c: a.breakout.type === "breakout" ? C.up : C.down });
-    if (s) chips.push({ t: `${s.side} ${s.kind} · conf ${s.confidence}% · ${s.riskRewardTp2}R`, c: s.kind === "confirmed" ? C.up : C.amber });
+    if (s) chips.push({ t: `${s.side} ${s.kind} · score ${s.confidence}/100 · ${s.riskRewardTp2}R`, c: s.kind === "confirmed" ? C.up : C.amber });
   }
   const patChips = pats.map((p) => ({ t: `${p.bias === "bullish" ? "▲" : "▼"} ${p.name} (${p.status})`, c: patColor(p.bias) }));
 

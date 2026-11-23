@@ -12,6 +12,8 @@ import type { Candle } from "./types";
 export type SignalKind = "confirmed" | "speculative";
 export type Outcome = "no_fill" | "stop" | "tp1" | "tp2" | "tp3" | "expired" | "unknown";
 
+/** How long a signal stays in the grader: a daily trade needs 24 h to fill plus 10 daily candles, plus margin. */
+export const GRADING_WINDOW_MS = 16 * 86_400_000;
 /** Entry must be reached within this many hours of the signal, else it counts as never entered (same for everyone). */
 export const FILL_WINDOW_HOURS = 24;
 /** Share of the position closed at each target (the plan users are given: 30 / 30 / 40). */
@@ -29,21 +31,24 @@ export interface LedgerSignal {
 export interface Grade { outcome: Outcome; r: number | null; fill_at: string | null; exit_at: string | null; note: string }
 
 /**
- * Grade one signal from the candles. `candles` must be the series for the signal's own timeframe.
- * Returns null while the trade is still open (nothing is written then).
+ * Grade one signal from candles. Pass 1h candles for every timeframe (finer candles see the real order of events);
+ * the timeframe only sets how long a trade may stay open. Returns null while the trade is still open.
  *
- * Rules, conservative where a single candle cannot say which came first:
- * - Entry: the first candle whose range touches the entry zone fills the trade. A candle that touches the zone and
- *   the stop together is not counted as filled (no_fill).
+ * Rules, always resolved against the trade when a candle cannot say which came first:
+ * - Entry: the first candle whose range touches the entry zone fills the trade, within FILL_WINDOW_HOURS.
+ * - A candle that reaches the stop before any fill: if it started on the entry side of the zone it went through the
+ *   zone on the way, so it is a fill and a stop (-1R). If it gapped past the zone without trading in it: no_fill.
  * - After entry, within one candle the stop is checked before the targets.
  * - R per leg: (target - entry) / (entry - stop), weighted by LEG. After TP1 the stop is at break-even (0R).
- * - Expired: still open after maxCandlesAfterFill candles; the rest is closed at the last close.
+ * - Expired: still open after maxCandlesAfterFill candles of the signal's timeframe; the rest closes at the last close.
+ * - forceClose: the signal is about to leave the grading window; close it now (expired at the last close, or no_fill).
  */
-export function gradeSignal(sig: LedgerSignal, candles: Candle[], o: { now?: number; maxCandlesAfterFill: number }): Grade | null {
+export function gradeSignal(sig: LedgerSignal, candles: Candle[], o: { now?: number; maxCandlesAfterFill: number; candleSeconds?: number; forceClose?: boolean }): Grade | null {
   const now = o.now ?? Date.now();
   const long = sig.side === "LONG";
   const created = Math.floor(Date.parse(sig.created_at) / 1000);
   const span = TF_SECONDS[sig.timeframe] ?? 3600;
+  const step = o.candleSeconds ?? span;
   const mid = sig.entry_mid, risk = Math.abs(mid - sig.sl1);
   const fail = (note: string): Grade => ({ outcome: "unknown", r: null, fill_at: null, exit_at: null, note });
   if (!(risk > 0) || !Number.isFinite(risk) || sig.tp1 == null) return fail("missing entry, stop or TP1");
@@ -53,15 +58,24 @@ export function gradeSignal(sig: LedgerSignal, candles: Candle[], o: { now?: num
   const hasTp2 = r2 != null && r2 > 0, hasTp3 = r3 != null && r3 > 0;
   const first = candles[0], last = candles[candles.length - 1];
   if (!first || !Number.isFinite(created) || first.time > created) return fail("not enough candle history to grade this signal");
+  const windowEnd = created + FILL_WINDOW_HOURS * 3600;
   const after = candles.filter((k) => k.time >= created);
   const reached = (k: Candle, lvl: number) => (long ? k.high >= lvl : k.low <= lvl);
   const stopped = (k: Candle, lvl: number) => (long ? k.low <= lvl : k.high >= lvl);
+  // Did this candle start on the entry side of the zone (above it for a long, below it for a short)?
+  const fromEntrySide = (k: Candle) => (long ? k.open >= sig.entry_low : k.open <= sig.entry_high);
+  const noFill = (at: number, note: string): Grade => ({ outcome: "no_fill", r: null, fill_at: null, exit_at: iso(at), note });
 
-  let filled = false, fillSec = 0, got1 = false, got2 = false, sum = 0, left = 1;
+  let filled = false, fillSec = 0, got1 = false, got2 = false, sum = 0, left = 1, lastClose = mid;
   for (const k of after) {
+    lastClose = k.close;
     if (!filled) {
+      if (k.time >= windowEnd) return noFill(windowEnd, `entry not reached within ${FILL_WINDOW_HOURS}h`);
       const inZone = k.low <= sig.entry_high && k.high >= sig.entry_low;
-      if (stopped(k, sig.sl1)) return { outcome: "no_fill", r: null, fill_at: null, exit_at: iso(k.time), note: inZone ? "zone and stop touched in the same candle: not counted as filled" : "stop reached before entry" };
+      if (stopped(k, sig.sl1)) {
+        if (inZone || fromEntrySide(k)) return { outcome: "stop", r: -1, fill_at: iso(k.time), exit_at: iso(k.time), note: "price went through the entry zone to the stop in one candle" };
+        return noFill(k.time, "price gapped past the entry zone to the stop without trading in it");
+      }
       if (inZone) { filled = true; fillSec = k.time; }
       continue;
     }
@@ -78,14 +92,18 @@ export function gradeSignal(sig: LedgerSignal, candles: Candle[], o: { now?: num
     }
     if (k.time - fillSec >= o.maxCandlesAfterFill * span) {
       sum += left * ((long ? k.close - mid : mid - k.close) / risk);
-      return { outcome: "expired", r: rnd(sum), fill_at: iso(fillSec), exit_at: iso(k.time), note: `still open after ${o.maxCandlesAfterFill} candles: closed at the last price` };
+      return { outcome: "expired", r: rnd(sum), fill_at: iso(fillSec), exit_at: iso(k.time), note: `still open after ${o.maxCandlesAfterFill} ${sig.timeframe} candles: closed at the last price` };
     }
   }
+  const covered = !!last && last.time + step >= Math.floor(now / 1000) - step;
   if (!filled) {
     // Only decide "never entered" when the candles actually reach the end of the window.
-    const windowEnd = created + FILL_WINDOW_HOURS * 3600;
-    const covered = !!last && last.time + span >= Math.floor(now / 1000) - span;
-    if (covered && now / 1000 >= windowEnd) return { outcome: "no_fill", r: null, fill_at: null, exit_at: iso(windowEnd), note: `entry not reached within ${FILL_WINDOW_HOURS}h` };
+    if ((covered && now / 1000 >= windowEnd) || o.forceClose) return noFill(windowEnd, `entry not reached within ${FILL_WINDOW_HOURS}h`);
+    return null;
+  }
+  if (o.forceClose && last) {
+    sum += left * ((long ? lastClose - mid : mid - lastClose) / risk);
+    return { outcome: "expired", r: rnd(sum), fill_at: iso(fillSec), exit_at: iso(last.time), note: "still open when it left the grading window: closed at the last price" };
   }
   return null;
 }
@@ -157,6 +175,10 @@ export interface SpecCandidate {
 }
 export interface SpecContext {
   nowMs: number; livePrice: number | null; userTfs: string[] | null;
+  /** Member's hours from UTC for quiet hours (null = UTC). */
+  utcOffset?: number | null;
+  /** Member's coin list (upper-case symbols). Empty or null = every coin. */
+  watchlist?: string[] | null;
   sentToday: number; openSymbols: Set<string>; stoppedAt: Map<string, number>; openCount: number;
 }
 export type Check = { ok: true } | { ok: false; reason: string };
@@ -166,6 +188,7 @@ export function specCheck(p: Preset, c: SpecCandidate, x: SpecContext): Check {
   const no = (reason: string): Check => ({ ok: false, reason });
   const tfs = x.userTfs?.length ? p.tfs.filter((t) => x.userTfs!.includes(t)) : p.tfs;
   if (!tfs.includes(c.timeframe)) return no(`timeframe ${c.timeframe} is off`);
+  if (x.watchlist?.length && !x.watchlist.includes(c.symbol.toUpperCase())) return no(`${c.symbol} is not on your coin list`);
   if (c.market_rank != null && c.market_rank > p.topRank) return no(`outside the top ${p.topRank} coins`);
   if (p.minVolume > 0 && (c.volume_24h ?? 0) < p.minVolume) return no(`24h volume under $${p.minVolume / 1e6}M`);
   const stopPct = (Math.abs(c.entry_mid - c.sl1) / c.entry_mid) * 100;
@@ -173,9 +196,10 @@ export function specCheck(p: Preset, c: SpecCandidate, x: SpecContext): Check {
   if ((c.rr_tp2 ?? 0) < p.minRr) return no(`R:R ${c.rr_tp2 ?? "n/a"} under ${p.minRr}`);
   if ((c.confidence ?? 0) < p.minScore) return no(`score ${c.confidence ?? 0} under ${p.minScore}`);
   if (p.requireHtf && c.htf_aligned === false) return no("against the higher-timeframe trend");
-  const h = new Date(x.nowMs).getUTCHours();
+  const off = x.utcOffset != null && Number.isFinite(x.utcOffset) ? Math.round(x.utcOffset) : 0;
+  const h = (((new Date(x.nowMs).getUTCHours() + off) % 24) + 24) % 24;
   const quiet = p.quietFrom !== p.quietTo && (p.quietFrom < p.quietTo ? h >= p.quietFrom && h < p.quietTo : h >= p.quietFrom || h < p.quietTo);
-  if (quiet) return no("quiet hours (UTC)");
+  if (quiet) return no(x.utcOffset != null ? "quiet hours (your time)" : "quiet hours (UTC)");
   if (x.livePrice == null) return no("no live price to check the entry against");
   const away = (Math.abs(x.livePrice - c.entry_mid) / c.entry_mid) * 100;
   if (away > p.entryWithinPct) return no(`price ${away.toFixed(1)}% from entry, over ${p.entryWithinPct}%`);
@@ -185,4 +209,46 @@ export function specCheck(p: Preset, c: SpecCandidate, x: SpecContext): Check {
   if (x.sentToday >= p.dailyCap) return no(`daily cap of ${p.dailyCap} reached`);
   if (x.openCount >= p.openRiskR) return no(`open-risk budget of ${p.openRiskR}R is full (1R per open trade)`);
   return { ok: true };
+}
+
+// ---------- Custom limits on top of a preset ----------
+
+/** The only values a member can pick (buttons in the bot). Anything else is ignored, so a preset can never be loosened by a typo. */
+export const CUSTOM_CHOICES = {
+  minRr: [1, 1.5, 2, 2.5, 3],
+  maxStopPct: [2, 3, 4, 6, 8, 10],
+  minScore: [40, 50, 60, 70, 80],
+  dailyCap: [1, 2, 3, 4, 6, 10],
+} as const;
+export type CustomKey = keyof typeof CUSTOM_CHOICES;
+export type SpecCustom = Partial<Record<CustomKey, number>>;
+
+export function cleanCustom(v: unknown): SpecCustom {
+  const o = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
+  const out: SpecCustom = {};
+  for (const k of Object.keys(CUSTOM_CHOICES) as CustomKey[]) {
+    const n = Number(o[k]);
+    if ((CUSTOM_CHOICES[k] as readonly number[]).includes(n)) out[k] = n;
+  }
+  return out;
+}
+
+/** A preset with the member's own numbers applied. The fixed preset itself never changes. */
+export function withCustom(p: Preset, custom: SpecCustom | null | undefined): Preset {
+  const c = cleanCustom(custom);
+  if (!Object.keys(c).length) return p;
+  return { ...p, ...c, label: `${p.label} (your limits)` };
+}
+
+/** Upper-case coin symbols, letters and digits only, at most 40. */
+export function cleanWatchlist(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return [...new Set(v.map((x) => String(x).toUpperCase().replace(/[^A-Z0-9]/g, "")).filter((x) => x.length >= 1 && x.length <= 12))].slice(0, 40);
+}
+
+/** Valid UTC offset in whole hours (-12 to 14), else null. */
+export function cleanOffset(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= -12 && n <= 14 ? n : null;
 }

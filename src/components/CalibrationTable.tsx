@@ -11,10 +11,10 @@ export default function Calibration() {
   if (!c || !c.total) return null;
   const rows = c.byKind.confirmed?.some((b) => b.n) ? c.byKind.confirmed : c.buckets;
   return (
-    <Section title={`Confidence calibration (${c.total} resolved signals, 120 days)`}>
+    <Section title={`Setup score calibration (${c.total} resolved signals, 120 days)`}>
       <div className="table-scroll">
         <table>
-          <thead><tr><th>Confidence</th><th className="text-right">Signals</th><th className="text-right">Reached TP1</th><th className="text-right">Reached TP2+</th><th className="text-right">Stopped</th></tr></thead>
+          <thead><tr><th>Setup score</th><th className="text-right">Signals</th><th className="text-right">Reached TP1</th><th className="text-right">Reached TP2+</th><th className="text-right">Stopped</th></tr></thead>
           <tbody>{rows.map((b) => <tr key={b.band}><td className="num">{b.band}</td><td className="num text-right">{b.n}</td><td className={`num text-right ${b.hitRate != null ? (b.hitRate >= 55 ? "up" : b.hitRate < 45 ? "down" : "") : ""}`}>{b.hitRate != null ? `${b.hitRate}%` : "-"}</td><td className="num text-right">{b.n ? Math.round((100 * b.tp2) / b.n) + "%" : "-"}</td><td className="num text-right">{b.n ? Math.round((100 * b.sl) / b.n) + "%" : "-"}</td></tr>)}</tbody>
         </table>
       </div>

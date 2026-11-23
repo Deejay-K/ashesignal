@@ -25,9 +25,12 @@ export async function GET(req: NextRequest) {
   }
   const recap = await buildRecap(sb);
   if (dry) return NextResponse.json({ ok: true, week: wk, recap });
-  // Mark first, so a slow send can never produce two recaps.
+  // Recipients first: if they cannot be read, nothing is marked and the next tick tries again.
+  let recipients: Awaited<ReturnType<typeof loadRecipients>>;
+  try { recipients = await loadRecipients(sb); }
+  catch (e) { return NextResponse.json({ ok: false, error: `could not read recipients, will retry: ${(e as Error).message}` }, { status: 500 }); }
+  // Then mark, so a slow send can never produce two recaps.
   await sb.from("engine_config").upsert({ key: "recap_last", value: { week: wk, at: now.toISOString() }, note: "weekly recap sent", updated_at: now.toISOString() });
-  const recipients = await loadRecipients(sb);
   let sent = 0, failed = 0;
   for (const r of recipients) {
     for (const m of recap.messages) {

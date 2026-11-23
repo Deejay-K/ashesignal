@@ -7,6 +7,7 @@ import { getGlobal } from "@/lib/providers/coingecko";
 import { getFearGreed } from "@/lib/providers/feargreed";
 import { getOhlcv } from "@/lib/market/ohlcv";
 import { safe } from "@/lib/fetch";
+import { ledgerChecks, runWatchdog } from "@/lib/watchdog";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -51,6 +52,12 @@ export async function GET(req: NextRequest) {
     freshness("spot", "Spot picks job", spot ?? null, 180, 1440, "spot scan");
     freshness("lab", "Engine Lab job", lab ?? null, 360, 2880, "backtest");
     checks.push({ id: "audience", label: "Telegram audience", level: (users.count ?? 0) + (groups.count ?? 0) ? "ok" : "warn", detail: `${users.count ?? 0} people and ${groups.count ?? 0} group${groups.count === 1 ? "" : "s"} have signals switched on.` });
+  }
+  if (sb) {
+    checks.push(...(await ledgerChecks(sb).catch((e) => [{ id: "ledger", label: "Signal ledger", level: "warn" as Level, detail: `Could not read: ${(e as Error).message}` }])));
+    const w = await runWatchdog(sb);
+    const adminsReachable = (process.env.ADMIN_EMAILS ?? "").trim() ? "Alerts go to admins with Telegram linked." : "Set ADMIN_EMAILS in Vercel and link Telegram on the Account page to get alerts.";
+    checks.push({ id: "watchdog", label: "Watchdog alerts", level: process.env.ADMIN_EMAILS ? "ok" : "warn", detail: `${w.problems.length ? `Problem: ${w.problems[0]}` : "No problem found."} ${adminsReachable}` });
   }
   checks.push({ id: "telegram", label: "Telegram bot", level: process.env.TELEGRAM_BOT_TOKEN ? "ok" : "down", detail: process.env.TELEGRAM_BOT_TOKEN ? "Bot token is set." : "TELEGRAM_BOT_TOKEN is missing in Vercel." });
   checks.push({ id: "site", label: "Site address for links and images", level: process.env.NEXT_PUBLIC_SITE_URL ? "ok" : "warn", detail: process.env.NEXT_PUBLIC_SITE_URL ? "NEXT_PUBLIC_SITE_URL is set." : "NEXT_PUBLIC_SITE_URL is missing: signal cards and result cards cannot be attached." });

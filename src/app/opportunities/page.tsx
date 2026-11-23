@@ -143,7 +143,7 @@ function OpportunitiesInner() {
         {tab === "speculative" ? <strong className="mr-1">Warning: speculative.</strong> : null}
         {tab === "confirmed" ? <strong className="mr-1">Green flag.</strong> : null}
         {active.blurb} Manual trading only: AsheSignal never places orders or touches funds.
-        {d?.live?.includes(tab) ? <span className="mt-1 block text-fg-3">Live snapshot computed just now from current market data{tab === "confirmed" || tab === "watching" ? " (top 40 Binance coins, 4h and 1d)" : tab === "speculative" ? " (top trending DEX pools)" : " (top 12 coins by market cap)"}. The worker extends this to the full list as it runs; "Refresh live" recomputes on demand.</span> : null}
+        {d?.live?.includes(tab) ? <span className="mt-1 block text-fg-3">Live snapshot computed just now from current market data{tab === "confirmed" || tab === "watching" ? " (top 40 Binance coins, 4h and 1d)" : tab === "speculative" ? " (top trending DEX pools)" : " (top 12 coins by market cap)"}. The worker extends this to the full list as it runs; &quot;Refresh live&quot; recomputes on demand.</span> : null}
       </p>
 
       {showHistory ? <CategoryHistory /> : null}
@@ -162,7 +162,7 @@ function OpportunitiesInner() {
           {sel("risk", [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["extreme", "Extreme"]], "Risk")}
           {tfs.length > 1 ? sel("tf", tfs.map((t) => [t, t]), "Timeframe") : null}
           {tab === "confirmed" || tab === "watching" ? num("rrMin", "Min R:R", "2") : null}
-          {num("confMin", tab === "spot" ? "Min score" : "Min confidence", "60")}
+          {num("confMin", tab === "spot" ? "Min score" : "Min setup score", "60")}
           {tokenCats.length ? sel("tokenCat", tokenCats.map((c) => [c, c]), tab === "speculative" ? "Source" : "Token category") : null}
           {tab === "spot" ? sel("tier", [["established", "Established"], ["emerging", "Emerging"], ["speculative", "Speculative"]], "Tier") : null}
           <label className="ml-auto flex flex-col gap-0.5 text-[10px] uppercase tracking-wider text-fg-3">Sort

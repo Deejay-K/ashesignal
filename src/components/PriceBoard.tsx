@@ -41,7 +41,7 @@ export default function PriceBoard({ symbol }: { symbol: string }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-2 text-xs text-fg-3">Aggregate is volume-weighted across venues. A spread above ~0.3% on a liquid coin usually means one venue is lagging or thin - check before using a single exchange's price for entries.</p>
+      <p className="mt-2 text-xs text-fg-3">Aggregate is volume-weighted across venues. A spread above ~0.3% on a liquid coin usually means one venue is lagging or thin - check before using a single exchange&apos;s price for entries.</p>
     </Section>
   );
 }

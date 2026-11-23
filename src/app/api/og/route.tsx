@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
             </div>
           </div>
           <div style={{ width: 360, display: "flex", flexDirection: "column", gap: 16 }}>
-            {[["R:R to TP2", `${g("rr")}R`], ["Leverage", `${g("lev", "1")}x rec.`], ["Confidence", `${g("conf")}%`], ["Style", g("style", "swing")]].map(([k, v]) => (
+            {[["R:R to TP2", `${g("rr")}R`], ["Leverage", `${g("lev", "1")}x rec.`], ["Setup score", `${g("conf")}/100`], ["Style", g("style", "swing")]].map(([k, v]) => (
               <div key={k} style={{ display: "flex", flexDirection: "column", background: t.card, borderRadius: 16, padding: "16px 20px" }}>
                 <div style={{ fontSize: 18, color: t.fg2, textTransform: "uppercase", letterSpacing: 2 }}>{k}</div>
                 <div style={{ fontSize: 34, fontWeight: 800 }}>{v}</div>

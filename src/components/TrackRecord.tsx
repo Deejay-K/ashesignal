@@ -20,7 +20,7 @@ export default function TrackRecord({ assetKey, symbol }: { assetKey: string; sy
         <div className="card-3 p-2"><div className="text-[10px] uppercase tracking-wider text-fg-3">Stopped</div><div className="font-semibold down">{all.sl}</div></div>
         <div className="card-3 p-2"><div className="text-[10px] uppercase tracking-wider text-fg-3">By timeframe</div><div className="text-xs text-fg-2">{d.byTimeframe.map((g) => `${g.key} ${g.winRate ?? "-"}%`).join(" · ")}</div></div>
       </div>
-      <p className="mt-2 text-xs text-fg-3">How this engine's own signals on this coin resolved against real price (first touch of TP or SL1). Small samples mean little.</p>
+      <p className="mt-2 text-xs text-fg-3">How this engine&apos;s own signals on this coin resolved against real price (first touch of TP or SL1). Small samples mean little.</p>
     </Section>
   );
 }

@@ -51,7 +51,7 @@ export default function Backtest({ asset, tf }: { asset: AssetQuery; tf: Timefra
           ) : null}
         </div>
       ) : null}
-      {state === "idle" ? <Empty>Replays the engine over this chart's history: every setup it would have fired, graded against what price did next. Takes a few seconds.</Empty> : null}
+      {state === "idle" ? <Empty>Replays the engine over this chart&apos;s history: every setup it would have fired, graded against what price did next. Takes a few seconds.</Empty> : null}
       {state === "error" ? <p className="text-sm text-red">{err}</p> : null}
       {state === "loading" ? <div className="h-32 animate-pulse rounded-lg bg-bg-3" /> : null}
       {r ? (

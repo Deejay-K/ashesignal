@@ -158,7 +158,7 @@ export default function PortfolioPage() {
                 </table>
               </div>
             ) : <Empty>{wallets.length ? "No holdings found." : "Add a wallet first."}</Empty>}
-            <p className="mt-2 text-xs text-fg-3">Unrealized P&amp;L uses the FIFO average cost from your exchange trade history where available, otherwise a cost basis you enter per asset (tap "set"). Manual entries override the automatic value.</p>
+            <p className="mt-2 text-xs text-fg-3">Unrealized P&amp;L uses the FIFO average cost from your exchange trade history where available, otherwise a cost basis you enter per asset (tap &quot;set&quot;). Manual entries override the automatic value.</p>
           </Section>
 
           <Section title="Recent transactions" right={p?.transactions.length ? <button className="btn-ghost" onClick={() => downloadCsv("ashesignal-transactions.csv", p.transactions.map((t) => ({ time: t.timestamp, chain: t.chain, direction: t.direction, asset: "asset" in t ? t.asset : "", value: t.value, type: "type" in t ? t.type : "", hash: t.hash })))}>Export CSV</button> : null}>

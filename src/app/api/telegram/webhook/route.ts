@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { runWatchdog } from "@/lib/watchdog";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { TELEGRAM_ENABLED, tgSend } from "@/lib/telegram";
 import { loadActor, handleCommand, handleCallback, handleStateReply, handleInline, touchGroupMember, labelToCommand, type ChatCtx } from "@/lib/telegram-bot";
@@ -19,6 +20,8 @@ export async function POST(req: NextRequest) {
   const update = await req.json().catch(() => null);
   if (!update) return NextResponse.json({ ok: true });
   const sb = supabaseAdmin();
+  // Stage 54: every tap doubles as a health check (at most once every 10 minutes), run after the reply is sent.
+  if (sb) after(() => runWatchdog(sb).then(() => undefined));
 
   try {
     // Inline mode: @AsheSignalBot SOL typed in any chat

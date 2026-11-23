@@ -37,7 +37,7 @@ export function copyTradeText(o: Opportunity): string {
     lines.push(`Entry: ${fmtUsd(s.entry.low)} - ${fmtUsd(s.entry.high)} (${s.entry.type})`);
     for (const t of s.takeProfits) lines.push(`${t.label}: ${fmtUsd(t.price)} (${t.rr}R)${t.reliable ? "" : " [low reliability]"}`);
     for (const t of s.stopLosses) lines.push(`${t.label}: ${fmtUsd(t.price)}`);
-    lines.push(`R:R to TP2: ${s.rr}R - Confidence: ${s.confidence}%`);
+    lines.push(`R:R to TP2: ${s.rr}R - Setup score: ${s.confidence}/100`);
     if (s.leverage) lines.push(`Leverage: ${s.leverage.recommended}x recommended (conservative ${s.leverage.conservative}x, max ${s.leverage.maxSafe}x)`);
     lines.push(`Position sizing: risk 1% of account between entry and SL1; size = (account x 0.01) / |entry - SL1|`);
     if (s.invalidation?.length) lines.push(`Invalidated if: ${s.invalidation.join(" ")}`);
@@ -168,7 +168,7 @@ function TaBody({ o }: { o: Opportunity }) {
           {s.takeProfits.map((t: any) => <KV key={t.label} k={`${t.label} (${t.rr}R)${t.reliable ? "" : " *"}`} v={fmtUsd(t.price)} cls="up" />)}
           {s.stopLosses.map((t: any) => <KV key={t.label} k={t.label} v={fmtUsd(t.price)} cls="down" />)}
           <KV k="R:R to TP2" v={`${s.rr}R`} />
-          <KV k="Confidence" v={`${s.confidence}%`} />
+          <KV k="Setup score" v={`${s.confidence}/100`} />
           {s.leverage ? <KV k="Leverage" v={`${s.leverage.recommended}x (max ${s.leverage.maxSafe}x)`} /> : null}
           <KV k="Style / hold" v={`${s.style}, ${s.holdingPeriod}`} />
           {s.takeProfits.some((t: any) => !t.reliable) ? <div className="text-[11px] text-fg-3">* target has lower reliability (thin history or far from structure)</div> : null}
@@ -196,7 +196,7 @@ function TaBody({ o }: { o: Opportunity }) {
       {d.regimeGap && watching ? <Block title="Market regime gate" tone="md:col-span-2"><div>{d.regimeGap}</div></Block> : null}
       {s?.confirmGaps?.length && watching ? <Block title="What is still missing for Confirmed" tone="md:col-span-2"><List items={s.confirmGaps} bullet="○" /></Block> : null}
       {s?.invalidation?.length ? <Block title="What invalidates this setup" tone="md:col-span-2"><List items={s.invalidation} bullet="✕" />{s.issues?.length ? <div className="pt-1 text-fg-3">Quality notes: {s.issues.join(" ")}</div> : null}</Block> : null}
-      <div className="md:col-span-2 text-[11px] text-fg-3">Key levels: {(d.levels ?? []).slice(0, 6).map((l: any) => `${l.kind === "support" ? "S" : "R"} ${fmtUsd(l.price)}`).join(" · ")}. <Term id="setup-kind">Confirmed</Term> means the engine's criteria were met; it is not a guarantee.</div>
+      <div className="md:col-span-2 text-[11px] text-fg-3">Key levels: {(d.levels ?? []).slice(0, 6).map((l: any) => `${l.kind === "support" ? "S" : "R"} ${fmtUsd(l.price)}`).join(" · ")}. <Term id="setup-kind">Confirmed</Term> means the engine&apos;s criteria were met; it is not a guarantee.</div>
     </>
   );
 }

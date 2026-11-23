@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/plan",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/watchdog",
+      "schedule": "45 16 * * *"
     }
   ]
 }

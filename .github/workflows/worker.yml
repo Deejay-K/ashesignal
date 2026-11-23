@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+# Never two runs at once: a slow run finishes before the next one starts (the sender and the grader are not re-entered).
+concurrency:
+  group: ashesignal-worker
+  cancel-in-progress: false
 jobs:
   tick:
     runs-on: ubuntu-latest

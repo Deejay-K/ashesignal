@@ -6,12 +6,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getOhlcv } from "./market/ohlcv";
 import { SCREEN_CANDLES, HOLD_MAX_CANDLES } from "./market/signal-state";
-import { gradeSignal, type LedgerSignal } from "./ledger";
+import { gradeSignal, GRADING_WINDOW_MS, type LedgerSignal } from "./ledger";
 import { safe } from "./fetch";
-import { issue, selectIn, selectAll } from "./delivery";
+import { issue } from "./delivery";
+import { selectIn, selectAll } from "./db-pages";
 import { tgSendDetailed, esc } from "./telegram";
 
-const LOOKBACK_MS = 10 * 86_400_000;
+const LOOKBACK_MS = GRADING_WINDOW_MS;
+const FORCE_CLOSE_MS = LOOKBACK_MS - 86_400_000;
 
 export interface SettleReport { open: number; graded: number; byOutcome: Record<string, number>; waiting: number; errors: number }
 
@@ -21,35 +23,45 @@ export async function settleOpen(sb: SupabaseClient, budgetMs = 40_000): Promise
   // Every signal in the window (paged), so older open trades are never crowded out by newer ones.
   const sigs = await selectAll<any>((a, b) => sb.from("signals")
     .select("id, kind, coingecko_id, symbol, timeframe, side, created_at, entry_low, entry_high, entry_mid, sl1, tp1, tp2, tp3")
-    .gte("created_at", new Date(started - LOOKBACK_MS).toISOString()).order("created_at", { ascending: true }).range(a, b));
+    .gte("created_at", new Date(started - LOOKBACK_MS).toISOString()).order("created_at", { ascending: true }).order("id", { ascending: true }).range(a, b));
   const ids = sigs.map((s: any) => s.id as string);
   const done = new Set((await selectIn(ids, (ch, a, b) => sb.from("signal_outcomes").select("signal_id").in("signal_id", ch).order("signal_id", { ascending: true }).range(a, b))).map((o: any) => o.signal_id as string));
   const open = sigs.filter((s: any) => !done.has(s.id)); // oldest first
   rep.open = open.length;
 
-  // One candle request per coin and timeframe, however many signals share it.
+  // Graded on 1h candles for every timeframe (the real order of events inside a daily candle matters). 300 hourly
+  // candles cover 12.5 days; anything older is graded on 4h candles. One candle request per coin and candle size.
   const groups = new Map<string, any[]>();
-  for (const s of open) { const k = `${s.coingecko_id}|${s.timeframe}`; (groups.get(k) ?? groups.set(k, []).get(k)!).push(s); }
-  for (const list of groups.values()) {
+  for (const s of open) {
+    const ctf = started - Date.parse(s.created_at) > 11 * 86_400_000 ? "4h" : "1h";
+    const k = `${s.coingecko_id}|${ctf}`;
+    (groups.get(k) ?? groups.set(k, []).get(k)!).push(s);
+  }
+  for (const [key, list] of groups) {
     if (Date.now() - started > budgetMs) { rep.waiting += list.length; continue; }
-    const { symbol, coingecko_id, timeframe } = list[0];
-    const k = await safe(getOhlcv({ symbol, coingeckoId: coingecko_id }, timeframe, SCREEN_CANDLES));
+    const ctf = key.split("|")[1] as "1h" | "4h";
+    const { symbol, coingecko_id } = list[0];
+    const k = await safe(getOhlcv({ symbol, coingeckoId: coingecko_id }, ctf, SCREEN_CANDLES));
     if (!k.ok || k.data.quality !== "verified" || !k.data.candles.length) {
-      // Retried on the next tick. A signal that never gets candles is closed as "could not grade" before it leaves the window.
+      // Retried quietly on the next tick. A signal that never gets candles is closed as "could not grade" before it leaves the window.
       rep.errors++;
       for (const s of list) {
-        if (started - Date.parse(s.created_at) < LOOKBACK_MS - 86_400_000) continue;
+        if (started - Date.parse(s.created_at) < FORCE_CLOSE_MS) continue;
         const { error: ue } = await sb.from("signal_outcomes").insert({ signal_id: s.id, outcome: "unknown", r_multiple: null, note: "no verified candles for this coin during the grading window" });
-        if (!ue) { rep.graded++; rep.byOutcome.unknown = (rep.byOutcome.unknown ?? 0) + 1; await issue(sb, s.id, "settle", `${symbol} ${timeframe}: no verified candles in 9 days, closed as could not grade`); }
+        if (!ue) { rep.graded++; rep.byOutcome.unknown = (rep.byOutcome.unknown ?? 0) + 1; await issue(sb, s.id, "settle", `${symbol} ${s.timeframe}: no verified candles in ${Math.round(FORCE_CLOSE_MS / 86_400_000)} days, closed as could not grade`); }
       }
       continue;
     }
     for (const s of list) {
       const sig: LedgerSignal = { side: s.side, timeframe: s.timeframe, created_at: s.created_at, entry_low: Number(s.entry_low), entry_high: Number(s.entry_high), entry_mid: Number(s.entry_mid), sl1: Number(s.sl1), tp1: s.tp1 != null ? Number(s.tp1) : null, tp2: s.tp2 != null ? Number(s.tp2) : null, tp3: s.tp3 != null ? Number(s.tp3) : null };
-      const g = gradeSignal(sig, k.data.candles, { maxCandlesAfterFill: HOLD_MAX_CANDLES[timeframe] ?? 30 });
+      const forceClose = started - Date.parse(s.created_at) >= FORCE_CLOSE_MS;
+      const g = gradeSignal(sig, k.data.candles, { maxCandlesAfterFill: HOLD_MAX_CANDLES[s.timeframe] ?? 30, candleSeconds: ctf === "1h" ? 3600 : 14_400, forceClose });
       if (!g) continue; // still open: nothing is written
       const { error: ie } = await sb.from("signal_outcomes").insert({ signal_id: s.id, outcome: g.outcome, r_multiple: g.r, fill_at: g.fill_at, exit_at: g.exit_at, note: g.note });
-      if (ie) { rep.errors++; await issue(sb, s.id, "settle", `outcome not saved: ${ie.message}`); continue; }
+      if (ie) {
+        if (ie.code === "23505") continue; // another run graded it first
+        rep.errors++; await issue(sb, s.id, "settle", `outcome not saved: ${ie.message}`); continue;
+      }
       rep.graded++; rep.byOutcome[g.outcome] = (rep.byOutcome[g.outcome] ?? 0) + 1;
       if (g.outcome === "no_fill" && s.kind === "speculative") await cancelNotice(sb, s, sig, g.note);
       if (g.outcome === "unknown") await issue(sb, s.id, "settle", `could not be graded: ${g.note}`);

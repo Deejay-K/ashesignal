@@ -21,7 +21,7 @@ export default function PlanPage() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-xl font-bold">Today's plan</h1>
+          <h1 className="text-xl font-bold">Today&apos;s plan</h1>
           <p className="text-sm text-fg-2">For {VENUE_META[p.venue].label}{VENUE_META[p.venue].canShort ? "" : " (spot, longs only)"} · built {new Date(p.generatedAt).toLocaleTimeString()} · <button className="link" onClick={load}>refresh</button></p>
         </div>
         <Link href="/opportunities?cat=confirmed" className="btn-ghost text-sm">All confirmed</Link>
@@ -76,7 +76,7 @@ function SetupRow({ s }: { s: Plan["setups"][number] }) {
     <li className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-bg-2 p-2">
       <Link href={`/token/${s.coingeckoId}?tf=${s.timeframe}`} className="font-semibold hover:text-mint">{s.symbol}</Link>
       <span className={`pill ${s.side === "LONG" ? "pill-mint" : "pill-red"}`}>{s.side}</span><span className="pill pill-gray">{s.timeframe}</span>
-      {s.confidence != null ? <span className="pill pill-gray">conf {s.confidence}%</span> : null}
+      {s.confidence != null ? <span className="pill pill-gray">score {s.confidence}/100</span> : null}
       {z.state !== "unknown" ? <span className={`pill ${z.tone === "up" ? "pill-mint" : z.tone === "down" ? "pill-red" : z.tone === "amber" ? "pill-amber" : "pill-gray"}`}>{z.label}</span> : null}
       <span className="num ml-auto text-xs text-fg-2">{s.entry ? `entry ${fmtUsd(s.entry.low)} to ${fmtUsd(s.entry.high)}` : ""}{s.stop ? ` · SL ${fmtUsd(s.stop)}` : ""}{s.tp1 ? ` · TP1 ${fmtUsd(s.tp1)}` : ""}</span>
       {s.why ? <div className="w-full text-xs text-fg-3">{s.why}</div> : null}

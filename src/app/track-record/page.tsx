@@ -31,7 +31,7 @@ export default function TrackRecordPage() {
           <div className="mt-2"><BucketTable rows={d.ledger.byKindTf.map((x) => ({ key: x.key, n: x.stats.signals, resolved: x.stats.decided, wins: x.stats.wins, losses: x.stats.stops, expired: x.stats.expired, winRate: x.stats.winRate, avgR: x.stats.avgR, sumR: x.stats.totalR }))} /></div>
         </Section>
       ) : null}
-      <h2 className="text-sm font-semibold text-fg-2">Engine log: every setup the engine emitted, including ones nobody received</h2>
+      <h2 className="text-sm font-semibold text-fg-2">Engine log: every setup the engine emitted, including ones nobody received. Here R counts a full exit at each target, so it reads higher than the graded record above.</h2>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatCard label="Signals" value={String(t.n)} sub={`${t.resolved} resolved`} />
         <StatCard label="Win rate" value={t.winRate != null ? `${t.winRate}%` : "-"} sub={`${t.wins} wins / ${t.losses} stops / ${t.expired} expired`} />
@@ -68,7 +68,7 @@ export default function TrackRecordPage() {
           <div className="mt-2"><Curve pts={d.journal.curve} /></div>
           <div className="mt-2"><BucketTable rows={d.journal.byTimeframe} /></div>
         </Section>
-      ) : <p className="text-xs text-fg-3"><Link href="/login" className="link">Sign in</Link> to see your own record next to the engine's.</p>}
+      ) : <p className="text-xs text-fg-3"><Link href="/login" className="link">Sign in</Link> to see your own record next to the engine&apos;s.</p>}
       <Section title="Recent signals">
         <div className="overflow-x-auto"><table className="w-full text-xs"><thead><tr className="text-left text-fg-3"><th>Coin</th><th>Side</th><th>TF</th><th>Kind</th><th>Emitted</th><th>Outcome</th><th className="text-right">R</th></tr></thead><tbody>
           {d.signals.recent.map((s, i) => <tr key={i} className="border-t border-border"><td className="py-1 font-medium">{s.symbol}</td><td className={s.side === "LONG" ? "text-mint" : "text-red"}>{s.side}</td><td>{s.timeframe}</td><td>{s.kind}</td><td className="text-fg-3">{timeAgo(Date.parse(s.emitted_at))}</td><td>{s.outcome ?? "open"}</td><td className={`num text-right ${s.r == null ? "" : s.r > 0 ? "up" : s.r < 0 ? "down" : ""}`}>{s.r == null ? "" : `${s.r > 0 ? "+" : ""}${s.r}`}</td></tr>)}

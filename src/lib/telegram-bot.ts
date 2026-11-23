@@ -11,8 +11,8 @@ import { signalView, ago } from "./market/signal-state";
 import { buildHeadline } from "./headline";
 import { cleanFilters, filtersLabel, FILTER_TFS, type SignalFilters } from "./telegram-broadcast";
 import { buildRecap } from "./recap";
-import { releaseHtml } from "./changelog";
-import { PRESETS, PRESET_IDS, type PresetId } from "./ledger";
+import { releaseHtml, RELEASES } from "./changelog";
+import { PRESETS, PRESET_IDS, CUSTOM_CHOICES, cleanCustom, cleanWatchlist, cleanOffset, type PresetId, type CustomKey } from "./ledger";
 import { CARD_BGS } from "./card-presets";
 import { setupBriefing, SQUIXI } from "./mascot";
 import { search as cgSearch, getMarketsByIds } from "./providers/coingecko";
@@ -197,8 +197,8 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/heat": return heat(c);
     case "/record": case "/trackrecord": return record(c);
     case "/recap": case "/week": return recap(c);
-    case "/speculative": case "/spec": return speculative(c, arg);
-    case "/whatsnew": case "/updates": return tgSend(c.chatId, releaseHtml(), { html: true, keyboard: [[{ text: "Menu", callback_data: "menu" }]] });
+    case "/specalerts": case "/alertsettings": return speculative(c, arg);
+    case "/whatsnew": case "/updates": return tgSend(c.chatId, releaseHtml(RELEASES.slice(0, 3)), { html: true, keyboard: [[{ text: "Menu", callback_data: "menu" }]] });
     case "/leaderboard": case "/lb": return leaderboard(c);
     case "/optin": return optIn(c, true);
     case "/optout": return optIn(c, false);
@@ -278,6 +278,9 @@ export async function handleCallback(c: ChatCtx, data: string, callbackId: strin
     case "settings": return a ? settingsSet(c, a, b) : settings(c);
     case "signals": return signals(c, a ?? "");
     case "spec": return speculative(c, a ?? "");
+    case "spl": return specLimits(c, a ?? "", b ?? "");
+    case "spw": return specCoins(c, a ?? "", b ?? "", d ?? "");
+    case "tz": return specTz(c, a ?? "");
     case "takesave": return takeFinish(c, a === "yes");
     case "rm": return removeTrade(c, a, true);
     case "untake": return removeTrade(c, a, false);
@@ -620,7 +623,8 @@ async function screener(c: ChatCtx, mode: string) {
 async function size(c: ChatCtx, arg: string) {
   const nums = arg.split(/[\s,]+/).map(Number).filter((n) => Number.isFinite(n) && n > 0);
   if (nums.length < 2) return tgSend(c.chatId, "Usage: /size ENTRY STOP [balance] [risk%]\nExample: /size 0.594 0.583 500 1");
-  let [entry, stop, balance, riskPct] = nums;
+  const [entry, stop] = nums;
+  let [, , balance, riskPct] = nums;
   if (!balance && c.userId) { const { data: p } = await c.sb.from("profiles").select("trading_balance, risk_pct").eq("id", c.userId).maybeSingle(); balance = Number(p?.trading_balance) || 0; riskPct = riskPct || Number(p?.risk_pct) || 1; }
   if (!balance) return tgSend(c.chatId, "I need a balance: /size ENTRY STOP BALANCE [risk%], or link your account and set it on the Risk page.");
   riskPct = riskPct || 1;
@@ -1051,26 +1055,106 @@ async function recap(c: ChatCtx) {
   }
 }
 
-/** Speculative alerts: off, or one of the fixed presets. Private chats only. */
+/** Speculative alerts: off, or one of the fixed presets, plus the member's own limits, coins and timezone. Private chats only. */
+const SPEC_DB_MSG = "This needs the latest database update: run supabase/stage52.sql, stage53.sql and stage54.sql once in Supabase, then try again.";
+const LIMIT_KEYS: Record<string, { key: CustomKey; label: string; fmt: (n: number) => string }> = {
+  rr: { key: "minRr", label: "Min R:R", fmt: (n) => `${n}:1` },
+  stop: { key: "maxStopPct", label: "Max stop", fmt: (n) => `${n}%` },
+  score: { key: "minScore", label: "Min score", fmt: (n) => `${n}+` },
+  cap: { key: "dailyCap", label: "Per day", fmt: (n) => `${n}` },
+};
+const fmtOffset = (o: number | null) => (o == null ? "UTC (not set)" : `UTC${o >= 0 ? "+" : ""}${o}`);
+
+async function specRow(c: ChatCtx): Promise<{ row: Record<string, any> | null; full: boolean } | null> {
+  const full = await c.sb.from("telegram_users").select("spec_preset, broadcast, spec_tfs, utc_offset, spec_watchlist, spec_custom").eq("tg_user_id", c.tgUserId).maybeSingle();
+  if (!full.error) return { row: full.data, full: true };
+  const base = await c.sb.from("telegram_users").select("spec_preset, broadcast").eq("tg_user_id", c.tgUserId).maybeSingle();
+  return base.error ? null : { row: base.data, full: false };
+}
+async function specSave(c: ChatCtx, patch: Record<string, unknown>): Promise<boolean> {
+  const { error } = await c.sb.from("telegram_users").upsert({ tg_user_id: c.tgUserId, user_id: c.userId, venue: c.venue, ...patch, updated_at: new Date().toISOString() });
+  return !error;
+}
+
 async function speculative(c: ChatCtx, arg: string) {
-  if (c.isGroup) return tgSend(c.chatId, "Speculative alerts are personal: open a private chat with the bot and send /speculative there.");
+  if (c.isGroup) return tgSend(c.chatId, "Speculative alerts are personal: open a private chat with the bot and send /specalerts there.");
   const a = arg.trim().toLowerCase();
   const want = (a === "off" || (PRESET_IDS as string[]).includes(a)) ? (a as PresetId | "off") : null;
-  if (want) {
-    const { error } = await c.sb.from("telegram_users").upsert({ tg_user_id: c.tgUserId, user_id: c.userId, venue: c.venue, spec_preset: want, updated_at: new Date().toISOString() });
-    if (error) return tgSend(c.chatId, "Speculative alerts need the latest database update: run supabase/schema.sql once in Supabase, then try again.");
-  }
-  const { data, error } = await c.sb.from("telegram_users").select("spec_preset, broadcast").eq("tg_user_id", c.tgUserId).maybeSingle();
-  if (error) return tgSend(c.chatId, "Speculative alerts need the latest database update: run supabase/schema.sql once in Supabase, then try again.");
+  if (want && !(await specSave(c, { spec_preset: want }))) return tgSend(c.chatId, SPEC_DB_MSG);
+  const got = await specRow(c);
+  if (!got) return tgSend(c.chatId, SPEC_DB_MSG);
+  const data = got.row;
   const cur = (PRESET_IDS as string[]).includes(data?.spec_preset) ? data!.spec_preset as PresetId : "off";
+  const custom = cleanCustom(data?.spec_custom), coins = cleanWatchlist(data?.spec_watchlist), off = cleanOffset(data?.utc_offset);
   const lines = PRESET_IDS.map((id) => { const p = PRESETS[id]; return `<b>${p.label}</b>: ${p.tfs.join(", ")} · R:R ${p.minRr === 0 ? "any" : `${p.minRr}+`} · stop max ${p.maxStopPct === Infinity ? "any" : `${p.maxStopPct}%`} · score ${p.minScore || "any"}+ · ${p.dailyCap === Infinity ? "no" : p.dailyCap} a day`; }).join("\n");
+  const mine = Object.keys(custom).length ? (Object.entries(LIMIT_KEYS).filter(([, v]) => custom[v.key] != null).map(([, v]) => `${v.label} ${v.fmt(custom[v.key]!)}`).join(" · ")) : "preset numbers";
+  const yours = got.full ? `\n\n<b>Your settings</b>\nLimits: ${esc(mine)}\nCoins: ${coins.length ? esc(coins.join(", ")) : "every coin the preset allows"}\nYour time: ${fmtOffset(off)} (for quiet hours)` : "\n\nYour own limits, coins and timezone need supabase/stage54.sql.";
   const note = data?.broadcast === false ? "\n\nYour Confirmed-trade signals are off, so speculative alerts are off too. Turn them on first." : "";
   const kb: Keyboard = [
     [{ text: `${cur === "off" ? "✅" : "⬜"} Off`, callback_data: "spec:off" }],
     PRESET_IDS.map((id) => ({ text: `${cur === id ? "✅" : "⬜"} ${PRESETS[id].label}`, callback_data: `spec:${id}` })),
+    ...(got.full ? [[{ text: "⚙️ My limits", callback_data: "spl" }, { text: "⭐ Coins", callback_data: "spw" }, { text: "🕐 My time", callback_data: "tz" }]] : []),
     [{ text: "Menu", callback_data: "menu" }],
   ];
-  return tgSend(c.chatId, `<b>🔍 Speculative alerts: ${cur === "off" ? "OFF" : PRESETS[cur].label}</b>\nEarly setups the engine has not confirmed yet. Off by default. Each preset has fixed limits, and every signal that a preset skips is logged with the reason. Only signals that reach you count in the recap's "delivered" figures.\n\n${lines}${note}`, { html: true, keyboard: kb });
+  return tgSend(c.chatId, `<b>🔍 Speculative alerts: ${cur === "off" ? "OFF" : PRESETS[cur].label}</b>\nEarly setups the engine has not confirmed yet. Off by default. Presets have fixed numbers; under My limits you can replace any of them with your own. Every signal that is skipped for you is logged with the reason. Only signals that reach you count as delivered in the recap.\n\n${lines}${yours}${note}`, { html: true, keyboard: kb });
+}
+
+/** One row of buttons per limit; tapping the ticked value clears it back to the preset. */
+async function specLimits(c: ChatCtx, field: string, val: string) {
+  if (c.isGroup) return speculative(c, "");
+  const got = await specRow(c);
+  if (!got?.full) return tgSend(c.chatId, SPEC_DB_MSG);
+  const custom = cleanCustom(got.row?.spec_custom);
+  const f = LIMIT_KEYS[field];
+  if (f) {
+    const n = Number(val);
+    if (val === "x" || custom[f.key] === n) delete custom[f.key]; else if ((CUSTOM_CHOICES[f.key] as readonly number[]).includes(n)) custom[f.key] = n;
+    if (!(await specSave(c, { spec_custom: custom }))) return tgSend(c.chatId, SPEC_DB_MSG);
+  }
+  const kb: Keyboard = Object.entries(LIMIT_KEYS).map(([id, v]) => (CUSTOM_CHOICES[v.key] as readonly number[]).map((n) => ({ text: `${custom[v.key] === n ? "✅" : ""}${v.fmt(n)}`, callback_data: `spl:${id}:${n}` })));
+  kb.push([{ text: "Reset to preset", callback_data: "spl:all:x" }, { text: "Back", callback_data: "spec" }]);
+  if (field === "all") { if (!(await specSave(c, { spec_custom: {} }))) return tgSend(c.chatId, SPEC_DB_MSG); return specLimits(c, "", ""); }
+  const rows = Object.values(LIMIT_KEYS).map((v) => `${v.label}: <b>${custom[v.key] != null ? v.fmt(custom[v.key]!) : "preset"}</b>`).join("\n");
+  return tgSend(c.chatId, `<b>⚙️ My limits for speculative alerts</b>\nRows, top to bottom: minimum R:R, maximum stop distance, minimum setup score, alerts per day. Tap a value to use it, tap it again to go back to the preset.\n\n${rows}`, { html: true, keyboard: kb });
+}
+
+/** Coin list: the top coins the screener follows, 24 per page, tap to add or remove. */
+async function specCoins(c: ChatCtx, op: string, sym: string, page: string) {
+  if (c.isGroup) return speculative(c, "");
+  const got = await specRow(c);
+  if (!got?.full) return tgSend(c.chatId, SPEC_DB_MSG);
+  let coins = cleanWatchlist(got.row?.spec_watchlist);
+  if (op === "t" && sym) { const S = sym.toUpperCase(); coins = coins.includes(S) ? coins.filter((x) => x !== S) : cleanWatchlist([...coins, S]); if (!(await specSave(c, { spec_watchlist: coins }))) return tgSend(c.chatId, SPEC_DB_MSG); }
+  if (op === "clear") { coins = []; if (!(await specSave(c, { spec_watchlist: [] }))) return tgSend(c.chatId, SPEC_DB_MSG); }
+  const { data: top } = await c.sb.from("coin_metrics").select("symbol, market_cap").eq("timeframe", "4h").order("market_cap", { ascending: false, nullsFirst: false }).limit(100);
+  const all = [...new Set((top ?? []).map((t: { symbol: string }) => String(t.symbol).toUpperCase()))].filter((x) => /^[A-Z0-9]{1,12}$/.test(x));
+  const per = 24, pages = Math.max(1, Math.ceil(all.length / per));
+  const pg = Math.min(pages - 1, Math.max(0, Number(op === "t" ? page : op === "p" ? sym : 0) || 0));
+  const slice = all.slice(pg * per, pg * per + per);
+  const kb: Keyboard = [];
+  for (let i = 0; i < slice.length; i += 4) kb.push(slice.slice(i, i + 4).map((x) => ({ text: `${coins.includes(x) ? "⭐" : ""}${x}`, callback_data: `spw:t:${x}:${pg}` })));
+  const nav = [];
+  if (pg > 0) nav.push({ text: "◀ Prev", callback_data: `spw:p:${pg - 1}` });
+  if (pg < pages - 1) nav.push({ text: "Next ▶", callback_data: `spw:p:${pg + 1}` });
+  if (nav.length) kb.push(nav);
+  kb.push([{ text: "Every coin (clear list)", callback_data: "spw:clear" }, { text: "Back", callback_data: "spec" }]);
+  return tgSend(c.chatId, `<b>⭐ Coins for speculative alerts</b> (page ${pg + 1} of ${pages})\nTap to add or remove. With an empty list you get every coin your preset allows.\n\nYour list: ${coins.length ? esc(coins.join(", ")) : "empty (every coin)"}`, { html: true, keyboard: kb });
+}
+
+/** Hours from UTC, so quiet hours follow the member's clock. */
+async function specTz(c: ChatCtx, val: string) {
+  if (c.isGroup) return speculative(c, "");
+  const got = await specRow(c);
+  if (!got?.full) return tgSend(c.chatId, SPEC_DB_MSG);
+  let off = cleanOffset(got.row?.utc_offset);
+  if (val === "clear" || cleanOffset(val) != null) { off = val === "clear" ? null : cleanOffset(val); if (!(await specSave(c, { utc_offset: off }))) return tgSend(c.chatId, SPEC_DB_MSG); }
+  const kb: Keyboard = [];
+  const all = Array.from({ length: 27 }, (_, i) => i - 12);
+  for (let i = 0; i < all.length; i += 6) kb.push(all.slice(i, i + 6).map((o) => ({ text: `${off === o ? "✅" : ""}${o >= 0 ? "+" : ""}${o}`, callback_data: `tz:${o}` })));
+  kb.push([{ text: "Use UTC", callback_data: "tz:clear" }, { text: "Back", callback_data: "spec" }]);
+  const now = new Date();
+  const local = off == null ? null : new Date(now.getTime() + off * 3_600_000).toISOString().slice(11, 16);
+  return tgSend(c.chatId, `<b>🕐 Your time</b>: ${fmtOffset(off)}${local ? ` (it is ${local} for you now)` : ""}\nPick your hours from UTC so quiet hours follow your clock. Examples: Quebec and New York -5 in winter, -4 in summer; London 0; Paris +1. Daylight saving is not automatic: change it twice a year.`, { html: true, keyboard: kb });
 }
 
 /** Squixi's plain-language walk through one trade: the same explanation as the 🦑 button on the website. */

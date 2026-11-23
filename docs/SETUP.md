@@ -563,7 +563,7 @@ No database change (it uses the existing `display_name` column and the `preferen
 - **One-time stamps.** `broadcast_at` (first successful send) and `processed_at` (every recipient decided) are set once. A trigger refuses any later change. Levels cannot change. Deliveries, outcomes and issues cannot be updated or deleted.
 - **Grader.** `/api/cron/settle` (`src/lib/settle.ts`, rules in `src/lib/ledger.ts`) grades every signal from its own timeframe's candles, delivered or not, and writes the outcome once. R per trade: 0.30 x R at TP1, 0.30 x R at TP2, 0.40 x R at TP3 for the parts that filled; the rest closes at -1R (stop before TP1) or 0R (break-even after TP1). Stop is checked before targets in the same candle. Entry not reached within 24 hours is `no_fill` (excluded). Still open after the timeframe's candle limit is `expired` (closed at the last price).
 - **Recap.** Headline is what members received. Not delivered (speculative and internal) is shown separately, with a line for Confirmed signals that nobody received. Combined is a secondary line. Each is split by kind and timeframe, with win rate, average R, total R, max drawdown in R and longest losing streak. Messages are split under Telegram's 4096-character limit.
-- **Speculative alerts (off by default).** `/speculative` in a private chat, or the button on the signals screen. Presets (fixed in `src/lib/ledger.ts`, not tuned on past results):
+- **Speculative alerts (off by default).** `/specalerts` in a private chat (stage 54 name; `/spec` still lists speculative opportunities), or the button on the signals screen. Presets (fixed in `src/lib/ledger.ts`, not tuned on past results):
   - Conservative: 4h and 1d, R:R 2.0+, stop max 4%, score 65+, entry within 1%, 2 a day, 24h cooldown after a stop on the coin, 3R open risk, top 50 coins, $50M volume, must agree with the higher timeframe, quiet 23:00 to 07:00 UTC.
   - Balanced: 1h, 4h and 1d, R:R 1.5+, stop max 6%, score 50+, entry within 2%, 4 a day, 12h cooldown, 5R open risk, top 100 coins, $20M volume, higher-timeframe disagreement labelled, quiet 00:00 to 06:00 UTC.
   - All: 1h, 4h and 1d, no caps; entry within 3%.
@@ -593,3 +593,34 @@ No database change (it uses the existing `display_name` column and the `preferen
 - If `TELEGRAM_BOT_TOKEN` is missing, the sender stops early and logs it once per run; queued signals wait and expire after 6 hours.
 - The speculative cancel message gives the real reason (stop reached before entry, or entry not reached within 24 hours).
 - Both SQL files were run twice on Postgres 16 with the guards tested: levels, `broadcast_at`, outcomes and deliveries cannot be changed or deleted.
+
+## 56. Stage 54 - follow-up log, watchdog, status health, speculative settings, setup score wording
+
+**Database (run once, after stage 52 and 53):** paste `supabase/stage54.sql` into the Supabase SQL editor. It adds `followup_messages` (append-only) and three `telegram_users` columns: `utc_offset`, `spec_watchlist`, `spec_custom`. Already included at the end of `supabase/schema.sql`.
+
+**Vercel:** one more daily cron in `vercel.json` (`/api/cron/watchdog`). No new environment variables. For watchdog alerts, `ADMIN_EMAILS` must be set and the admin must have linked Telegram on the Account page.
+
+- **Follow-ups go to the right people and are logged.** TP1, TP2, TP3, stop, entry-zone and cancelled messages for a ledger signal go to exactly the members who received it (from `signal_deliveries`). Older follow-ups keep the old exchange-based rule. Every message is written to `followup_messages` as sent or failed with the Telegram reason. A Telegram rate limit of up to 10 seconds is waited out once.
+- **Watchdog.** `src/lib/watchdog.ts` checks two things: the screener ran within 30 minutes, and no signal waited more than 20 minutes to be sent. It runs after Telegram webhook replies (at most once every 10 minutes), on the Status page, and daily from Vercel, so it still works when GitHub Actions is down. Admins get one alert when something stops, a reminder every 6 hours while it stays down, and one message when it recovers. State is in `engine_config` (key `watchdog`).
+- **Status page.** New rows: signal queue (waiting, oldest wait), Confirmed Trades in the last 24 hours (found, sent, reached nobody), delivery decisions (sent, skipped, filtered, failed), follow-up failures, the last three logged issues, and the watchdog. Chat ids are masked.
+- **Speculative alerts, member settings (all buttons in `/specalerts`):** My limits (minimum R:R 1 to 3, maximum stop 2 to 10%, minimum setup score 40 to 80, 1 to 10 alerts a day; only these values are accepted), Coins (top coins of the screener, 24 per page, tap to add or remove; empty means every coin), My time (UTC-12 to UTC+14, for quiet hours; daylight saving is not automatic). The fixed presets never change; a member's limits are applied on top and shown as "Balanced (your limits)" in the logged reasons.
+- **Same numbers everywhere.** The dashboard Track record card now shows the graded record of what members received (falls back to the engine log until there are finished trades). The engine log on the Track record page is labelled: its R counts a full exit at each target.
+- **Setup score.** "Confidence %" is now "Setup score N/100" on the website, the share card, the chart image, the glossary and the bot. Pattern strength and the AI briefing keep their own percent. "Confirmed Trades" is unchanged everywhere.
+- **Release notes.** Every release not yet announced goes out together in one message (inbox and Telegram). `/whatsnew` shows the latest three.
+- **Lint.** The 34 unescaped quote errors and the 2 prefer-const errors are fixed. 56 React compiler advisories remain (for example "setState inside an effect"); they predate this work and fixing them means restructuring 40 working components, so they were left as they are.
+- **Tests:** `scripts/ledger-selftest.ts` now has 63 offline checks (grading, statistics, presets, coin list, timezone, custom limits, watchdog alert plan, sender decisions, release notes).
+- Files: `src/lib/watchdog.ts`, `src/app/api/cron/watchdog/route.ts`, `src/lib/followups.ts`, `src/lib/ledger.ts`, `src/lib/delivery.ts`, `src/lib/telegram-bot.ts`, `src/lib/changelog.ts`, `src/app/api/cron/announce/route.ts`, `src/app/api/status/route.ts`, `src/app/api/telegram/webhook/route.ts`, `src/components/TrackRecordSummary.tsx`, `supabase/stage54.sql`, and the setup score labels across the website.
+
+### Stage 54 - independent review fixes
+
+An independent review of stages 52 to 54 found these, all fixed and re-checked:
+
+- **Daily trades were never graded when they ran to expiry** (they outlived the 10-day window). The grading window is now 16 days, trades are graded on 1h candles (4h once older than 11 days), and anything still open is closed one day before it leaves the window.
+- **The grading was too kind.** A candle that went through the entry zone to the stop counted as "never entered"; it is now a -1R stop. The 24-hour fill window is enforced candle by candle. Hourly candles see the real order of events inside a daily candle.
+- **The settings command was unreachable** because `/speculative` already opened the speculative opportunities list. Settings are now `/specalerts` (also `/alertsettings` and the button on the signals screen).
+- **Two overlapping runs could message a member twice.** Each send now claims the member first (`signal_claims`); a claim left by a crashed run is recorded as "interrupted", never resent; the worker workflow has a concurrency guard; one follow-up record per signal is enforced by a unique index.
+- **Telegram errors are classified by code.** 400 and 403 are permanent for that chat; 429 and network errors retry; 401 and 404 mean the bot token is wrong, so the run stops and every signal stays queued. The plain-text fallback only runs when the HTML itself was rejected.
+- **A failed recipient read looked like "nobody to send to"** and could mark an announcement, a follow-up or the weekly recap as done. It now stops without marking anything, and the next tick retries.
+- **Lists past 1000 members** are read page by page everywhere (`src/lib/db-pages.ts`).
+- Smaller: the announcement resumes by chat id and saves progress every 20 sends; follow-ups never fall back to "everyone"; the daily cap uses each member's own midnight; the public Track record read is cached for a minute; a saved "sent" row is retried once.
+- **Known and accepted:** if the text after the share images fails temporarily, the images can arrive twice on the retry.

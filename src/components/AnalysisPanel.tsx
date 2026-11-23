@@ -415,7 +415,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
       `Entry: ${fmtUsd(s.entry.low)} - ${fmtUsd(s.entry.high)} (${s.entry.type})`,
       ...s.takeProfits.map((t) => `${t.label}: ${fmtUsd(t.price)} (${t.rr}R)`),
       ...s.stopLosses.map((t) => `${t.label}: ${fmtUsd(t.price)} (${fmtPct(t.pctFromEntry, 2)})`),
-      `R:R to TP2 ${s.riskRewardTp2}R - leverage ${s.leverage.recommended}x (safe ${s.leverage.conservative}x, max ${s.leverage.maxSafe}x) - confidence ${s.confidence}% - ${s.style}, hold ${s.holdingPeriod}`,
+      `R:R to TP2 ${s.riskRewardTp2}R - leverage ${s.leverage.recommended}x (safe ${s.leverage.conservative}x, max ${s.leverage.maxSafe}x) - setup score ${s.confidence}/100 - ${s.style}, hold ${s.holdingPeriod}`,
       `Invalidated if: ${s.invalidation.join(" ")}`,
       "Not financial advice.",
     ];
@@ -446,7 +446,7 @@ export function SetupCard({ s, asset, tf, score }: { s: Setup; asset: AssetQuery
         {s.stopLosses.map((t) => <Row key={t.label} k={<Term id="sl">{t.label}</Term>} v={<span className="down">{fmtUsd(t.price)} <span className="text-fg-3">({fmtPct(t.pctFromEntry, 2)} · {t.basis}{t.reliable ? "" : " · estimate"})</span></span>} />)}
         <Row k={<Term id="rr">R:R to TP2</Term>} v={<b>{s.riskRewardTp2}R</b>} />
         <Row k={<Term id="leverage">Leverage</Term>} v={<span><b className={s.leverage.recommended > 1 ? "up" : ""}>{s.leverage.recommended}x</b> <span className="text-fg-3">rec · {s.leverage.conservative}x safe · {s.leverage.aggressive}x max · liq at {s.leverage.liquidationPctAtRecommended}% vs stop {s.leverage.stopDistancePct}%</span></span>} />
-        <Row k={<Term id="confidence">Confidence</Term>} v={`${s.confidence}%`} />
+        <Row k={<Term id="confidence">Setup score</Term>} v={`${s.confidence}/100`} />
         <Row k={<Term id="holding">Style</Term>} v={`${s.style} · hold ${s.holdingPeriod}`} />
       </div>
       <p className="mt-2 text-xs text-fg-3">{s.holdingReason}</p>

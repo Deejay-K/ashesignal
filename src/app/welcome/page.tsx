@@ -39,7 +39,7 @@ export default function WelcomePage() {
         {step.id === "telegram" && !guest ? <TelegramSettings /> : null}
         {step.id === "first" ? (
           <div className="flex flex-wrap gap-2">
-            <Link className="btn" href="/plan">Open today's plan</Link>
+            <Link className="btn" href="/plan">Open today&apos;s plan</Link>
             <Link className="btn-ghost" href="/opportunities?cat=confirmed">Confirmed trades</Link>
             <Link className="btn-ghost" href="/guide">How to place a trade</Link>
             <Link className="btn-ghost" href="/simulator">What the rules would have done</Link>

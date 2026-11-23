@@ -8,10 +8,10 @@ const API = () => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}
 export type Button = { text: string; url?: string; callback_data?: string };
 export type Keyboard = Button[][];
 
-async function call<T = unknown>(method: string, body: Record<string, unknown>): Promise<{ ok: boolean; result?: T; description?: string; parameters?: { retry_after?: number } }> {
+async function call<T = unknown>(method: string, body: Record<string, unknown>): Promise<{ ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } }> {
   try {
     const res = await fetch(`${API()}/${method}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), cache: "no-store" });
-    return (await res.json()) as { ok: boolean; result?: T; description?: string; parameters?: { retry_after?: number } };
+    return (await res.json()) as { ok: boolean; result?: T; description?: string; error_code?: number; parameters?: { retry_after?: number } };
   } catch (e) { return { ok: false, description: String(e) }; }
 }
 
@@ -22,14 +22,19 @@ export const esc = (s: unknown) => String(s ?? "").replace(/&/g, "&amp;").replac
 export const REPLY_KEYBOARD: string[][] = [["☀️ Plan", "✅ Trades"], ["🔍 Coin", "👤 Me"], ["🤖 Ask AI", "📋 Menu"]];
 
 export type SendOpts = { url?: string; label?: string; keyboard?: Keyboard; html?: boolean; replyKeyboard?: string[][] | "remove"; replyTo?: number };
-export type SendResult = { ok: boolean; error?: string; retryAfter?: number };
+/** code: Telegram's error code (429 = slow down; other 4xx = will not work on retry). Absent on network errors. */
+export type SendResult = { ok: boolean; error?: string; retryAfter?: number; code?: number };
+/** A failure for this one chat that retrying will not fix (blocked bot, chat gone, no rights, bad request). 429 and network errors are temporary. */
+export const isPermanentFailure = (r: SendResult) => !r.ok && (r.code === 400 || r.code === 403);
+/** The bot itself is rejected (wrong or revoked token): nothing can be sent to anyone until it is fixed. */
+export const isBotRejected = (r: SendResult) => !r.ok && (r.code === 401 || r.code === 404);
 
 /** Send and say what happened: the Telegram error text, and the rate-limit wait when Telegram asks for one. */
 export async function tgSendDetailed(chatId: string, text: string, opts: SendOpts = {}): Promise<SendResult> {
   if (!TELEGRAM_ENABLED()) return { ok: false, error: "TELEGRAM_BOT_TOKEN is not set" };
   const first = await sendOnce(chatId, text, opts);
-  if (first.ok || !opts.html) return first;
-  // HTML rejected (bad entity): retry as plain text, keeping the buttons
+  if (first.ok || !opts.html || !/can't parse entities|unsupported start tag|can't find end tag/i.test(first.error ?? "")) return first;
+  // HTML rejected (bad entity): retry once as plain text, keeping the buttons
   return sendOnce(chatId, text.replace(/<[^>]+>/g, ""), { ...opts, html: false });
 }
 
@@ -42,7 +47,7 @@ async function sendOnce(chatId: string, text: string, opts: SendOpts): Promise<S
   else if (opts.replyKeyboard) body.reply_markup = { keyboard: opts.replyKeyboard.map((r) => r.map((t) => ({ text: t }))), resize_keyboard: true, is_persistent: true, input_field_placeholder: "Tap a button, or type a coin" };
   else if (kb.length) body.reply_markup = { inline_keyboard: kb };
   const r = await call("sendMessage", body);
-  return r.ok ? { ok: true } : { ok: false, error: r.description ?? "unknown Telegram error", retryAfter: r.parameters?.retry_after };
+  return r.ok ? { ok: true } : { ok: false, error: r.description ?? "unknown Telegram error", retryAfter: r.parameters?.retry_after, code: r.error_code };
 }
 
 export async function tgSend(chatId: string, text: string, opts: SendOpts = {}): Promise<boolean> {
@@ -142,7 +147,7 @@ export const COMMANDS = [
   { command: "menu", description: "Main menu with buttons" },
   { command: "trades", description: "Confirmed trades you can place on your exchange" },
   { command: "recap", description: "This week's signals, graded" },
-  { command: "speculative", description: "Early setups before they are confirmed (off by default)" },
+  { command: "specalerts", description: "Speculative alerts: on or off, presets, your limits, coins, time zone" },
   { command: "whatsnew", description: "What changed in the latest AsheSignal update" },
   { command: "watching", description: "Setups that are close but not confirmed" },
   { command: "spec", description: "Speculative opportunities (high risk)" },

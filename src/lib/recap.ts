@@ -5,7 +5,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { statsOf, type GradedRow, type Stats } from "./ledger";
-import { selectIn, selectAll } from "./delivery";
+import { selectIn, selectAll } from "./db-pages";
 import { esc } from "./telegram";
 
 export interface Recap {

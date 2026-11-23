@@ -31,7 +31,7 @@ function DcaInner() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold">DCA planner</h1>
-        <p className="text-sm text-fg-2">Split a spot buy into limit orders across the buy zone instead of one entry. The zone comes from the coin's spot pick (accumulation zone) or its daily supports; you can set your own.</p>
+        <p className="text-sm text-fg-2">Split a spot buy into limit orders across the buy zone instead of one entry. The zone comes from the coin&apos;s spot pick (accumulation zone) or its daily supports; you can set your own.</p>
       </div>
       <div className="card grid grid-cols-2 gap-2 p-3 text-xs sm:grid-cols-4">
         <label>Coin<input value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())} placeholder="BTC" /></label>

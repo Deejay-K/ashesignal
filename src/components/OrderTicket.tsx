@@ -32,7 +32,7 @@ export default function OrderTicket({ venue, symbol, side, entry, stop, tps, uni
         <div className="font-semibold">Order ticket on {vm.label}</div>
         <label className="flex items-center gap-1 text-xs text-fg-3">Amount ({symbol})<input inputMode="decimal" className="num !w-32 !py-1" placeholder="units" value={u} onChange={(e) => setU(e.target.value)} /></label>
       </div>
-      {!n ? <p className="text-xs text-fg-3">Enter your amount in {symbol} (from the position size calculator or "I took this trade") and every line fills in.</p> : null}
+      {!n ? <p className="text-xs text-fg-3">Enter your amount in {symbol} (from the position size calculator or &quot;I took this trade&quot;) and every line fills in.</p> : null}
       <ol className="space-y-2 text-xs">
         {rows.map((r) => (
           <li key={r.label} className="rounded-lg border border-border bg-bg-2 p-2">

@@ -74,11 +74,11 @@ function Alerts() {
                     <label>Direction<select value={form.side} onChange={(e) => setForm({ ...form, side: e.target.value })}><option value="">Both</option><option value="LONG">Longs only</option><option value="SHORT">Shorts only</option></select></label>
                     <label>Listed on<select value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })}><option value="">Any exchange</option>{VENUE_IDS.map((v) => <option key={v} value={v}>{VENUE_META[v].label}{!VENUE_META[v].canShort ? " (longs only)" : ""}</option>)}</select></label>
                     <label>Timeframe<select value={form.ctf} onChange={(e) => setForm({ ...form, ctf: e.target.value })}><option value="">Any</option>{["1h", "4h", "1d"].map((t) => <option key={t}>{t}</option>)}</select></label>
-                    <label>Min confidence<input type="number" placeholder="e.g. 70" value={form.minConf} onChange={(e) => setForm({ ...form, minConf: e.target.value })} /></label>
+                    <label>Min setup score<input type="number" placeholder="e.g. 70" value={form.minConf} onChange={(e) => setForm({ ...form, minConf: e.target.value })} /></label>
                   </div>
                 </div>
               ) : null}
-              {form.type === "entry_zone" ? <p className="rounded-lg border border-border bg-bg-2 p-2 text-fg-2">Set this from a Confirmed or Watching card ("tell me when it enters the zone") so the zone is filled in automatically. Fires once when price comes into the zone, and re-arms after it leaves.</p> : null}
+              {form.type === "entry_zone" ? <p className="rounded-lg border border-border bg-bg-2 p-2 text-fg-2">Set this from a Confirmed or Watching card (&quot;tell me when it enters the zone&quot;) so the zone is filled in automatically. Fires once when price comes into the zone, and re-arms after it leaves.</p> : null}
               {form.type === "spot_zone" ? <p className="rounded-lg border border-border bg-bg-2 p-2 text-fg-2">Enter the coin above. Fires when its price enters the accumulation zone computed on the Spot Investments card (the coin must currently be a Spot pick).</p> : null}
               {form.type === "trade_update" ? <p className="rounded-lg border border-border bg-bg-2 p-2 text-fg-2">Created automatically for every trade you record in the journal: you are notified when it reaches TP1, TP2, TP3 or the stop. Nothing to configure.</p> : null}
               {form.type === "new_listing" ? <label>Chain filter (optional)<input value={form.chain} onChange={(e) => setForm({ ...form, chain: e.target.value })} placeholder="solana, base, ethereum… blank = all" /></label> : null}
