@@ -624,3 +624,4 @@ An independent review of stages 52 to 54 found these, all fixed and re-checked:
 - **Lists past 1000 members** are read page by page everywhere (`src/lib/db-pages.ts`).
 - Smaller: the announcement resumes by chat id and saves progress every 20 sends; follow-ups never fall back to "everyone"; the daily cap uses each member's own midnight; the public Track record read is cached for a minute; a saved "sent" row is retried once.
 - **Known and accepted:** if the text after the share images fails temporarily, the images can arrive twice on the retry.
+- **Status page, Engine Lab row:** it now warns after 50 hours and shows Down after 72 hours (it was 6 h and 48 h). The Lab only re-tests results older than 48 hours, so being idle for hours between passes is normal.

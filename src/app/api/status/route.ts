@@ -50,7 +50,8 @@ export async function GET(req: NextRequest) {
     checks.push({ id: "signal", label: "Last Confirmed Trade sent", level: "info", at: lastSignal ?? null, detail: lastSignal ? `${ago(mins(lastSignal))}. ${open} signal${open === 1 ? "" : "s"} still being followed.` : "None sent yet." });
     checks.push({ id: "changes", label: "Last category change", level: "info", at: lastChange ?? null, detail: lastChange ? `${ago(mins(lastChange))} (a coin entered or left Confirmed or Watching).` : "None recorded yet." });
     freshness("spot", "Spot picks job", spot ?? null, 180, 1440, "spot scan");
-    freshness("lab", "Engine Lab job", lab ?? null, 360, 2880, "backtest");
+    // The Lab only re-tests results older than 48 h, so it sits idle between passes: warn after 50 h, down after 72 h.
+    freshness("lab", "Engine Lab job (refreshes every 48 h)", lab ?? null, 50 * 60, 72 * 60, "backtest");
     checks.push({ id: "audience", label: "Telegram audience", level: (users.count ?? 0) + (groups.count ?? 0) ? "ok" : "warn", detail: `${users.count ?? 0} people and ${groups.count ?? 0} group${groups.count === 1 ? "" : "s"} have signals switched on.` });
   }
   if (sb) {
