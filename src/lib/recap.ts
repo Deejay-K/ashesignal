@@ -44,22 +44,41 @@ function splitLines(rows: (GradedRow & { symbol: string })[]): string[] {
   });
 }
 
-export async function buildRecap(sb: SupabaseClient, days = 7): Promise<Recap> {
-  const to = new Date(), from = new Date(to.getTime() - days * 86_400_000);
-  const sigs = await selectAll<any>((a, b) => sb.from("signals").select("id, kind, timeframe, symbol, created_at").gte("created_at", from.toISOString()).order("id", { ascending: true }).range(a, b));
+export interface LedgerRow { id: string; kind: string; timeframe: string; symbol: string; created_at: string; delivered: boolean; outcome: string | null; r: number | null; exit_at: string | null }
+
+/** Every ledger signal since `fromIso`, with whether any member received it and its graded outcome (if final). */
+export async function loadLedgerRows(sb: SupabaseClient, fromIso: string): Promise<LedgerRow[]> {
+  const sigs = await selectAll<any>((a, b) => sb.from("signals").select("id, kind, timeframe, symbol, created_at").gte("created_at", fromIso).order("id", { ascending: true }).range(a, b));
   const ids = sigs.map((s) => s.id as string);
   const sentTo = new Set((await selectIn<any>(ids, (ch, a, b) => sb.from("signal_deliveries").select("signal_id").eq("status", "sent").in("signal_id", ch).order("id", { ascending: true }).range(a, b))).map((d) => d.signal_id as string));
   const outs = new Map((await selectIn<any>(ids, (ch, a, b) => sb.from("signal_outcomes").select("signal_id, outcome, r_multiple, exit_at").in("signal_id", ch).order("signal_id", { ascending: true }).range(a, b))).map((o) => [o.signal_id as string, o]));
-  // Follow-up rows from before the ledger: their delivery was never recorded per member, so they are counted, not graded.
-  const { count: legacy } = await sb.from("signal_followups").select("id", { count: "exact", head: true }).is("signal_id", null).gte("emitted_at", from.toISOString());
-
-  const rows = sigs.map((s) => {
+  return sigs.map((s) => {
     const o = outs.get(s.id);
-    return { kind: s.kind as string, timeframe: s.timeframe as string, symbol: s.symbol as string, delivered: sentTo.has(s.id), outcome: (o?.outcome ?? null) as string | null, r: o?.r_multiple != null ? Number(o.r_multiple) : null, exit_at: (o?.exit_at ?? null) as string | null };
+    return { id: s.id, kind: s.kind, timeframe: s.timeframe, symbol: s.symbol, created_at: s.created_at, delivered: sentTo.has(s.id), outcome: (o?.outcome ?? null) as string | null, r: o?.r_multiple != null ? Number(o.r_multiple) : null, exit_at: (o?.exit_at ?? null) as string | null };
   });
+}
+
+/** The graded record in the shape the Track record page and the bot use. Delivered and not-delivered are separate. */
+export interface LedgerRecord { since: string | null; delivered: Stats; notDelivered: Stats; combined: Stats; byKindTf: { key: string; stats: Stats }[] }
+export function ledgerRecord(rows: LedgerRow[]): LedgerRecord {
+  const del = rows.filter((r) => r.delivered), nd = rows.filter((r) => !r.delivered);
+  const groups = new Map<string, LedgerRow[]>();
+  for (const r of del) { const k = `${r.kind} ${r.timeframe}`; (groups.get(k) ?? groups.set(k, []).get(k)!).push(r); }
+  return {
+    since: rows.length ? rows.reduce((m, r) => (r.created_at < m ? r.created_at : m), rows[0].created_at) : null,
+    delivered: statsOf(del), notDelivered: statsOf(nd), combined: statsOf(rows),
+    byKindTf: [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, rs]) => ({ key, stats: statsOf(rs) })),
+  };
+}
+
+export async function buildRecap(sb: SupabaseClient, days = 7): Promise<Recap> {
+  const to = new Date(), from = new Date(to.getTime() - days * 86_400_000);
+  const rows = await loadLedgerRows(sb, from.toISOString());
   const del = rows.filter((r) => r.delivered), nd = rows.filter((r) => !r.delivered);
   const delivered = statsOf(del), notDelivered = statsOf(nd), combined = statsOf(rows);
   const confirmedNotDelivered = nd.filter((r) => r.kind === "confirmed").length;
+  // Follow-up rows from before the ledger: their delivery was never recorded per member, so they are counted, not graded.
+  const { count: legacy } = await sb.from("signal_followups").select("id", { count: "exact", head: true }).is("signal_id", null).gte("emitted_at", from.toISOString());
   const d = (x: Date) => x.toISOString().slice(0, 10);
 
   const lines = [
@@ -67,11 +86,11 @@ export async function buildRecap(sb: SupabaseClient, days = 7): Promise<Recap> {
     `Built from the delivery and outcome ledger. Rows are never edited.`,
     "",
     ...block("DELIVERED TO MEMBERS (the headline)", delivered),
-    ...splitLines(del.map((r) => ({ ...r, symbol: r.symbol }))).map((l) => `  ${l}`),
+    ...splitLines(del).map((l) => `  ${l}`),
     "",
     ...block("NOT DELIVERED (speculative and internal)", notDelivered),
     `  of which Confirmed but never delivered to anyone: ${confirmedNotDelivered}`,
-    ...splitLines(nd.map((r) => ({ ...r, symbol: r.symbol }))).map((l) => `  ${l}`),
+    ...splitLines(nd).map((l) => `  ${l}`),
     "",
     `Combined (secondary): ${combined.signals} signals | ${combined.decided} decided | win rate ${pct(combined.winRate)} | ${sgn(combined.totalR)}R`,
   ];

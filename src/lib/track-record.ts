@@ -3,6 +3,7 @@
 // are written by workers only. Also the user's own journal record when a user id is given.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { loadLedgerRows, ledgerRecord, type LedgerRecord } from "./recap";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export interface Bucket { key: string; n: number; resolved: number; wins: number; losses: number; expired: number; winRate: number | null; avgR: number | null; sumR: number }
@@ -10,6 +11,8 @@ export interface TrackRecord {
   since: string | null;
   signals: { total: Bucket; byKind: Bucket[]; byTimeframe: Bucket[]; bySide: Bucket[]; byMonth: Bucket[]; curve: { t: string; r: number }[]; recent: { symbol: string; side: string; timeframe: string; kind: string; emitted_at: string; outcome: string | null; r: number | null }[] };
   followups: { total: number; open: number; tp1: number; tp2: number; sl: number; lost: number; tp1Rate: number | null; recent: any[] };
+  /** Stage 53: graded from the signal ledger (what members received), the headline. Null if the ledger is not set up yet. */
+  ledger: LedgerRecord | null;
   journal: null | { total: Bucket; byTimeframe: Bucket[]; real: Bucket; paper: Bucket; curve: { t: string; r: number }[] };
 }
 
@@ -69,5 +72,7 @@ export async function buildTrackRecord(sb: SupabaseClient, userId?: string | nul
     const jc = jr.filter((x) => x.exit_at).sort((a, b) => Date.parse(a.exit_at) - Date.parse(b.exit_at)).map((x) => { a2 += x.r ?? 0; return { t: x.exit_at, r: Math.round(a2 * 100) / 100 }; });
     journal = { total: bucket("all", all), byTimeframe: [...groupBy(all, (r) => r.timeframe)].map(([k, v]) => bucket(k, v)), real: bucket("real", all.filter((x) => !x.paper)), paper: bucket("paper", all.filter((x) => x.paper)), curve: jc };
   }
-  return { since: rows[0]?.emitted_at ?? null, signals, followups, journal };
+  let ledger: LedgerRecord | null = null;
+  try { ledger = ledgerRecord(await loadLedgerRows(sb, "2000-01-01T00:00:00Z")); } catch { ledger = null; }
+  return { since: rows[0]?.emitted_at ?? null, signals, followups, ledger, journal };
 }

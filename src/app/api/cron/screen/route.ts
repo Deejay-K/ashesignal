@@ -100,9 +100,12 @@ export async function GET(req: Request) {
     });
   }));
   // The queue is written first. If it fails, the coin status is not saved either, so the next scan promotes the signal again.
+  let queueWarning: string | null = null;
   if (queue.length) {
     const { error: qe } = await sb.from("signals").upsert(queue, { onConflict: "dedupe_key", ignoreDuplicates: true });
-    if (qe) return NextResponse.json({ error: `signal queue not written, coin status not saved (the next scan retries): ${qe.message}` }, { status: 500 });
+    // Table missing (stage52.sql not run yet): keep the screener and the website running, and say so loudly.
+    if (qe && (qe.code === "42P01" || /does not exist|schema cache/i.test(qe.message))) { queueWarning = `signals table missing, run supabase/stage52.sql: ${queue.length} signal(s) not queued`; console.error(`[ledger] ${queueWarning}`); }
+    else if (qe) return NextResponse.json({ error: `signal queue not written, coin status not saved (the next scan retries): ${qe.message}` }, { status: 500 });
   }
   if (rows.length) {
     const { error } = await sb.from("coin_metrics").upsert(rows, { onConflict: "asset_key,timeframe" });
@@ -110,5 +113,5 @@ export async function GET(req: Request) {
   }
   if (history.length) await sb.from("category_history").insert(history);
   await sb.from("category_history").delete().lt("changed_at", new Date(Date.now() - 90 * 86_400_000).toISOString());
-  return NextResponse.json({ ok: true, batch: `${batch + 1}/${batches}`, coins: slice.map((c) => c.symbol), rows: rows.length, promoted: promoted.map((p) => `${p.symbol} ${p.setup.side} ${p.timeframe}`), queued: queue.length, at: new Date().toISOString() });
+  return NextResponse.json({ ok: true, batch: `${batch + 1}/${batches}`, coins: slice.map((c) => c.symbol), rows: rows.length, promoted: promoted.map((p) => `${p.symbol} ${p.setup.side} ${p.timeframe}`), queued: queue.length, ...(queueWarning ? { warning: queueWarning } : {}), at: new Date().toISOString() });
 }

@@ -143,6 +143,7 @@ export const COMMANDS = [
   { command: "trades", description: "Confirmed trades you can place on your exchange" },
   { command: "recap", description: "This week's signals, graded" },
   { command: "speculative", description: "Early setups before they are confirmed (off by default)" },
+  { command: "whatsnew", description: "What changed in the latest AsheSignal update" },
   { command: "watching", description: "Setups that are close but not confirmed" },
   { command: "spec", description: "Speculative opportunities (high risk)" },
   { command: "spot", description: "Long-term spot picks and their zones" },

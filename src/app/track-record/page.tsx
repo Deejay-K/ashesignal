@@ -19,6 +19,19 @@ export default function TrackRecordPage() {
         <h1 className="text-xl font-bold">Track record</h1>
         <p className="text-sm text-fg-2">Every setup the engine has emitted{d.since ? ` since ${new Date(d.since).toLocaleDateString()}` : ""}, graded on what price actually did afterwards (TP1, TP2, TP3, stop, or expired). Written by the worker only; nobody can edit a row. R counts the target distance over the stop distance; a stop is -1R, expiry 0R.</p>
       </div>
+      {d.ledger ? (
+        <Section title="Graded record: what members actually received" right={<span className="text-xs text-fg-3">the headline</span>}>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <StatCard label="Delivered" value={String(d.ledger.delivered.signals)} sub={`${d.ledger.delivered.decided} decided, ${d.ledger.delivered.open} open`} />
+            <StatCard label="Win rate" value={d.ledger.delivered.winRate != null ? `${d.ledger.delivered.winRate}%` : "-"} sub={`${d.ledger.delivered.wins} wins / ${d.ledger.delivered.stops} stops`} />
+            <StatCard label="Total R" value={`${d.ledger.delivered.totalR > 0 ? "+" : ""}${d.ledger.delivered.totalR}R`} sub={`avg ${d.ledger.delivered.avgR ?? "-"}R per trade`} />
+            <StatCard label="Max drawdown" value={`${d.ledger.delivered.maxDrawdownR}R`} sub={`longest losing streak ${d.ledger.delivered.longestLosing}`} />
+          </div>
+          <p className="mt-2 text-xs text-fg-3">Partial exits: 30% at TP1, 30% at TP2, 40% at TP3, the rest at the stop (break-even after TP1). Not delivered to anyone: {d.ledger.notDelivered.signals} signals, graded separately. Combined: {d.ledger.combined.signals} signals, {d.ledger.combined.winRate ?? "-"}% win rate.</p>
+          <div className="mt-2"><BucketTable rows={d.ledger.byKindTf.map((x) => ({ key: x.key, n: x.stats.signals, resolved: x.stats.decided, wins: x.stats.wins, losses: x.stats.stops, expired: x.stats.expired, winRate: x.stats.winRate, avgR: x.stats.avgR, sumR: x.stats.totalR }))} /></div>
+        </Section>
+      ) : null}
+      <h2 className="text-sm font-semibold text-fg-2">Engine log: every setup the engine emitted, including ones nobody received</h2>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatCard label="Signals" value={String(t.n)} sub={`${t.resolved} resolved`} />
         <StatCard label="Win rate" value={t.winRate != null ? `${t.winRate}%` : "-"} sub={`${t.wins} wins / ${t.losses} stops / ${t.expired} expired`} />

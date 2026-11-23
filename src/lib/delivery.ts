@@ -6,7 +6,7 @@
 // either a row in signal_deliveries or a row in signal_issues.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { tgSendDetailed, tgCardImages, fetchImage, esc, type Keyboard, type SendOpts, type SendResult } from "./telegram";
+import { TELEGRAM_ENABLED, tgSendDetailed, tgCardImages, fetchImage, esc, type Keyboard, type SendOpts, type SendResult } from "./telegram";
 import { venueListings, venuesFor, VENUE_IDS, VENUE_META, isVenueId, type VenueId } from "./venues";
 import { caption, keyboard, mediaUrls, passesFilters, cleanFilters, filtersLabel, type ConfirmedSignal, type SignalFilters } from "./telegram-broadcast";
 import { PRESETS, PRESET_IDS, specCheck, type PresetId, type SpecCandidate, type SpecContext } from "./ledger";
@@ -182,6 +182,11 @@ export async function deliverQueued(sb: SupabaseClient, budgetMs = 40_000): Prom
   }
 
   // 2. The queue, oldest first.
+  if (!TELEGRAM_ENABLED()) {
+    await issue(sb, null, "send", "TELEGRAM_BOT_TOKEN is not set: queued signals wait (and expire after 6 hours) until it is");
+    rep.issues++;
+    return rep;
+  }
   const { data: queue, error: qErr } = await sb.from("signals").select("*").is("processed_at", null).gte("created_at", cutoff).order("created_at", { ascending: true }).limit(40);
   if (qErr) throw new Error(`signals: ${qErr.message}`);
   if (!queue?.length) return rep;
@@ -207,7 +212,8 @@ export async function deliverQueued(sb: SupabaseClient, budgetMs = 40_000): Prom
     if (dErr) { await issue(sb, sig.id, "send", `could not read earlier decisions: ${dErr.message}`); rep.issues++; rep.left++; continue; }
     const decided = new Set((done ?? []).map((d: any) => d.recipient as string));
     const candidates = sig.kind === "confirmed" ? recipients : specRecipients;
-    if (!candidates.length) { await issue(sb, sig.id, "recipients", sig.kind === "confirmed" ? "no member or group has Confirmed Trades switched on" : "no member has speculative alerts on"); rep.issues++; }
+    // A Confirmed Trade nobody could receive is worth a log line; a speculative setup with no subscribers is the normal case.
+    if (!candidates.length && sig.kind === "confirmed") { await issue(sb, sig.id, "recipients", "no member or group has Confirmed Trades switched on"); rep.issues++; }
 
     const same = sameBet(sig, openFu ?? [], queue);
     let media: { card?: Blob | string | null; chart?: Blob | string | null } | null = null;

@@ -32,6 +32,8 @@ jobs:
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/deliver?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Grade finished signals from candles (each outcome written once)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/settle?secret=${{ secrets.CRON_SECRET }}" || true
+      - name: Announce the latest update once (inbox and Telegram; does nothing after it is done)
+        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/announce?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Speculative opportunities (stalest candidates first, 45 s budget)
         run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/spec?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Spot investment picks (stalest coins first, 45 s budget)

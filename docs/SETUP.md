@@ -572,3 +572,24 @@ No database change (it uses the existing `display_name` column and the `preferen
 - **Track record page** still reads the engine's own log (`signal_log`) and is unchanged. The recap and this ledger use full partial-exit R, so the two pages will differ until the Track record page is switched over.
 - **Tests:** `scripts/ledger-selftest.ts` (offline, 39 checks: grading, R, statistics, presets).
 - Files: `src/lib/ledger.ts`, `src/lib/delivery.ts`, `src/lib/settle.ts`, `src/lib/recap.ts`, `src/app/api/cron/deliver/route.ts`, `src/app/api/cron/settle/route.ts`, `src/app/api/cron/screen/route.ts`, `src/app/api/cron/recap/route.ts`, `src/lib/telegram-bot.ts`, `src/lib/telegram.ts`, `src/lib/telegram-broadcast.ts`, `supabase/stage52.sql`.
+
+## 55. Stage 53 - Track record on the ledger, speculative cancel notices, release announcements
+
+**Database (run once, after stage 52):** paste `supabase/stage53.sql` into the Supabase SQL editor. It adds the 20 Confirmed signals from before the ledger as not delivered and not gradable (their full levels were never stored), and prints how many were added. Already included at the end of `supabase/schema.sql`.
+
+- **Track record leads with the ledger.** The headline is what members received (delivered), graded from the same rows as the weekly recap. Not delivered and the full engine log are shown below it. The bot's `/record` shows the ledger line too.
+- **Speculative cancel.** A speculative alert whose entry zone is not reached within 24 hours is marked `no_fill` by the grader, and everyone who received it gets one cancel message. The result is logged in `signal_issues` (stage `cancel`).
+- **Release announcements.** `src/lib/changelog.ts` holds the release notes. `/api/cron/announce` (a worker step, every 5 minutes) sends the newest release once: an inbox notification (the bell) for every member, then a Telegram message to every subscriber. Progress is kept in `engine_config` (key `announcement`), so it resumes across ticks and does nothing once done. To announce a new release, add an entry to the top of `RELEASES`.
+- **What's new page:** `/whats-new`, newest first. Bot command `/whatsnew` (also `/updates`).
+- **Still not built:** quiet hours in each member's own timezone (UTC only), and a pair watchlist (top-N by rank and volume only).
+- Files: `src/lib/changelog.ts`, `src/app/api/cron/announce/route.ts`, `src/app/whats-new/page.tsx`, `src/lib/recap.ts` (shared `loadLedgerRows`, `ledgerRecord`), `src/lib/track-record.ts`, `src/app/track-record/page.tsx`, `src/lib/settle.ts`, `src/lib/telegram-bot.ts`, `supabase/stage53.sql`.
+
+### Stage 53.1 - review fixes
+
+- The grader now reads every signal in its 10-day window (paged, oldest first). Before, only the newest 400 were read, so older open trades could be crowded out by speculative setups and never graded.
+- If `stage52.sql` has not been run yet, the screener keeps saving coin data (the website stays current) and its response carries a `warning`. Before, every scan stopped with an error.
+- A signal whose coin never returns verified candles is closed as "could not grade" one day before it leaves the window, instead of staying open forever. Missing candles are retried quietly and no longer logged every 5 minutes.
+- No log line per speculative setup when nobody subscribes (that is the normal case). A Confirmed Trade that nobody could receive is still logged.
+- If `TELEGRAM_BOT_TOKEN` is missing, the sender stops early and logs it once per run; queued signals wait and expire after 6 hours.
+- The speculative cancel message gives the real reason (stop reached before entry, or entry not reached within 24 hours).
+- Both SQL files were run twice on Postgres 16 with the guards tested: levels, `broadcast_at`, outcomes and deliveries cannot be changed or deleted.

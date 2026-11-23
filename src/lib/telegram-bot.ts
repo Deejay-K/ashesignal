@@ -11,6 +11,7 @@ import { signalView, ago } from "./market/signal-state";
 import { buildHeadline } from "./headline";
 import { cleanFilters, filtersLabel, FILTER_TFS, type SignalFilters } from "./telegram-broadcast";
 import { buildRecap } from "./recap";
+import { releaseHtml } from "./changelog";
 import { PRESETS, PRESET_IDS, type PresetId } from "./ledger";
 import { CARD_BGS } from "./card-presets";
 import { setupBriefing, SQUIXI } from "./mascot";
@@ -197,6 +198,7 @@ export async function handleCommand(c: ChatCtx, cmdRaw: string, arg: string, ful
     case "/record": case "/trackrecord": return record(c);
     case "/recap": case "/week": return recap(c);
     case "/speculative": case "/spec": return speculative(c, arg);
+    case "/whatsnew": case "/updates": return tgSend(c.chatId, releaseHtml(), { html: true, keyboard: [[{ text: "Menu", callback_data: "menu" }]] });
     case "/leaderboard": case "/lb": return leaderboard(c);
     case "/optin": return optIn(c, true);
     case "/optout": return optIn(c, false);
@@ -1221,6 +1223,10 @@ async function record(c: ChatCtx) {
     "", `<b>Broadcast confirmed trades</b>: ${r.followups.total} sent, ${r.followups.open} open, TP1 ${r.followups.tp1}, TP2 ${r.followups.tp2}, stopped ${r.followups.sl}, lost before TP1 ${r.followups.lost}${r.followups.tp1Rate != null ? ` (TP1 rate ${r.followups.tp1Rate}% of closed)` : ""}`,
   ];
   if (r.journal) lines.push("", `<b>Your record</b>: ${r.journal.total.n} taken, ${r.journal.total.resolved} closed, ${r.journal.total.winRate != null ? `${r.journal.total.winRate}% win` : "no closed yet"}, real ${r.journal.real.sumR > 0 ? "+" : ""}${r.journal.real.sumR}R, paper ${r.journal.paper.sumR > 0 ? "+" : ""}${r.journal.paper.sumR}R`);
+  if (r.ledger) {
+    const L = r.ledger.delivered;
+    lines.push("", `<b>Graded from what members received</b>: ${L.signals} signals, ${L.decided} decided, <b>${L.winRate != null ? `${L.winRate}% win rate` : "no result yet"}</b>, total ${L.totalR > 0 ? "+" : ""}${L.totalR}R, max drawdown ${L.maxDrawdownR}R. Not delivered: ${r.ledger.notDelivered.signals}.`);
+  }
   lines.push("", "<i>Nobody can edit these rows; the worker writes them from price outcomes.</i>");
   return tgSend(c.chatId, lines.join("\n"), { html: true, keyboard: [[...(link("/") ? [{ text: "Full track record", url: link("/track-record")! }] : []), { text: "Menu", callback_data: "menu" }]] });
 }
