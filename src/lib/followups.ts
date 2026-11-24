@@ -187,7 +187,7 @@ export async function runFollowups(sb: SupabaseClient, budgetMs = 40_000): Promi
     }
     if (log.length) {
       const { error: le } = await sb.from("followup_messages").insert(log);
-      if (le) console.error(`[followups] could not log ${log.length} ${e.type} message(s) for ${r.symbol}: ${le.message}`);
+      if (le) console.error(`[followups] could not log ${log.length} ${e.type} message(s) for ${r.symbol}: ${le.message ?? le.code ?? "table missing (run supabase/stage54.sql)"}`);
     }
   }
   return { checked: rows.length, events: events.length, sent };

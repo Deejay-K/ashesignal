@@ -170,6 +170,8 @@ export const PRESET_IDS: Exclude<PresetId, "off">[] = ["conservative", "balanced
 
 export interface SpecCandidate {
   symbol: string; timeframe: string; side: "LONG" | "SHORT"; entry_mid: number; sl1: number;
+  /** Price when the engine created the signal, and TP1: used to tell a fresh signal from one whose move already ran. */
+  price_at_signal?: number | null; tp1?: number | null;
   rr_tp2: number | null; confidence: number | null; htf_aligned: boolean | null;
   market_rank: number | null; volume_24h: number | null;
 }
@@ -200,9 +202,15 @@ export function specCheck(p: Preset, c: SpecCandidate, x: SpecContext): Check {
   const h = (((new Date(x.nowMs).getUTCHours() + off) % 24) + 24) % 24;
   const quiet = p.quietFrom !== p.quietTo && (p.quietFrom < p.quietTo ? h >= p.quietFrom && h < p.quietTo : h >= p.quietFrom || h < p.quietTo);
   if (quiet) return no(x.utcOffset != null ? "quiet hours (your time)" : "quiet hours (UTC)");
+  // Freshness: how far price has moved away from the entry since the signal was created. A pullback entry that sits a
+  // few percent from price by design is fine; a signal whose move already ran (or reached TP1) is stale.
   if (x.livePrice == null) return no("no live price to check the entry against");
-  const away = (Math.abs(x.livePrice - c.entry_mid) / c.entry_mid) * 100;
-  if (away > p.entryWithinPct) return no(`price ${away.toFixed(1)}% from entry, over ${p.entryWithinPct}%`);
+  const long = c.side === "LONG";
+  if (c.tp1 != null && (long ? x.livePrice >= c.tp1 : x.livePrice <= c.tp1)) return no("price already reached TP1");
+  if (long ? x.livePrice <= c.sl1 : x.livePrice >= c.sl1) return no("price is already past the stop");
+  const ref = c.price_at_signal && c.price_at_signal > 0 ? c.price_at_signal : c.entry_mid;
+  const ran = ((long ? x.livePrice - ref : ref - x.livePrice) / ref) * 100;
+  if (ran > p.entryWithinPct) return no(`price moved ${ran.toFixed(1)}% away from the entry since the signal, over ${p.entryWithinPct}%`);
   if (x.openSymbols.has(c.symbol)) return no("you already have an open trade on this coin");
   const stop = x.stoppedAt.get(c.symbol);
   if (stop != null && x.nowMs - stop < p.cooldownStopHours * 3_600_000) return no(`stopped on this coin within ${p.cooldownStopHours}h`);

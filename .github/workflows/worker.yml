@@ -14,41 +14,41 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Resolve setups & signals
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/resolve?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/resolve?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Evaluate alerts
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/alerts?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/alerts?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Log engine signals (one batch of coins per tick, rotates automatically)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/signals?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/signals?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Telegram follow-ups on broadcast Confirmed trades (zone, TP1, TP2, SL, lost)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/followups?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/followups?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Portfolio snapshots (skips users snapshotted <20h ago)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/snapshot?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/snapshot?secret=${{ secrets.CRON_SECRET }}" || true
       - name: AI market briefing (hourly)
         if: ${{ github.event_name == 'workflow_dispatch' || endsWith(github.run_id, '3') }}
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/briefing?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/briefing?secret=${{ secrets.CRON_SECRET }}" || true
       - name: DEX liquidity snapshot
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/liquidity?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/liquidity?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Whale scan (one batch of tokens per tick, rotates)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/whales?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/whales?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Screener metrics (10 coins per tick, rotates)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/screen?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/screen?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Deliver queued signals (every recipient decision logged; resumes on the next tick)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/deliver?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/deliver?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Grade finished signals from candles (each outcome written once)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/settle?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/settle?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Announce the latest update once (inbox and Telegram; does nothing after it is done)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/announce?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/announce?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Speculative opportunities (stalest candidates first, 45 s budget)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/spec?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/spec?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Spot investment picks (stalest coins first, 45 s budget)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/spot?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/spot?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Morning plan (hourly check, sends at each user's plan hour)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/plan?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/plan?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Daily digest (hourly check, sends at each user's hour)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/digest?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/digest?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Engine lab (rule variants backtest, 45 s budget)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/lab?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/lab?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Weekly review (Sundays, at each user's digest hour)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/review?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/review?secret=${{ secrets.CRON_SECRET }}" || true
       - name: Weekly public recap (Sunday evening UTC, once per week)
-        run: curl -fsS -m 60 "${{ secrets.APP_URL }}/api/cron/recap?secret=${{ secrets.CRON_SECRET }}" || true
+        run: curl -sS -w "\nHTTP %{http_code}\n" -m 60 "${{ secrets.APP_URL }}/api/cron/recap?secret=${{ secrets.CRON_SECRET }}" || true

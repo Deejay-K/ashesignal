@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Stage 52 offline tests for the signal ledger rules (no network, no database).
 // Run: npx esbuild scripts/ledger-selftest.ts --bundle --platform=node --outfile=/tmp/ledger-test.cjs && node /tmp/ledger-test.cjs
 import { gradeSignal, statsOf, specCheck, PRESETS, withCustom, cleanCustom, cleanWatchlist, cleanOffset, type LedgerSignal } from "../src/lib/ledger";
@@ -94,6 +95,16 @@ check("balanced: passes at 12:00 UTC with a 0.5% move", specCheck(PRESETS.balanc
 check("balanced: 3am UTC is quiet", specCheck(PRESETS.balanced, base, ctx({ nowMs: Date.parse("2026-11-20T03:00:00Z") })).ok === false);
 check("conservative: price 2% from entry is too far", specCheck(PRESETS.conservative, base, ctx({ livePrice: 102 })).ok === false);
 check("all: no limits but a live price is still needed", specCheck(PRESETS.all, { ...base, rr_tp2: 0.5 }, ctx()).ok === true && specCheck(PRESETS.all, base, ctx({ livePrice: null })).ok === false);
+// Freshness: movement since the signal, not distance from the entry (a pullback entry sits away from price by design)
+const pullback = { ...base, entry_mid: 97, sl1: 94.5, price_at_signal: 100, tp1: 103 };
+check("pullback LONG 3% below price passes Conservative when price has not run", specCheck(PRESETS.conservative, pullback, ctx({ livePrice: 100.4 })).ok === true);
+check("pullback LONG: price ran 1.5% up since the signal is stale for Conservative", specCheck(PRESETS.conservative, pullback, ctx({ livePrice: 101.5 })).ok === false);
+check("pullback LONG: price fell toward the entry is still fresh", specCheck(PRESETS.conservative, pullback, ctx({ livePrice: 98 })).ok === true);
+check("TP1 already reached is stale", (specCheck(PRESETS.all, pullback, ctx({ livePrice: 103.2 })) as any).reason === "price already reached TP1");
+check("price already past the stop is stale", (specCheck(PRESETS.all, pullback, ctx({ livePrice: 94 })) as any).reason === "price is already past the stop");
+const shortPb = { ...base, side: "SHORT" as const, entry_mid: 103, sl1: 105.5, price_at_signal: 100, tp1: 97 };
+check("pullback SHORT above price passes when price has not run down", specCheck(PRESETS.conservative, shortPb, ctx({ livePrice: 99.8 })).ok === true);
+check("pullback SHORT: price dropped 2% since the signal is stale", specCheck(PRESETS.conservative, shortPb, ctx({ livePrice: 98 })).ok === false);
 check("daily cap reached blocks", specCheck(PRESETS.conservative, base, ctx({ sentToday: 2 })).ok === false);
 check("cooldown after a stop on the same coin", specCheck(PRESETS.balanced, { ...base, timeframe: "1h" }, ctx({ stoppedAt: new Map([["SOL", Date.parse("2026-11-20T06:00:00Z")]]) })).ok === false);
 check("one open trade per coin", specCheck(PRESETS.balanced, { ...base, timeframe: "1h" }, ctx({ openSymbols: new Set(["SOL"]) })).ok === false);

@@ -6,6 +6,18 @@ export interface Release { version: string; date: string; title: string; items: 
 
 export const RELEASES: Release[] = [
   {
+    version: "55",
+    date: "2026-11-24",
+    title: "Signal delivery repaired",
+    items: [
+      "Confirmed Trades are sent the moment the screener finds them again, in the same step, like before. If the signal log is ever unavailable, they still go out the original way instead of waiting.",
+      "Speculative alerts: fixed a rule that blocked most pullback setups (their entry sits a few percent from the price by design). Now only signals whose move already ran, or that already reached TP1, are held back.",
+      "Groups can now receive speculative alerts too: send /specalerts in the group and pick a preset. Off by default, and the group decides.",
+      "The same speculative setup is not posted again within 6 hours.",
+      "Admins get a Telegram alert if Confirmed Trades are found but none reach Telegram.",
+    ],
+  },
+  {
     version: "54",
     date: "2026-11-22",
     title: "Health checks, follow-up tracking and your own alert settings",

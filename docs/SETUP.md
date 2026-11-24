@@ -625,3 +625,24 @@ An independent review of stages 52 to 54 found these, all fixed and re-checked:
 - Smaller: the announcement resumes by chat id and saves progress every 20 sends; follow-ups never fall back to "everyone"; the daily cap uses each member's own midnight; the public Track record read is cached for a minute; a saved "sent" row is retried once.
 - **Known and accepted:** if the text after the share images fails temporarily, the images can arrive twice on the retry.
 - **Status page, Engine Lab row:** it now warns after 50 hours and shows Down after 72 hours (it was 6 h and 48 h). The Lab only re-tests results older than 48 hours, so being idle for hours between passes is normal.
+
+## 57. Stage 55 - delivery repair (Confirmed Trades and speculative alerts)
+
+**Database:** nothing new is required. `supabase/stage55.sql` is optional: it lets a group chat turn on speculative alerts. Without any of `stage52.sql` to `stage55.sql`, Confirmed Trades are still sent.
+
+**Diagnosis:** open `https://ashesignal-one.vercel.app/api/cron/diagnose?secret=YOUR_CRON_SECRET` in a browser. It checks the bot token and webhook, which database updates are applied, who receives signals, what was found, queued and sent in the last 24 hours, the top reasons signals were skipped, and recent logged problems, then lists what to fix in plain sentences. It never shows secrets and changes nothing.
+
+What was wrong and what changed:
+- **Confirmed Trades depended on things that could fail silently.** Since stage 52 the screener only queued signals and a separate worker step sent them. If `stage52.sql` was not applied, nothing was queued (the website still showed Confirmed). If `stage54.sql` was not applied, the sender skipped every signal. If the deliver step failed, `curl -f` hid the error. Now: the screener sends right away in the same request, as in stage 51 (the deliver step only finishes leftovers); if the queue cannot be written for any reason, it sends the stage 51 way directly; the sender works without the stage 54 tables; every worker step prints the server's reply and HTTP code.
+- **Speculative alerts were blocked by their own freshness rule.** It compared the live price with the middle of the entry zone, so pullback setups (entry a few percent from price by design) failed Conservative (1%) and Balanced (2%) at once. It now measures how far price has moved away from the entry since the signal was created, and holds back signals past TP1 or past the stop.
+- **Groups could not receive speculative alerts.** With `stage55.sql`, `/specalerts` in a group sets a group preset (UTC quiet hours, no per-member settings). The Speculative alerts button now shows in groups too.
+- **The same speculative setup was logged again on every flicker.** Now once per coin, timeframe and side every 6 hours.
+- **Watchdog:** also alerts when Confirmed Trades were found in the last 6 hours but none reached Telegram. The Status page has a "Database updates" row.
+- The screener's queue row is built in `src/lib/signal-queue.ts` (same row as before, now tested against the database).
+
+- **Speculative alerts were also blocked by the open-trade count.** Every Confirmed Trade a member or group had received counted as an open trade until it was graded, so the open-risk budget (3 or 5) and the one-trade-per-coin rule filtered almost every speculative alert, and always for groups. Only speculative alerts count now.
+- **The direct (fallback) send** now reaches every group first for all signals, caps only member messages, and stops cleanly at a time limit. A queue write that fails is retried once, and rows that did land are sent from the queue, so nothing is sent twice.
+- **The inline send** never starts rendering images with less than 25 seconds left, or a recipient with less than 8; leftovers go out on the deliver step.
+- **The daily Vercel cron for the screener was removed** (GitHub runs it every 5 minutes), so two screeners never send at the same moment.
+
+**Tests:** an end-to-end suite runs the real screener route, sender, follow-ups, grader, recap, watchdog, status checks, diagnosis and announcement against a real Postgres 16 with PostgREST (the Supabase API layer), with Telegram, exchange listings and prices faked. 78 checks, including: missing `stage52.sql` and `stage54.sql`, three senders at once, a blocked member, a flaky connection, a wrong bot token, the fallback with a full cap and a passed deadline, and a member and a group who already hold Confirmed Trades still receiving speculative alerts (this check fails on the old code). Plus 85 offline unit checks.

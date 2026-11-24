@@ -7,6 +7,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { tgSendDetailed, esc } from "./telegram";
+import { schemaStatus } from "./diagnose";
 
 const KEY = "watchdog";
 const CHECK_EVERY_MS = 10 * 60_000;
@@ -27,6 +28,21 @@ export async function watchProblems(sb: SupabaseClient, now = Date.now()): Promi
   if (mins > WORKER_DOWN_MIN) problems.push(last ? `The 5-minute worker has not run for ${Math.round(mins)} minutes (last screener run ${last.slice(0, 16).replace("T", " ")} UTC). No new signals are found or sent.` : "The worker has never run.");
   const stuck = await sb.from("signals").select("id", { count: "exact", head: true }).is("processed_at", null).lt("created_at", new Date(now - QUEUE_STUCK_MIN * 60_000).toISOString());
   if (!stuck.error && (stuck.count ?? 0) > 0) problems.push(`${stuck.count} signal${stuck.count === 1 ? " has" : "s have"} waited more than ${QUEUE_STUCK_MIN} minutes to be sent. Check the deliver step in GitHub Actions and TELEGRAM_BOT_TOKEN.`);
+  // Confirmed Trades found by the screener in the last 6 hours (older than 20 min) but not one of them sent to anybody.
+  if (!stuck.error) {
+    const from = new Date(now - 6 * 3_600_000).toISOString(), to = new Date(now - QUEUE_STUCK_MIN * 60_000).toISOString();
+    // Only flag what the ledger can prove: trades queued 20 min to 6 h ago with no decision at all for anybody (not
+    // sent, not skipped, not filtered). Trades filtered by members' settings, or sent directly, are not an alarm.
+    const { data: queued } = await sb.from("signals").select("id").eq("kind", "confirmed").gte("created_at", from).lt("created_at", to).limit(200);
+    const ids = (queued ?? []).map((q: { id: string }) => q.id);
+    if (ids.length) {
+      const { data: dec } = await sb.from("signal_deliveries").select("signal_id").in("signal_id", ids).limit(1000);
+      const decided = new Set((dec ?? []).map((d: { signal_id: string }) => d.signal_id));
+      const untouched = ids.filter((id) => !decided.has(id)).length;
+      const { count: recips } = await sb.from("telegram_chats").select("chat_id", { count: "exact", head: true }).eq("broadcast", true);
+      if (untouched && (recips ?? 0) > 0) problems.push(`${untouched} Confirmed Trade${untouched === 1 ? " was" : "s were"} queued in the last 6 hours but nobody has been sent or even considered for ${untouched === 1 ? "it" : "them"}. Open /api/cron/diagnose?secret=YOUR_CRON_SECRET for the reason.`);
+    }
+  }
   return problems;
 }
 
@@ -86,8 +102,11 @@ export interface HealthCheck { id: string; label: string; level: Level; detail: 
 export async function ledgerChecks(sb: SupabaseClient, now = Date.now()): Promise<HealthCheck[]> {
   const day = new Date(now - 86_400_000).toISOString();
   const out: HealthCheck[] = [];
+  const schema = await schemaStatus(sb);
+  const missing = Object.entries(schema).filter(([k, ok]) => !ok && !k.includes("optional")).map(([k]) => k.split(" ")[0]);
+  out.push({ id: "schema", label: "Database updates", level: missing.length ? "down" : "ok", detail: missing.length ? `Not applied: ${missing.join(", ")}. Run the matching supabase/*.sql files in order in the Supabase SQL editor.` : `All applied${schema["stage55 (group speculative alerts, optional)"] ? "" : " (stage55 for group speculative alerts is optional and not applied)"}.` });
   const pending = await sb.from("signals").select("created_at").is("processed_at", null).order("created_at", { ascending: true }).limit(1);
-  if (pending.error) return [{ id: "ledger", label: "Signal ledger", level: "down", detail: "The ledger tables are missing: run supabase/stage52.sql, stage53.sql and stage54.sql in Supabase." }];
+  if (pending.error) return [...out, { id: "ledger", label: "Signal ledger", level: "down", detail: "The ledger tables are missing: Confirmed Trades are still sent straight from the screener, but nothing is recorded. Run supabase/stage52.sql, stage53.sql and stage54.sql in Supabase." }];
   const pendingCount = await sb.from("signals").select("id", { count: "exact", head: true }).is("processed_at", null);
   const oldest = pending.data?.[0]?.created_at as string | undefined;
   const waitMin = oldest ? Math.round((now - Date.parse(oldest)) / 60_000) : 0;

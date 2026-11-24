@@ -45,15 +45,16 @@ export async function loadRecipients(sb: SupabaseClient): Promise<Recipient[]> {
   // Stage 54 columns first; if stage54.sql has not been run, fall back to stage 52 (nobody can have set them yet).
   // Paged and ordered, so a list past 1000 members is read in full.
   const users = (cols: string) => selectAll<any>((a, b) => sb.from("telegram_users").select(cols).eq("broadcast", true).order("tg_user_id", { ascending: true }).range(a, b));
-  let u: any[];
-  try { u = await users("tg_user_id, venue, sig_filters, spec_preset, spec_tfs, utc_offset, spec_watchlist, spec_custom"); }
-  catch {
-    try { u = await users("tg_user_id, venue, sig_filters, spec_preset, spec_tfs"); }
-    catch (e) { throw new Error(`telegram_users: ${(e as Error).message} (run supabase/schema.sql once)`); }
-  }
-  let g: any[];
-  try { g = await selectAll<any>((a, b) => sb.from("telegram_chats").select("chat_id, sig_filters").eq("broadcast", true).order("chat_id", { ascending: true }).range(a, b)); }
-  catch (e) { throw new Error(`telegram_chats: ${(e as Error).message} (run supabase/schema.sql once)`); }
+  // Newest columns first, then older column sets: a migration that has not been run only switches off the newer
+  // settings (nobody can have set them without it); it never stops delivery.
+  const firstWorking = async (read: (cols: string) => Promise<any[]>, sets: string[], table: string): Promise<any[]> => {
+    let last: Error | null = null;
+    for (const cols of sets) { try { return await read(cols); } catch (e) { last = e as Error; } }
+    throw new Error(`${table}: ${last?.message} (run supabase/schema.sql once)`);
+  };
+  const u = await firstWorking(users, ["tg_user_id, venue, sig_filters, spec_preset, spec_tfs, utc_offset, spec_watchlist, spec_custom", "tg_user_id, venue, sig_filters, spec_preset, spec_tfs", "tg_user_id, venue, sig_filters", "tg_user_id, venue"], "telegram_users");
+  const chats = (cols: string) => selectAll<any>((a, b) => sb.from("telegram_chats").select(cols).eq("broadcast", true).order("chat_id", { ascending: true }).range(a, b));
+  const g = await firstWorking(chats, ["chat_id, sig_filters, spec_preset", "chat_id, sig_filters", "chat_id"], "telegram_chats");
   return [
     ...u.map((x: any): Recipient => ({
       id: String(x.tg_user_id), group: false,
@@ -63,7 +64,7 @@ export async function loadRecipients(sb: SupabaseClient): Promise<Recipient[]> {
       specTfs: Array.isArray(x.spec_tfs) && x.spec_tfs.length ? x.spec_tfs : null,
       utcOffset: cleanOffset(x.utc_offset), watchlist: cleanWatchlist(x.spec_watchlist), custom: cleanCustom(x.spec_custom),
     })),
-    ...g.map((x: any): Recipient => ({ id: String(x.chat_id), group: true, venue: "binance", filters: cleanFilters(x.sig_filters), spec: "off", specTfs: null })),
+    ...g.map((x: any): Recipient => ({ id: String(x.chat_id), group: true, venue: "binance", filters: cleanFilters(x.sig_filters), spec: (PRESET_IDS as string[]).includes(x.spec_preset) ? (x.spec_preset as PresetId) : "off", specTfs: null })),
   ];
 }
 
@@ -89,7 +90,9 @@ async function loadSpecState(sb: SupabaseClient, nowMs: number, members: Recipie
     const st = state.get(d.recipient), s = sigOf.get(d.signal_id), o = outOf.get(d.signal_id);
     if (!st || !s) continue;
     if (d.channel === "speculative" && Date.parse(d.created_at) >= (dayStart.get(d.recipient) ?? 0)) st.sentToday++;
-    if (!o && Date.parse(s.created_at) > nowMs - LOOKBACK_MS) { st.openSymbols.add(s.symbol); st.openCount++; }
+    // Only speculative alerts count here: a Confirmed Trade the member received is not proof they took it, and groups
+    // receive every Confirmed Trade, so counting them would fill the open-risk budget for everyone.
+    if (d.channel === "speculative" && !o && Date.parse(s.created_at) > nowMs - LOOKBACK_MS) { st.openSymbols.add(s.symbol); st.openCount++; }
     if (o?.outcome === "stop" && o.exit_at) st.stoppedAt.set(s.symbol, Math.max(Date.parse(o.exit_at), st.stoppedAt.get(s.symbol) ?? 0));
   }
   return state;
@@ -107,12 +110,16 @@ export function decideConfirmed(r: Recipient, sig: any, listed: VenueId[]): Deci
 /** Speculative alerts: the exchange checks, then the member's preset (and timeframe picks). null = send. */
 export function decideSpec(r: Recipient, sig: any, listed: VenueId[], live: Map<string, number>, st: SpecState | undefined, nowMs: number): Decision | null {
   const vm = VENUE_META[r.venue];
-  if (!listed.includes(r.venue)) return { status: "skipped", reason: `Not listed on ${vm.label}` };
-  if (sig.side === "SHORT" && !vm.canShort) return { status: "skipped", reason: `SHORT on ${vm.label}, which is spot only` };
+  if (r.group) { if (!listed.length) return { status: "skipped", reason: "Not listed on any exchange the bot scans" }; }
+  else {
+    if (!listed.includes(r.venue)) return { status: "skipped", reason: `Not listed on ${vm.label}` };
+    if (sig.side === "SHORT" && !vm.canShort) return { status: "skipped", reason: `SHORT on ${vm.label}, which is spot only` };
+  }
   const preset = withCustom(PRESETS[r.spec as Exclude<PresetId, "off">], r.custom);
   const cand: SpecCandidate = {
     symbol: sig.symbol, timeframe: sig.timeframe, side: sig.side,
     entry_mid: Number(sig.entry_mid), sl1: Number(sig.sl1),
+    price_at_signal: sig.price_at_signal != null ? Number(sig.price_at_signal) : null, tp1: sig.tp1 != null ? Number(sig.tp1) : null,
     rr_tp2: sig.rr_tp2 != null ? Number(sig.rr_tp2) : null, confidence: sig.confidence ?? null,
     htf_aligned: sig.htf_aligned ?? null, market_rank: sig.market_rank ?? null,
     volume_24h: sig.volume_24h != null ? Number(sig.volume_24h) : null,
@@ -192,9 +199,14 @@ export async function deliverQueued(sb: SupabaseClient, budgetMs = 40_000): Prom
   if (!queue?.length) return rep;
 
   const recipients = await loadRecipients(sb);
+  // Send claims arrive with stage54.sql. Without the table, sending still works; only the guard against two runs at
+  // the same moment is off (the worker workflow already never runs twice at once).
+  const probe = await sb.from("signal_claims").select("signal_id").limit(1);
+  const claimsOk = !probe.error;
+  if (!claimsOk) { await issue(sb, null, "send", `signal_claims missing (run supabase/stage54.sql): sending without the overlap guard (${probe.error?.message})`); rep.issues++; }
   const listings = await venueListings();
   const listingsUnknown = Object.values(listings).every((set) => !set || set.size === 0);
-  const specRecipients = recipients.filter((r) => !r.group && r.spec !== "off");
+  const specRecipients = recipients.filter((r) => r.spec !== "off");
   const specState = await loadSpecState(sb, started, specRecipients);
   const live = new Map<string, number>();
   const specIds = queue.filter((q) => q.kind === "speculative").map((q) => q.coingecko_id as string);
@@ -213,8 +225,8 @@ export async function deliverQueued(sb: SupabaseClient, budgetMs = 40_000): Prom
     const decided = new Set((done ?? []).map((d: any) => d.recipient as string));
     // Sends in progress (claims without a decision). A claim older than 10 minutes means a run died mid-send: we cannot
     // know whether the message arrived, so it is recorded as failed instead of being sent a second time.
-    const { data: claims, error: cErr } = await sb.from("signal_claims").select("recipient, created_at").eq("signal_id", sig.id);
-    if (cErr) { await issue(sb, sig.id, "send", `could not read send claims (run supabase/stage54.sql): ${cErr.message}`); rep.issues++; rep.left++; continue; }
+    const { data: claims, error: cErr } = claimsOk ? await sb.from("signal_claims").select("recipient, created_at").eq("signal_id", sig.id) : { data: [] as any[], error: null };
+    if (cErr) { await issue(sb, sig.id, "send", `could not read send claims: ${cErr.message}`); rep.issues++; rep.left++; continue; }
     const inFlight = new Set<string>();
     for (const cl of claims ?? []) {
       if (decided.has(cl.recipient)) continue;
@@ -243,18 +255,22 @@ export async function deliverQueued(sb: SupabaseClient, budgetMs = 40_000): Prom
 
     for (const r of candidates) {
       if (decided.has(r.id)) continue;
+      if (deadline - Date.now() < 8_000) { complete = false; break; } // a send can take several seconds: leave room
       if (inFlight.has(r.id)) { complete = false; continue; } // another run is sending to this member right now
       if (Date.now() > deadline) { complete = false; break; }
       const d = sig.kind === "confirmed" ? decideConfirmed(r, sig, listed) : decideSpec(r, sig, listed, live, specState.get(r.id), started);
       if (d) { if (await record(sb, sig.id, r.id, sig.kind, d)) rep.decided++; continue; }
 
       // Eligible: claim the member for this signal, then send. Only the run that wins the claim sends.
-      const claim = await sb.from("signal_claims").upsert({ signal_id: sig.id, recipient: r.id }, { onConflict: "signal_id,recipient", ignoreDuplicates: true }).select("recipient");
-      if (claim.error) { complete = false; rep.issues++; await issue(sb, sig.id, "send", `could not claim ${r.id}: ${claim.error.message}`); continue; }
-      if (!claim.data?.length) { complete = false; continue; }
+      if (claimsOk) {
+        const claim = await sb.from("signal_claims").upsert({ signal_id: sig.id, recipient: r.id }, { onConflict: "signal_id,recipient", ignoreDuplicates: true }).select("recipient");
+        if (claim.error) { complete = false; rep.issues++; await issue(sb, sig.id, "send", `could not claim ${r.id}: ${claim.error.message}`); continue; }
+        if (!claim.data?.length) { complete = false; continue; }
+      }
       const venue = r.group ? (listed[0] ?? "binance") : r.venue;
       let res: SendResult;
       if (sig.kind === "confirmed") {
+        if (!media && deadline - Date.now() < 25_000) { complete = false; await sb.from("signal_claims").delete().eq("signal_id", sig.id).eq("recipient", r.id).then(() => null, () => null); break; } // image rendering can take up to 20 s
         if (!media) {
           const urls = mediaUrls(p);
           const [card, chart] = await Promise.all([urls.og ? fetchImage(urls.og) : null, urls.chart ? fetchImage(urls.chart) : null]);
@@ -278,14 +294,14 @@ export async function deliverQueued(sb: SupabaseClient, budgetMs = 40_000): Prom
         if (sig.kind === "speculative" && st) { st.sentToday++; st.openCount++; st.openSymbols.add(sig.symbol); }
       } else if (isBotRejected(res)) {
         // Wrong or revoked bot token: stop the whole run and keep every signal queued, instead of failing each member.
-        await sb.from("signal_claims").delete().eq("signal_id", sig.id).eq("recipient", r.id);
+        if (claimsOk) await sb.from("signal_claims").delete().eq("signal_id", sig.id).eq("recipient", r.id);
         await issue(sb, sig.id, "send", `Telegram rejected the bot (${res.code}: ${res.error}). Check TELEGRAM_BOT_TOKEN; signals stay queued for up to ${QUEUE_HOURS}h.`);
         throw new Error(`Telegram rejected the bot token (${res.code}): ${res.error}`);
       } else if (isPermanentFailure(res) || PERMANENT.test(res.error ?? "")) {
         if (await record(sb, sig.id, r.id, sig.kind, { status: "failed", reason: `Telegram refused: ${res.error}` })) rep.decided++;
       } else {
         complete = false; rep.issues++;
-        await sb.from("signal_claims").delete().eq("signal_id", sig.id).eq("recipient", r.id); // free it for the next tick
+        if (claimsOk) await sb.from("signal_claims").delete().eq("signal_id", sig.id).eq("recipient", r.id); // free it for the next tick
         await issue(sb, sig.id, "send", `${r.id}: will retry on the next tick (${res.error ?? "unknown error"})`);
       }
     }

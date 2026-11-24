@@ -125,7 +125,7 @@ export function canReceive(r: Recipient, listed: VenueId[], side: "LONG" | "SHOR
  * Send one message per confirmed signal to every opted-in Telegram user (by exchange) and group.
  * Returns how many messages went out. Capped so a full re-screen cannot flood.
  */
-export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedSignal[], opts: { maxMessages?: number; onlyChat?: string; test?: boolean } = {}): Promise<{ sent: number; recipients: number; skipped: number }> {
+export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedSignal[], opts: { maxMessages?: number; onlyChat?: string; test?: boolean; deadline?: number } = {}): Promise<{ sent: number; recipients: number; skipped: number; failed?: number; incomplete?: boolean }> {
   if (!TELEGRAM_ENABLED() || !signals.length) return { sent: 0, recipients: 0, skipped: 0 };
   const [{ users, groups }, listings] = await Promise.all([loadRaw(sb), venueListings()]);
   // "Same bet" check: other Confirmed Trades in the same direction that are still open (or in this same batch).
@@ -148,30 +148,36 @@ export async function broadcastConfirmed(sb: SupabaseClient, signals: ConfirmedS
   const max = opts.maxMessages ?? 60;
   // If every listing fetch failed we cannot know where a coin trades; do not silently drop the signal.
   const listingsUnknown = Object.values(listings).every((set) => !set || set.size === 0);
-  let sent = 0, skipped = 0;
-  for (const sig of signals) {
+  let sent = 0, skipped = 0, failed = 0, memberSends = 0, incomplete = false;
+  // Stage 55: groups first (every signal), then members. The message cap only limits member messages, so a group is
+  // never crowded out, and the run stops cleanly at the deadline instead of being cut off mid-send.
+  const imgsOf = new Map<ConfirmedSignal, { card?: Blob | string | null; chart?: Blob | string | null }>();
+  const phases = [recipients.filter((r) => r.group), recipients.filter((r) => !r.group)];
+  for (const phase of phases) for (const sig of signals) {
     const listed = listingsUnknown ? ([...VENUE_IDS] as VenueId[]) : venuesFor(sig.symbol, listings, null);
     const { chart, og } = mediaUrls(sig);
-    // Render both images once per signal; after the first upload Telegram's file_ids are reused for everyone else.
-    const [cardBlob, chartBlob] = await Promise.all([og ? fetchImage(og) : null, chart ? fetchImage(chart) : null]);
-    let imgs: { card?: Blob | string | null; chart?: Blob | string | null } = { card: cardBlob, chart: chartBlob };
-    for (const r of recipients) {
-      if (sent >= max) return { sent, recipients: recipients.length, skipped };
+    for (const r of phase) {
+      if (opts.deadline && Date.now() > opts.deadline) { incomplete = true; break; }
+      if (!r.group && memberSends >= max) { skipped++; continue; }
       if (!opts.onlyChat && !passesFilters(r.filters, { timeframe: sig.timeframe, side: sig.setup.side, confidence: sig.setup.confidence })) { skipped++; continue; } // their own filters
       if (!r.group) {
         if (!listed.includes(r.venue)) { skipped++; continue; }           // not tradeable on their exchange
         if (sig.setup.side === "SHORT" && !VENUE_META[r.venue].canShort) { skipped++; continue; } // spot only
       } else if (!listed.length) { skipped++; continue; }
+      // Render both images once per signal; after the first upload Telegram's file_ids are reused for everyone else.
+      if (!imgsOf.has(sig)) { const [card, chartImg] = await Promise.all([og ? fetchImage(og) : null, chart ? fetchImage(chart) : null]); imgsOf.set(sig, { card, chart: chartImg }); }
+      const imgs = imgsOf.get(sig)!;
       const venue = r.group ? (listed[0] ?? "binance") : r.venue;
       const text = caption(sig, venue, listed, r.group, sameBet(sig));
       const kb = keyboard(sig, venue, listed);
       if (og) kb.push([{ text: "🖼 Open share card", url: og }]);
       const ids = await tgCardImages(r.chatId, imgs, `✅ <b>NEW CONFIRMED: ${esc(sig.symbol)} ${sig.setup.side} ${esc(sig.timeframe)}</b>`);
-      if (ids) imgs = { card: ids.card ?? imgs.card, chart: ids.chart ?? imgs.chart };
+      if (ids) imgsOf.set(sig, { card: ids.card ?? imgs.card, chart: ids.chart ?? imgs.chart });
       const ok = await tgSend(r.chatId, text, { html: true, keyboard: kb });
-      if (ok) sent++;
+      if (ok) { sent++; if (!r.group) memberSends++; } else failed++;
       await new Promise((res) => setTimeout(res, 60)); // stay under Telegram's ~30 msg/s
     }
   }
-  return { sent, recipients: recipients.length, skipped };
+  if (failed || incomplete) console.error(`[broadcast] direct send: ${sent} sent, ${failed} failed${incomplete ? ", stopped at the deadline before every recipient was reached" : ""}`);
+  return { sent, recipients: recipients.length, skipped, failed, incomplete };
 }

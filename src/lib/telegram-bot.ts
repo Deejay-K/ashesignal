@@ -1011,7 +1011,7 @@ async function signals(c: ChatCtx, arg: string) {
   const scope = c.isGroup ? "this group" : "you";
   const tfOn = (t: string) => !f.tfs || f.tfs.includes(t);
   const kb: Keyboard = [[{ text: on ? "🔕 Turn off" : "🔔 Turn on", callback_data: `signals:${on ? "off" : "on"}` }, { text: "Settings", callback_data: "settings" }]];
-  if (!c.isGroup) kb.push([{ text: "🔍 Speculative alerts", callback_data: "spec" }]);
+  kb.push([{ text: "🔍 Speculative alerts", callback_data: "spec" }]);
   if (on && hasFilters) {
     kb.push(FILTER_TFS.map((t) => ({ text: `${tfOn(t) ? "✅" : "⬜"} ${t}`, callback_data: `sigf:tf:${t}` })));
     kb.push([{ text: `${f.longsOnly ? "⬜" : "✅"} Shorts too`, callback_data: `sigf:side:${f.longsOnly ? "all" : "long"}` }, { text: `${f.longsOnly ? "✅" : "⬜"} Longs only`, callback_data: "sigf:side:long" }]);
@@ -1077,7 +1077,7 @@ async function specSave(c: ChatCtx, patch: Record<string, unknown>): Promise<boo
 }
 
 async function speculative(c: ChatCtx, arg: string) {
-  if (c.isGroup) return tgSend(c.chatId, "Speculative alerts are personal: open a private chat with the bot and send /specalerts there.");
+  if (c.isGroup) return groupSpeculative(c, arg);
   const a = arg.trim().toLowerCase();
   const want = (a === "off" || (PRESET_IDS as string[]).includes(a)) ? (a as PresetId | "off") : null;
   if (want && !(await specSave(c, { spec_preset: want }))) return tgSend(c.chatId, SPEC_DB_MSG);
@@ -1097,6 +1097,26 @@ async function speculative(c: ChatCtx, arg: string) {
     [{ text: "Menu", callback_data: "menu" }],
   ];
   return tgSend(c.chatId, `<b>🔍 Speculative alerts: ${cur === "off" ? "OFF" : PRESETS[cur].label}</b>\nEarly setups the engine has not confirmed yet. Off by default. Presets have fixed numbers; under My limits you can replace any of them with your own. Every signal that is skipped for you is logged with the reason. Only signals that reach you count as delivered in the recap.\n\n${lines}${yours}${note}`, { html: true, keyboard: kb });
+}
+
+/** Speculative alerts for a whole group (stage 55): a preset or off. Quiet hours in UTC; no per-member settings. */
+async function groupSpeculative(c: ChatCtx, arg: string) {
+  const a = arg.trim().toLowerCase();
+  const want = (a === "off" || (PRESET_IDS as string[]).includes(a)) ? a : null;
+  if (want) {
+    const { error } = await c.sb.from("telegram_chats").upsert({ chat_id: c.chatId, spec_preset: want, updated_at: new Date().toISOString() });
+    if (error) return tgSend(c.chatId, "Group speculative alerts need one database update: run supabase/stage55.sql once in Supabase, then try again.");
+  }
+  const { data, error } = await c.sb.from("telegram_chats").select("spec_preset, broadcast").eq("chat_id", c.chatId).maybeSingle();
+  if (error) return tgSend(c.chatId, "Group speculative alerts need one database update: run supabase/stage55.sql once in Supabase, then try again.");
+  const cur = (PRESET_IDS as string[]).includes(data?.spec_preset) ? data!.spec_preset as PresetId : "off";
+  const lines = PRESET_IDS.map((id) => { const p = PRESETS[id]; return `<b>${p.label}</b>: ${p.tfs.join(", ")} · R:R ${p.minRr === 0 ? "any" : `${p.minRr}+`} · stop max ${p.maxStopPct === Infinity ? "any" : `${p.maxStopPct}%`} · ${p.dailyCap === Infinity ? "no" : p.dailyCap} a day`; }).join("\n");
+  const note = data?.broadcast === false ? "\n\nSignals are off in this group, so speculative alerts are off too. Send /signals on first." : "";
+  const kb: Keyboard = [
+    [{ text: `${cur === "off" ? "✅" : "⬜"} Off`, callback_data: "spec:off" }],
+    PRESET_IDS.map((id) => ({ text: `${cur === id ? "✅" : "⬜"} ${PRESETS[id].label}`, callback_data: `spec:${id}` })),
+  ];
+  return tgSend(c.chatId, `<b>🔍 Speculative alerts in this group: ${cur === "off" ? "OFF" : PRESETS[cur].label}</b>\nEarly setups the engine has not confirmed yet, posted here with a clear SPECULATIVE label. Quiet hours follow UTC. Each member can also get them privately with their own limits: /specalerts in a private chat with the bot.\n\n${lines}${note}`, { html: true, keyboard: kb });
 }
 
 /** One row of buttons per limit; tapping the ticked value clears it back to the preset. */

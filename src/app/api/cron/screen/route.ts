@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import type { ConfirmedSignal } from "@/lib/telegram-broadcast";
+import { broadcastConfirmed, type ConfirmedSignal } from "@/lib/telegram-broadcast";
+import { deliverQueued } from "@/lib/delivery";
 import type { Setup } from "@/lib/ta/analysis";
+import { queueRow } from "@/lib/signal-queue";
 import { ensureEngineConfig } from "@/lib/engine-config";
 import { cronAuthorized, supabaseAdmin } from "@/lib/supabase/admin";
 import { getMarkets } from "@/lib/providers/coingecko";
@@ -19,6 +21,7 @@ const TFS: Timeframe[] = ["1h", "4h", "1d"];
 
 /** Keeps coin_metrics fresh for the top 100 Binance-listed coins: 10 coins per call, 10 rotating batches. */
 export async function GET(req: Request) {
+  const t0 = Date.now();
   await ensureEngineConfig();
   if (!cronAuthorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sb = supabaseAdmin();
@@ -44,11 +47,7 @@ export async function GET(req: Request) {
   // Stage 52: every new signal is queued in the signals ledger; the deliver worker sends it and logs each decision.
   const queue: Record<string, unknown>[] = [];
   const hourBucket = new Date().toISOString().slice(0, 13);
-  const queued = (c: { id: string; symbol: string; name: string; volume24hUsd?: number | null }, tf: Timeframe, a: { setup: Setup; price: number }, kind: "confirmed" | "speculative", qualifies: string[], rank: number | null, htfAligned: boolean | null): Record<string, unknown> => {
-    const s = a.setup; const entry = s.entry; const sl = s.stopLosses[0].price; const tp1 = s.takeProfits[0]?.price ?? null;
-    const payload: ConfirmedSignal = { coingeckoId: c.id, symbol: c.symbol, name: c.name, timeframe: tf, price: a.price, setup: s, qualifies };
-    return { dedupe_key: `cg:${c.id}|${tf}|${s.side}|${entry.low}|${entry.high}|${sl}|${tp1}|${hourBucket}`, coingecko_id: c.id, asset_key: `cg:${c.id}`, symbol: c.symbol, timeframe: tf, side: s.side, kind, entry_low: entry.low, entry_high: entry.high, entry_mid: entry.mid, sl1: sl, tp1, tp2: s.takeProfits[1]?.price ?? null, tp3: s.takeProfits[2]?.price ?? null, rr_tp2: s.riskRewardTp2, confidence: s.confidence, price_at_signal: a.price, htf_aligned: htfAligned, volume_24h: c.volume24hUsd ?? null, market_rank: rank, payload };
-  };
+  const queued = (c: { id: string; symbol: string; name: string; volume24hUsd?: number | null }, tf: Timeframe, a: { setup: Setup; price: number }, kind: "confirmed" | "speculative", qualifies: string[], rank: number | null, htfAligned: boolean | null) => queueRow({ c, tf, setup: a.setup, price: a.price, kind, qualifies, rank, htfAligned, hourBucket });
   await Promise.all(slice.map(async (c) => {
     const ks = await Promise.all(TFS.map((tf) => safe(getOhlcv({ symbol: c.symbol, coingeckoId: c.id }, tf, SCREEN_CANDLES))));
     const analyses = ks.map((k, i) => (k.ok && k.data.quality === "verified" && k.data.candles.length ? analyzeTimeframe(TFS[i], k.data.candles) : null));
@@ -99,13 +98,37 @@ export async function GET(req: Request) {
       rows.push({ venue, bt_n: record?.n ?? null, bt_winrate: record?.winRate ?? null, bt_expectancy: record?.expectancyR ?? null, category, category_since: changed ? now : before?.category_since ?? now, watch_reasons: reasons, detail, liquidity_note: `${c.volume24hUsd != null && c.marketCapUsd ? ((c.volume24hUsd / c.marketCapUsd) * 100).toFixed(1) + "% of market cap traded in 24h" : ""}`, asset_key: `cg:${c.id}`, symbol: c.symbol, name: c.name, timeframe: TFS[i], price: a.price, market_cap: c.marketCapUsd, volume_24h: c.volume24hUsd, change_24h_pct: c.change24hPct, score: a.score, outlook: a.outlook, opportunity: a.opportunityScore, rsi: a.momentum.rsi, atr_pct: a.volatility.atrPct * 100, vol_ratio: a.volume.ratio, vol_regime: a.volatility.regime, trend: a.trend.direction, macd_cross: a.momentum.macdCross, breakout: a.breakout.type, setup_side: st?.side ?? null, setup_kind: held ? "confirmed" : a.setup?.kind ?? null, setup_rr: held ? frozen!.rr ?? null : a.setup?.riskRewardTp2 ?? null, setup_confidence: st?.confidence ?? null, leverage: held ? frozen!.leverage?.recommended ?? null : a.setup?.leverage.recommended ?? null, patterns: [...a.patterns.confirmed, ...a.patterns.forming].slice(0, 4).map((p) => `${p.name} (${p.status})`), updated_at: now });
     });
   }));
-  // The queue is written first. If it fails, the coin status is not saved either, so the next scan promotes the signal again.
+  // A setup that flickers between speculative and not is logged once per coin, timeframe and side every 6 hours.
+  if (queue.some((q) => q.kind === "speculative")) {
+    const { data: recent } = await sb.from("signals").select("asset_key, timeframe, side").eq("kind", "speculative").in("asset_key", slice.map((c) => `cg:${c.id}`)).gt("created_at", new Date(Date.now() - 6 * 3_600_000).toISOString());
+    const seen = new Set((recent ?? []).map((r: { asset_key: string; timeframe: string; side: string }) => `${r.asset_key}|${r.timeframe}|${r.side}`));
+    for (let i = queue.length - 1; i >= 0; i--) if (queue[i].kind === "speculative" && seen.has(`${queue[i].asset_key}|${queue[i].timeframe}|${queue[i].side}`)) queue.splice(i, 1);
+  }
+  // Stage 55: the queue is written first. If it cannot be written for any reason (stage52.sql not run, a bad row, a
+  // database hiccup), Confirmed Trades are sent the stage 51 way below instead, so Telegram never goes quiet, and the
+  // coin status is still saved so the website stays current.
   let queueWarning: string | null = null;
+  let directSignals: ConfirmedSignal[] = [];
   if (queue.length) {
-    const { error: qe } = await sb.from("signals").upsert(queue, { onConflict: "dedupe_key", ignoreDuplicates: true });
-    // Table missing (stage52.sql not run yet): keep the screener and the website running, and say so loudly.
-    if (qe && (qe.code === "42P01" || /does not exist|schema cache/i.test(qe.message))) { queueWarning = `signals table missing, run supabase/stage52.sql: ${queue.length} signal(s) not queued`; console.error(`[ledger] ${queueWarning}`); }
-    else if (qe) return NextResponse.json({ error: `signal queue not written, coin status not saved (the next scan retries): ${qe.message}` }, { status: 500 });
+    let { error: qe } = await sb.from("signals").upsert(queue, { onConflict: "dedupe_key", ignoreDuplicates: true });
+    const missingTable = (e: { message?: string; code?: string } | null) => !!e && (/does not exist|schema cache|Could not find the table/i.test(e.message ?? "") || e.code === "42P01" || e.code === "PGRST205");
+    if (qe && !missingTable(qe)) ({ error: qe } = await sb.from("signals").upsert(queue, { onConflict: "dedupe_key", ignoreDuplicates: true })); // one retry
+    if (qe) {
+      // The write may have landed even though the reply was lost: rows that are in the queue are sent from the queue.
+      let inQueue = new Set<string>();
+      if (!missingTable(qe)) {
+        const { data: there } = await sb.from("signals").select("dedupe_key").in("dedupe_key", queue.map((q) => String(q.dedupe_key)));
+        inQueue = new Set((there ?? []).map((t: { dedupe_key: string }) => t.dedupe_key));
+      }
+      const missingKeys = new Set(queue.filter((q) => q.kind === "confirmed" && !inQueue.has(String(q.dedupe_key))).map((q) => `${q.asset_key}|${q.timeframe}`));
+      directSignals = promoted.filter((p) => missingKeys.has(`cg:${p.coingeckoId}|${p.timeframe}`));
+      if (directSignals.length || missingTable(qe)) {
+        queueWarning = missingTable(qe)
+          ? `signals table missing (run supabase/stage52.sql): ${directSignals.length} Confirmed Trade(s) sent directly instead of queued`
+          : `signal queue not written (${qe.message}): ${directSignals.length} Confirmed Trade(s) sent directly instead`;
+        console.error(`[ledger] ${queueWarning}`);
+      }
+    }
   }
   if (rows.length) {
     const { error } = await sb.from("coin_metrics").upsert(rows, { onConflict: "asset_key,timeframe" });
@@ -113,5 +136,14 @@ export async function GET(req: Request) {
   }
   if (history.length) await sb.from("category_history").insert(history);
   await sb.from("category_history").delete().lt("changed_at", new Date(Date.now() - 90 * 86_400_000).toISOString());
-  return NextResponse.json({ ok: true, batch: `${batch + 1}/${batches}`, coins: slice.map((c) => c.symbol), rows: rows.length, promoted: promoted.map((p) => `${p.symbol} ${p.setup.side} ${p.timeframe}`), queued: queue.length, ...(queueWarning ? { warning: queueWarning } : {}), at: new Date().toISOString() });
+
+  // Send now, in this same request, like stage 51 did. The deliver step in the worker only finishes what is left.
+  let telegram: unknown = null;
+  if (directSignals.length) {
+    try { telegram = { direct: await broadcastConfirmed(sb, directSignals, { maxMessages: 60, deadline: t0 + 52_000 }) }; } catch (e) { telegram = { error: (e as Error).message }; console.error(`[screen] direct send failed: ${(e as Error).message}`); }
+  }
+  if (queue.length && !queueWarning && Date.now() - t0 < 25_000) {
+    try { telegram = { deliver: await deliverQueued(sb, Math.max(5_000, 48_000 - (Date.now() - t0))) }; } catch (e) { telegram = { error: (e as Error).message }; console.error(`[screen] inline deliver failed: ${(e as Error).message}`); }
+  }
+  return NextResponse.json({ ok: true, batch: `${batch + 1}/${batches}`, coins: slice.map((c) => c.symbol), rows: rows.length, promoted: promoted.map((p) => `${p.symbol} ${p.setup.side} ${p.timeframe}`), queued: queue.length, telegram, ...(queueWarning ? { warning: queueWarning } : {}), at: new Date().toISOString() });
 }
