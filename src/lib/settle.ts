@@ -74,6 +74,7 @@ export async function settleOpen(sb: SupabaseClient, budgetMs = 40_000): Promise
 async function cancelNotice(sb: SupabaseClient, s: any, sig: LedgerSignal, why: string): Promise<void> {
   const { data: got, error } = await sb.from("signal_deliveries").select("recipient").eq("signal_id", s.id).eq("status", "sent");
   if (error) { await issue(sb, s.id, "cancel", `could not read recipients: ${error.message}`); return; }
+  if (!got?.length) return; // nobody received this speculative setup: nothing to cancel, nothing to log
   const text = `🚫 <b>Speculative setup CANCELLED</b>: ${esc(s.symbol)} ${esc(sig.side)} ${esc(sig.timeframe)}\nEntry zone ${esc(String(sig.entry_low))} to ${esc(String(sig.entry_high))}. Reason: ${esc(why)}. Cancel any unfilled order for this idea.`;
   let ok = 0, failed = 0;
   for (const r of got ?? []) {

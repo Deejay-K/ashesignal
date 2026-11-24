@@ -643,6 +643,15 @@ What was wrong and what changed:
 - **Speculative alerts were also blocked by the open-trade count.** Every Confirmed Trade a member or group had received counted as an open trade until it was graded, so the open-risk budget (3 or 5) and the one-trade-per-coin rule filtered almost every speculative alert, and always for groups. Only speculative alerts count now.
 - **The direct (fallback) send** now reaches every group first for all signals, caps only member messages, and stops cleanly at a time limit. A queue write that fails is retried once, and rows that did land are sent from the queue, so nothing is sent twice.
 - **The inline send** never starts rendering images with less than 25 seconds left, or a recipient with less than 8; leftovers go out on the deliver step.
-- **The daily Vercel cron for the screener was removed** (GitHub runs it every 5 minutes), so two screeners never send at the same moment.
+- **The daily Vercel cron for the screener stays** as a backup for days when GitHub Actions does not run. With `stage54.sql` applied, the send guard stops two screeners from messaging anyone twice.
 
 **Tests:** an end-to-end suite runs the real screener route, sender, follow-ups, grader, recap, watchdog, status checks, diagnosis and announcement against a real Postgres 16 with PostgREST (the Supabase API layer), with Telegram, exchange listings and prices faked. 78 checks, including: missing `stage52.sql` and `stage54.sql`, three senders at once, a blocked member, a flaky connection, a wrong bot token, the fallback with a full cap and a passed deadline, and a member and a group who already hold Confirmed Trades still receiving speculative alerts (this check fails on the old code). Plus 85 offline unit checks.
+
+### Stage 55.1
+
+- The daily Vercel screener cron is back (stage 55 had removed it). The diagnosis showed it was the only screener running on most days: the 5-minute GitHub worker has run only now and then for weeks.
+- A speculative setup that nobody received no longer logs an empty "cancel notice: 0 sent" line.
+
+### Stage 55.2
+
+- The "/" menu: the setup link now clears menus registered earlier for narrower scopes (private chats, group admins), which Telegram shows instead of the full list, then registers all commands for private chats, groups and the default, and reads them back. Its reply says e.g. "registered: 46 of 46 in private chats, 45 in groups" (groups do not get /link).

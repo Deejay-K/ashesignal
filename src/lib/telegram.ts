@@ -194,11 +194,24 @@ export const COMMANDS = [
 
 /** Register the "/" command menu and the bot description shown before Start. */
 export async function tgRegisterCommands() {
-  const [cmds, groupCmds, desc, short] = await Promise.all([
+  // A menu registered earlier for a narrower scope (private chats, group admins) wins over the default one, so an old
+  // list could hide new commands. Clear those first, then register the full list everywhere.
+  await Promise.all([
+    call("deleteMyCommands", { scope: { type: "all_private_chats" } }),
+    call("deleteMyCommands", { scope: { type: "all_chat_administrators" } }),
+  ]);
+  const groupList = COMMANDS.filter((c) => !["link"].includes(c.command));
+  const [cmds, groupCmds, , desc, short] = await Promise.all([
     call("setMyCommands", { commands: COMMANDS, scope: { type: "default" } }),
-    call("setMyCommands", { commands: COMMANDS.filter((c) => !["link"].includes(c.command)), scope: { type: "all_group_chats" } }),
+    call("setMyCommands", { commands: groupList, scope: { type: "all_group_chats" } }),
+    call("setMyCommands", { commands: COMMANDS, scope: { type: "all_private_chats" } }),
     call("setMyDescription", { description: "AsheSignal in Telegram: trade conditions, confirmed setups with entry, targets and stop, coin analysis, spot picks, position sizing, alerts and your trading journal. Everything the website shows, with buttons. Manual trading only. Not financial advice." }),
     call("setMyShortDescription", { short_description: "Crypto setups, conditions, analysis and journal from AsheSignal. Manual trading only." }),
   ]);
-  return { commands: cmds, groupCommands: groupCmds, description: desc, shortDescription: short };
+  // Read the menus back, so the setup page shows what Telegram actually holds.
+  const [priv, grp] = await Promise.all([
+    call<unknown[]>("getMyCommands", { scope: { type: "all_private_chats" } }),
+    call<unknown[]>("getMyCommands", { scope: { type: "all_group_chats" } }),
+  ]);
+  return { commands: cmds, groupCommands: groupCmds, description: desc, shortDescription: short, inPrivateChats: Array.isArray(priv.result) ? priv.result.length : null, inGroups: Array.isArray(grp.result) ? grp.result.length : null, expected: COMMANDS.length };
 }
