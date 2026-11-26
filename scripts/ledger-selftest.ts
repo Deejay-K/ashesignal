@@ -6,6 +6,7 @@ import { alertPlan } from "../src/lib/watchdog";
 import { RELEASES, releaseHtml, releaseText, unannounced } from "../src/lib/changelog";
 import { decideConfirmed, decideSpec, localDayStart, type Recipient } from "../src/lib/delivery";
 import { isPermanentFailure, isBotRejected } from "../src/lib/telegram";
+import { budgetMode } from "../src/lib/providers/cg-cache";
 import type { Candle } from "../src/lib/types";
 
 let fails = 0;
@@ -160,6 +161,14 @@ check("telegram: 429 rate limit is temporary", !isPermanentFailure({ ok: false, 
 check("telegram: network error (no code) is temporary", !isPermanentFailure({ ok: false, error: "fetch failed" }));
 check("telegram: 401 wrong token is not blamed on the member", !isPermanentFailure({ ok: false, code: 401, error: "Unauthorized" }) && isBotRejected({ ok: false, code: 401 }));
 check("telegram: 404 (token path not found) stops the run too", isBotRejected({ ok: false, code: 404, error: "Not Found" }) && !isBotRejected({ ok: false, code: 403 }));
+
+// CoinGecko monthly budget pacing (8,000 a month; November has 30 days)
+const nov = (d: number, h = 0) => Date.parse(`2026-11-${String(d).padStart(2, "0")}T${String(h).padStart(2, "0")}:00:00Z`);
+check("budget: a quiet start of the month is normal", budgetMode(100, 8000, nov(1, 12)) === "normal");
+check("budget: 1,000 calls on day 2 is ahead of pace (saver)", budgetMode(1000, 8000, nov(2)) === "saver");
+check("budget: half the budget at mid-month is on pace", budgetMode(3900, 8000, nov(16)) === "normal");
+check("budget: 90% used is reserve", budgetMode(7300, 8000, nov(29)) === "reserve");
+check("budget: the whole budget used is stop", budgetMode(8000, 8000, nov(30)) === "stop");
 
 // Release announcements
 check("releases: nothing announced yet means all of them, newest first", unannounced(null).length === RELEASES.length && unannounced(null)[0].version === RELEASES[0].version);

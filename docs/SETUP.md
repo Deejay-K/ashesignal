@@ -671,3 +671,10 @@ What was wrong and what changed:
 - **Tests:** a CoinGecko test runs the real cache and client against Postgres + PostgREST with CoinGecko faked (shared list, reuse across servers, 429 with saved data, shared cool-down, no data during cool-down, refresh after, exchange prices, follow-ups and spot picks without CoinGecko charts or prices, screener without CoinGecko): 15 checks, 14 CoinGecko calls in total for the whole run.
 
 - Budget after stage 56: about 200 CoinGecko calls a day (about 6,000 a month), under the free Demo key limit of 10,000 a month. A 429 that lasts for hours with a key means the monthly limit is used up; it clears at the monthly reset shown in the CoinGecko Developer Dashboard.
+
+### Stage 56, safer every month
+
+- **Longer refresh times:** top-coin list and market overview every hour, website coin list every 30 minutes, trending every hour, prices (fallback only) every 10 minutes, coin profiles and searches weekly, charts every 1 to 12 hours. About 150 CoinGecko calls a day, roughly 4,500 a month. The worker's own interval does not change this: CoinGecko data is fetched on these timers and shared; scans use exchange candles.
+- **Monthly budget guard** (`CG_MONTHLY_BUDGET` in Vercel, default 8,000, below CoinGecko's 10,000): the app counts its own calls per month (`cg_count_call` in `stage56.sql`, atomic). Ahead of pace for the day of the month: refreshes 3 times less often. 90% used: only the screener's coin list may call (every 6 hours). Budget used: no calls until the 1st; saved data is used.
+- **Back-off:** each CoinGecko refusal in a row doubles the wait (90 s up to 6 h), and a success resets it. Refused calls can still be counted by CoinGecko, so the app no longer knocks every few minutes for days.
+- **Status page:** a "CoinGecko monthly budget" row shows calls used this month, the budget and the current mode.
