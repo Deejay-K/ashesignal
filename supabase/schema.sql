@@ -742,3 +742,12 @@ create unique index if not exists signal_followups_one_per_signal on signal_foll
 -- Stage 55 (optional): let a group chat receive speculative alerts. Run once in the Supabase SQL editor, after
 -- stage52-54. Safe to run more than once. Without it everything else works; groups just cannot turn these on.
 alter table telegram_chats add column if not exists spec_preset text not null default 'off';
+-- Stage 56: one shared cache for CoinGecko answers, so the 5-minute worker stays within CoinGecko's free limits.
+-- Run once in the Supabase SQL editor. Safe to run more than once. Without it the app still works, but every step
+-- calls CoinGecko itself again and the 429 "too many requests" errors come back.
+create table if not exists api_cache (
+  key text primary key,
+  value jsonb not null,
+  fetched_at timestamptz not null default now()
+);
+alter table api_cache enable row level security;

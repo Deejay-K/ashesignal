@@ -8,7 +8,7 @@
 // got the signal is told once, with the reason and what to do.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getMarketsByIds } from "./providers/coingecko";
+import { livePrices } from "./market/live-price";
 import { venueListings, venuesFor, VENUE_IDS, type VenueId } from "./venues";
 import { loadRecipients, canReceive } from "./telegram-broadcast";
 import { tgSendDetailed, tgPhoto, fetchImage, esc, type Keyboard, type SendOpts, type SendResult } from "./telegram";
@@ -86,10 +86,8 @@ export async function runFollowups(sb: SupabaseClient, budgetMs = 40_000): Promi
   const started = Date.now();
   const { data: rows } = await sb.from("signal_followups").select("*").is("closed_at", null).order("emitted_at", { ascending: true }).limit(200);
   if (!rows?.length) return { checked: 0, events: 0, sent: 0 };
-  const ids = [...new Set(rows.map((r: any) => r.coingecko_id as string))];
-  const mk = await safe(getMarketsByIds(ids));
-  const price = new Map<string, number>();
-  if (mk.ok) for (const m of mk.data) if (m.priceUsd) price.set(m.id, m.priceUsd);
+  // Stage 56: live prices from the exchanges (CoinGecko only as a cached fallback), so a 5-minute schedule does not use up CoinGecko's limits.
+  const price = await livePrices(rows.map((r: any) => ({ id: r.coingecko_id as string, symbol: r.symbol as string })), { timeoutMs: Math.min(15_000, budgetMs / 3) });
   // Re-check every open signal against live candles right now (same rule as the screener, which only visits each
   // coin about once an hour). This is what makes a cancellation arrive within minutes instead of up to an hour.
   const open = new Map<string, { id: string; symbol: string; tf: string }>();

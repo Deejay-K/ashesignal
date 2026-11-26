@@ -4,6 +4,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { isAdminEmail } from "@/lib/engine-config";
 import { aiProvider } from "@/lib/ai/claude";
 import { getGlobal } from "@/lib/providers/coingecko";
+import { cgHealth } from "@/lib/providers/cg-cache";
 import { getFearGreed } from "@/lib/providers/feargreed";
 import { getOhlcv } from "@/lib/market/ohlcv";
 import { safe } from "@/lib/fetch";
@@ -49,7 +50,8 @@ export async function GET(req: NextRequest) {
     else checks.push({ id: "followups", label: "Follow-up messages (TP, stop, cancelled)", level: "info", detail: "No open signals to follow right now.", at: follow ?? null });
     checks.push({ id: "signal", label: "Last Confirmed Trade sent", level: "info", at: lastSignal ?? null, detail: lastSignal ? `${ago(mins(lastSignal))}. ${open} signal${open === 1 ? "" : "s"} still being followed.` : "None sent yet." });
     checks.push({ id: "changes", label: "Last category change", level: "info", at: lastChange ?? null, detail: lastChange ? `${ago(mins(lastChange))} (a coin entered or left Confirmed or Watching).` : "None recorded yet." });
-    freshness("spot", "Spot picks job", spot ?? null, 180, 1440, "spot scan");
+    // Stage 56: each coin is re-scored once a day, so a quiet stretch of several hours is normal.
+    freshness("spot", "Spot picks job (each coin daily)", spot ?? null, 26 * 60, 48 * 60, "spot scan");
     // The Lab only re-tests results older than 48 h, so it sits idle between passes: warn after 50 h, down after 72 h.
     freshness("lab", "Engine Lab job (refreshes every 48 h)", lab ?? null, 50 * 60, 72 * 60, "backtest");
     checks.push({ id: "audience", label: "Telegram audience", level: (users.count ?? 0) + (groups.count ?? 0) ? "ok" : "warn", detail: `${users.count ?? 0} people and ${groups.count ?? 0} group${groups.count === 1 ? "" : "s"} have signals switched on.` });
@@ -67,7 +69,10 @@ export async function GET(req: NextRequest) {
   // Live data sources, each with a short timeout so the page always answers.
   const timed = async <T,>(p: Promise<T>) => { const t = Date.now(); const r = await Promise.race([safe(p), new Promise<{ ok: false; error: string }>((res) => setTimeout(() => res({ ok: false, error: "timed out after 8 s" }), 8000))]); return { r, ms: Date.now() - t }; };
   const [cg, fg, ex] = await Promise.all([timed(getGlobal()), timed(getFearGreed(1)), timed(getOhlcv({ symbol: "BTC", coingeckoId: "bitcoin" }, "1h", 5))]);
-  checks.push({ id: "coingecko", label: "CoinGecko (prices, market data)", level: cg.r.ok ? "ok" : "down", detail: cg.r.ok ? `Answered in ${cg.ms} ms.` : `Not answering: ${(cg.r as { error: string }).error}` });
+  const cgh = await cgHealth().catch(() => null);
+  checks.push({ id: "coingecko", label: "CoinGecko (prices, market data)", level: cgh?.coolingUntil ? "warn" : cg.r.ok ? "ok" : "down", detail: cgh?.coolingUntil
+    ? `Rate-limited by CoinGecko; saved data is in use (coin list ${cgh.listAgeMin ?? "?"} min old). Calls resume at ${new Date(cgh.coolingUntil).toISOString().slice(11, 16)} UTC.`
+    : cg.r.ok ? `Answered in ${cg.ms} ms${cgh?.listAgeMin != null ? ` (shared coin list ${cgh.listAgeMin} min old)` : ""}.` : `Not answering: ${(cg.r as { error: string }).error}` });
   checks.push({ id: "exchange", label: "Exchange candles (the engine's input)", level: ex.r.ok ? "ok" : "down", detail: ex.r.ok ? `BTC 1h candles from ${(ex.r as { data: { source?: string } }).data.source ?? "exchange"} in ${ex.ms} ms.` : `Not answering: ${(ex.r as { error: string }).error}. No new signals can be produced until this recovers.` });
   checks.push({ id: "feargreed", label: "Fear & Greed index", level: fg.r.ok ? "ok" : "warn", detail: fg.r.ok ? `Answered in ${fg.ms} ms.` : `Not answering: ${(fg.r as { error: string }).error}` });
   const worst: Level = checks.some((c) => c.level === "down") ? "down" : checks.some((c) => c.level === "warn") ? "warn" : "ok";

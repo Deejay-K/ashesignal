@@ -3,6 +3,7 @@
 // tier (header x-cg-demo-api-key) or COINGECKO_PRO_API_KEY for pro.
 
 import { fetchJson } from "@/lib/fetch";
+import { cgCached, MIN, HOUR, DAY } from "./cg-cache";
 import type { CoinRow, MarketOverview, Sourced } from "@/lib/types";
 
 const PRO = process.env.COINGECKO_PRO_API_KEY;
@@ -14,7 +15,9 @@ const HEADERS: Record<string, string> = PRO
     ? { "x-cg-demo-api-key": DEMO }
     : {};
 
-const opts = (ttl: number) => ({ provider: "coingecko", headers: HEADERS, ttl });
+// No retries: retrying a 429 ("too many requests") makes the rate limit worse. The shared cache (cg-cache.ts) serves
+// the last good answer instead, and starts a cool-down.
+const opts = (ttl: number) => ({ provider: "coingecko", headers: HEADERS, ttl, retries: 0 });
 
 function s<T>(value: T | null | undefined, note?: string): Sourced<T> {
   return {
@@ -26,7 +29,7 @@ function s<T>(value: T | null | undefined, note?: string): Sourced<T> {
   };
 }
 
-export async function getGlobal(): Promise<MarketOverview> {
+async function rawGetGlobal(): Promise<MarketOverview> {
   const r = await fetchJson<{
     data: {
       total_market_cap: Record<string, number>;
@@ -89,7 +92,7 @@ function toRow(m: CgMarket): CoinRow {
   };
 }
 
-export async function getMarkets(page = 1, perPage = 100, sparkline = true): Promise<CoinRow[]> {
+async function rawGetMarkets(page = 1, perPage = 100, sparkline = true): Promise<CoinRow[]> {
   const url =
     `${BASE}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${perPage}&page=${page}` +
     `&sparkline=${sparkline}&price_change_percentage=1h,24h,7d,30d,1y`;
@@ -97,7 +100,7 @@ export async function getMarkets(page = 1, perPage = 100, sparkline = true): Pro
   return r.map(toRow);
 }
 
-export async function getMarketsByIds(ids: string[]): Promise<CoinRow[]> {
+async function rawGetMarketsByIds(ids: string[]): Promise<CoinRow[]> {
   if (!ids.length) return [];
   const url =
     `${BASE}/coins/markets?vs_currency=usd&ids=${encodeURIComponent(ids.join(","))}` +
@@ -106,7 +109,7 @@ export async function getMarketsByIds(ids: string[]): Promise<CoinRow[]> {
   return r.map(toRow);
 }
 
-export async function getTrending(): Promise<
+async function rawGetTrending(): Promise<
   { id: string; symbol: string; name: string; image?: string; rank: number | null; priceUsd: number | null; change24hPct: number | null }[]
 > {
   const r = await fetchJson<{
@@ -123,7 +126,7 @@ export async function getTrending(): Promise<
   }));
 }
 
-export async function search(q: string) {
+async function rawSearch(q: string) {
   const r = await fetchJson<{ coins: { id: string; name: string; symbol: string; market_cap_rank: number | null; thumb?: string }[] }>(
     `${BASE}/search?query=${encodeURIComponent(q)}`,
     opts(300_000),
@@ -162,7 +165,7 @@ export interface CoinDetail {
   tickers: { exchange: string; base: string; target: string; lastUsd: number | null; volumeUsd: number | null; trustScore: string | null }[];
 }
 
-export async function getCoin(id: string): Promise<CoinDetail> {
+async function rawGetCoin(id: string): Promise<CoinDetail> {
   const r = await fetchJson<any>( // eslint-disable-line @typescript-eslint/no-explicit-any
     `${BASE}/coins/${encodeURIComponent(id)}?localization=false&tickers=true&market_data=true&community_data=true&developer_data=false&sparkline=false`,
     opts(120_000),
@@ -208,7 +211,7 @@ export async function getCoin(id: string): Promise<CoinDetail> {
 }
 
 /** Daily close history from CoinGecko - fallback OHLCV source for coins with no Binance pair. */
-export async function getMarketChart(id: string, days: number) {
+async function rawGetMarketChart(id: string, days: number) {
   const r = await fetchJson<{ prices: [number, number][]; total_volumes: [number, number][] }>(
     `${BASE}/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${days}`,
     opts(300_000),
@@ -217,9 +220,53 @@ export async function getMarketChart(id: string, days: number) {
 }
 
 /** CoinGecko OHLC endpoint (4h candles for ≤30 days, daily beyond). No volume. */
-export async function getOhlc(id: string, days: 1 | 7 | 14 | 30 | 90 | 180 | 365) {
+async function rawGetOhlc(id: string, days: 1 | 7 | 14 | 30 | 90 | 180 | 365) {
   return fetchJson<[number, number, number, number, number][]>(
     `${BASE}/coins/${encodeURIComponent(id)}/ohlc?vs_currency=usd&days=${days}`,
     opts(300_000),
   );
+}
+
+// ---------- Public API: every call goes through the shared cache (see cg-cache.ts) ----------
+
+export async function getGlobal(): Promise<MarketOverview> {
+  return cgCached("global", { freshMs: 10 * MIN, staleMs: 2 * DAY }, rawGetGlobal);
+}
+
+/**
+ * Top coins by market cap. Every "top N without sparkline" request (60, 100, 150, 250) shares one cached download of
+ * the top 250, refreshed every 30 minutes: rank order barely moves in that time, and candles come from the exchanges.
+ */
+export async function getMarkets(page = 1, perPage = 100, sparkline = true): Promise<CoinRow[]> {
+  if (page === 1 && perPage <= 250 && !sparkline) {
+    const all = await cgCached("markets:250:false", { freshMs: 30 * MIN, staleMs: 7 * DAY }, () => rawGetMarkets(1, 250, false));
+    return all.slice(0, perPage);
+  }
+  return cgCached(`markets:${page}:${perPage}:${sparkline}`, { freshMs: 10 * MIN, staleMs: 2 * DAY }, () => rawGetMarkets(page, perPage, sparkline));
+}
+
+export async function getMarketsByIds(ids: string[]): Promise<CoinRow[]> {
+  if (!ids.length) return [];
+  const key = `ids:${[...new Set(ids)].sort().join(",")}`.slice(0, 900);
+  return cgCached(key, { freshMs: 5 * MIN, staleMs: HOUR }, () => rawGetMarketsByIds(ids));
+}
+
+export async function getTrending(): ReturnType<typeof rawGetTrending> {
+  return cgCached("trending", { freshMs: 30 * MIN, staleMs: 2 * DAY }, rawGetTrending);
+}
+
+export async function search(q: string): ReturnType<typeof rawSearch> {
+  return cgCached(`search:${q.trim().toLowerCase().slice(0, 60)}`, { freshMs: DAY, staleMs: 7 * DAY }, () => rawSearch(q));
+}
+
+export async function getCoin(id: string): Promise<CoinDetail> {
+  return cgCached(`coin:${id}`, { freshMs: 3 * DAY, staleMs: 14 * DAY }, () => rawGetCoin(id));
+}
+
+export async function getMarketChart(id: string, days: number): ReturnType<typeof rawGetMarketChart> {
+  return cgCached(`chart:${id}:${days}`, { freshMs: days >= 90 ? 6 * HOUR : 30 * MIN, staleMs: 7 * DAY }, () => rawGetMarketChart(id, days));
+}
+
+export async function getOhlc(id: string, days: 1 | 7 | 14 | 30 | 90 | 180 | 365): ReturnType<typeof rawGetOhlc> {
+  return cgCached(`ohlc:${id}:${days}`, { freshMs: days >= 90 ? 6 * HOUR : 30 * MIN, staleMs: 7 * DAY }, () => rawGetOhlc(id, days));
 }

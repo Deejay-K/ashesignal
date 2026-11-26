@@ -26,8 +26,17 @@ export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const sb = supabaseAdmin();
   if (!sb) return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not set" }, { status: 501 });
-  const top = await safe(getMarkets(1, 150, false));
-  if (!top.ok) return NextResponse.json({ error: top.error }, { status: 502 });
+  // Stage 56: the coin list comes from the shared CoinGecko cache. If CoinGecko refuses and nothing is saved yet, use
+  // the coins the screener already follows, so a rate limit can never stop the screener (candles come from exchanges).
+  let top = await safe(getMarkets(1, 150, false));
+  let universeNote: string | null = null;
+  if (!top.ok) {
+    const { data: known } = await sb.from("coin_metrics").select("asset_key, symbol, name, price, market_cap, volume_24h, change_24h_pct").eq("timeframe", "4h").order("market_cap", { ascending: false, nullsFirst: false }).limit(150);
+    if (!known?.length) return NextResponse.json({ error: top.error }, { status: 502 });
+    universeNote = `CoinGecko unavailable (${top.error}); scanned the ${known.length} coins already followed`;
+    console.warn(`[screen] ${universeNote}`);
+    top = { ok: true, data: known.map((k: { asset_key: string; symbol: string; name: string | null; price: number | null; market_cap: number | null; volume_24h: number | null; change_24h_pct: number | null }) => ({ id: k.asset_key.replace(/^cg:/, ""), symbol: k.symbol, name: k.name ?? k.symbol, priceUsd: Number(k.price ?? 0), marketCapUsd: k.market_cap != null ? Number(k.market_cap) : null, volume24hUsd: k.volume_24h != null ? Number(k.volume_24h) : null, change24hPct: k.change_24h_pct != null ? Number(k.change_24h_pct) : null })) as unknown as Awaited<ReturnType<typeof getMarkets>> };
+  }
   // Exchange-independent universe: top 100 by market cap (stablecoins and wrappers excluded). Candles come from
   // whichever CEX lists the coin (Binance, OKX, Bybit, Kraken, Coinbase in that order); the venue is stored per row.
   const EXCL = /^(USDT|USDC|DAI|FDUSD|TUSD|PYUSD|USDE|USDS|WBTC|WETH|STETH|WSTETH|CBBTC|RETH|WEETH|WBETH|XAUT|PAXG|BSC-USD|USD1|RLUSD)$/i;
@@ -145,5 +154,5 @@ export async function GET(req: Request) {
   if (queue.length && !queueWarning && Date.now() - t0 < 25_000) {
     try { telegram = { deliver: await deliverQueued(sb, Math.max(5_000, 48_000 - (Date.now() - t0))) }; } catch (e) { telegram = { error: (e as Error).message }; console.error(`[screen] inline deliver failed: ${(e as Error).message}`); }
   }
-  return NextResponse.json({ ok: true, batch: `${batch + 1}/${batches}`, coins: slice.map((c) => c.symbol), rows: rows.length, promoted: promoted.map((p) => `${p.symbol} ${p.setup.side} ${p.timeframe}`), queued: queue.length, telegram, ...(queueWarning ? { warning: queueWarning } : {}), at: new Date().toISOString() });
+  return NextResponse.json({ ok: true, batch: `${batch + 1}/${batches}`, coins: slice.map((c) => c.symbol), rows: rows.length, promoted: promoted.map((p) => `${p.symbol} ${p.setup.side} ${p.timeframe}`), queued: queue.length, telegram, ...(universeNote ? { universe: universeNote } : {}), ...(queueWarning ? { warning: queueWarning } : {}), at: new Date().toISOString() });
 }

@@ -10,9 +10,8 @@ import { TELEGRAM_ENABLED, isPermanentFailure, isBotRejected, tgSendDetailed, tg
 import { venueListings, venuesFor, VENUE_IDS, VENUE_META, isVenueId, type VenueId } from "./venues";
 import { caption, keyboard, mediaUrls, passesFilters, cleanFilters, filtersLabel, type ConfirmedSignal, type SignalFilters } from "./telegram-broadcast";
 import { GRADING_WINDOW_MS, PRESETS, PRESET_IDS, specCheck, withCustom, cleanCustom, cleanWatchlist, cleanOffset, type PresetId, type SpecCandidate, type SpecContext, type SpecCustom } from "./ledger";
-import { getMarketsByIds } from "./providers/coingecko";
+import { livePrices } from "./market/live-price";
 import { selectAll, selectIn } from "./db-pages";
-import { safe } from "./fetch";
 import { fmtUsd } from "./format";
 
 export const QUEUE_HOURS = 6;
@@ -209,11 +208,8 @@ export async function deliverQueued(sb: SupabaseClient, budgetMs = 40_000): Prom
   const specRecipients = recipients.filter((r) => r.spec !== "off");
   const specState = await loadSpecState(sb, started, specRecipients);
   const live = new Map<string, number>();
-  const specIds = queue.filter((q) => q.kind === "speculative").map((q) => q.coingecko_id as string);
-  if (specIds.length) {
-    const mk = await safe(getMarketsByIds([...new Set(specIds)]));
-    if (mk.ok) for (const m of mk.data) if (m.priceUsd) live.set(m.id, m.priceUsd);
-  }
+  const specCoins = queue.filter((q) => q.kind === "speculative").map((q) => ({ id: q.coingecko_id as string, symbol: q.symbol as string }));
+  if (specCoins.length && specRecipients.length) for (const [id, p] of await livePrices(specCoins, { timeoutMs: 10_000 })) live.set(id, p);
   const { data: openFu } = await sb.from("signal_followups").select("symbol, side, timeframe").is("closed_at", null).is("sl_at", null).is("lost_at", null).gt("emitted_at", new Date(started - 36 * 3_600_000).toISOString()).limit(200);
 
   for (const sig of queue) {

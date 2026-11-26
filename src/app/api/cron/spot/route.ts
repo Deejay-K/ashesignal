@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cronAuthorized, supabaseAdmin } from "@/lib/supabase/admin";
 import { getMarkets, getCoin, getMarketChart } from "@/lib/providers/coingecko";
+import { getOhlcv } from "@/lib/market/ohlcv";
 import { buildSpot, polishWhy } from "@/lib/market/spot";
 import { safe } from "@/lib/fetch";
 
@@ -27,7 +28,8 @@ export async function GET(req: Request) {
   const fill = url.searchParams.get("fill") === "1";
   // fill=1: process coins not refreshed in the last 6 h, rank order, as many as fit in the budget; reload until remaining = 0.
   // default (worker tick): same rule, so the rotation always works on the stalest coins first.
-  const { data: freshRows } = await sb.from("spot_picks").select("asset_key, updated_at").gt("updated_at", new Date(Date.now() - 6 * 3600_000).toISOString());
+  // Stage 56: each coin is re-scored once a day (spot picks are long-term holds; 6-hourly rescoring cost CoinGecko calls for nothing).
+  const { data: freshRows } = await sb.from("spot_picks").select("asset_key, updated_at").gt("updated_at", new Date(Date.now() - 24 * 3600_000).toISOString());
   const fresh = new Set((freshRows ?? []).map((r) => r.asset_key));
   const { data: lowRows } = await sb.from("category_history").select("asset_key").eq("prev_category", "spot").eq("category", "none").gt("changed_at", new Date(Date.now() - 6 * 3600_000).toISOString());
   for (const r of lowRows ?? []) fresh.add(r.asset_key); // recently rejected: do not re-score every tick
@@ -46,11 +48,13 @@ export async function GET(req: Request) {
   const errors: string[] = [];
   let processed = 0;
   for (const c of slice) {
-    if (Date.now() - started > BUDGET_MS - 6_000) break; // a coin costs 2 CoinGecko calls, about 3 to 5 s
+    if (Date.now() - started > BUDGET_MS - 6_000) break; // a coin takes about 2 to 5 s
     processed++;
-    const [coin, chart] = await Promise.all([safe(getCoin(c.id)), safe(getMarketChart(c.id, 365))]);
-    if (!coin.ok || !chart.ok) { errors.push(`${c.symbol}: ${!coin.ok ? coin.error : !chart.ok ? chart.error : ""}`); continue; }
-    const closes = chart.data.prices.map((p) => p[1]);
+    // Daily closes from the exchanges (free); CoinGecko's chart only as a fallback. Coin details are cached for days.
+    const [coin, daily] = await Promise.all([safe(getCoin(c.id)), safe(getOhlcv({ symbol: c.symbol, coingeckoId: c.id }, "1d", 365))]);
+    let closes: number[] | null = daily.ok && daily.data.quality === "verified" && daily.data.candles.length >= 200 ? daily.data.candles.map((k) => k.close) : null;
+    if (!closes) { const chart = await safe(getMarketChart(c.id, 365)); if (chart.ok) closes = chart.data.prices.map((p) => p[1]); }
+    if (!coin.ok || !closes) { errors.push(`${c.symbol}: ${!coin.ok ? coin.error : "no daily price history"}`); continue; }
     let d = buildSpot({ coin: coin.data, dailyCloses: closes, btc1y, eth1y });
     if (!d) continue;
     const key = `cg:${c.id}`;

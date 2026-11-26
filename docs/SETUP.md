@@ -655,3 +655,17 @@ What was wrong and what changed:
 ### Stage 55.2
 
 - The "/" menu: the setup link now clears menus registered earlier for narrower scopes (private chats, group admins), which Telegram shows instead of the full list, then registers all commands for private chats, groups and the default, and reads them back. Its reply says e.g. "registered: 46 of 46 in private chats, 45 in groups" (groups do not get /link).
+
+## 58. Stage 56 - CoinGecko rate limits (HTTP 429)
+
+**Database (run once):** `supabase/stage56.sql` adds `api_cache`. Without it the app still works, but the 429 errors come back.
+**Recommended:** a free CoinGecko Demo API key in Vercel as `COINGECKO_API_KEY` (coingecko.com, "API", Demo plan). Without a key, CoinGecko shares a small limit with every other app on the same Vercel servers.
+
+- **Cause.** Once the worker ran every 5 minutes (stage 55), each step downloaded its own copy of the same CoinGecko data: four separate top-coin lists, live prices for follow-ups and speculative alerts, and for spot picks a coin profile plus a 365-day chart per coin, every 6 hours for every coin. That is thousands of calls a day against a free limit of about 30 a minute and 10,000 a month. CoinGecko answered 429, the screener stopped before saving (so the Status page showed the worker as down), and spot picks stopped. The fetch helper also retried each 429 twice, tripling the refused calls.
+- **Shared cache** (`src/lib/providers/cg-cache.ts`): every CoinGecko answer is saved in `api_cache` and reused by every step, run and visitor while fresh (top-coin list 30 min, prices 5 min, market overview 10 min, trending 30 min, coin profiles 3 days, charts 30 min to 6 h). After a 429, nobody calls CoinGecko for 90 seconds or more (shared cool-down). If CoinGecko refuses, the last good answer is used (up to a week for the coin list). CoinGecko calls are no longer retried.
+- **One top-coin list:** the screener (150), Lab and engine log (60), discovery (250) share one download of the top 250.
+- **Live prices from the exchanges** (`src/lib/market/live-price.ts`): follow-ups and speculative alerts use the latest 15-minute candle from the exchanges, with the cached CoinGecko price only as a fallback.
+- **Spot picks:** 365 daily candles from the exchanges instead of CoinGecko's chart; coin profiles cached for 3 days; each coin re-scored once a day instead of every 6 hours. Status thresholds for the spot job are now 26 h (warn) and 48 h (down).
+- **The screener never stops for CoinGecko:** with no list available at all, it scans the coins it already follows.
+- **Status page:** during a rate limit the CoinGecko row shows a warning with the age of the saved data and when calls resume, instead of "Down".
+- **Tests:** a CoinGecko test runs the real cache and client against Postgres + PostgREST with CoinGecko faked (shared list, reuse across servers, 429 with saved data, shared cool-down, no data during cool-down, refresh after, exchange prices, follow-ups and spot picks without CoinGecko charts or prices, screener without CoinGecko): 15 checks, 14 CoinGecko calls in total for the whole run.
