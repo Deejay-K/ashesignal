@@ -230,7 +230,7 @@ async function rawGetOhlc(id: string, days: 1 | 7 | 14 | 30 | 90 | 180 | 365) {
 // ---------- Public API: every call goes through the shared cache (see cg-cache.ts) ----------
 
 export async function getGlobal(): Promise<MarketOverview> {
-  return cgCached("global", { freshMs: 10 * MIN, staleMs: 2 * DAY }, rawGetGlobal);
+  return cgCached("global", { freshMs: 30 * MIN, staleMs: 2 * DAY }, rawGetGlobal);
 }
 
 /**
@@ -242,7 +242,7 @@ export async function getMarkets(page = 1, perPage = 100, sparkline = true): Pro
     const all = await cgCached("markets:250:false", { freshMs: 30 * MIN, staleMs: 7 * DAY }, () => rawGetMarkets(1, 250, false));
     return all.slice(0, perPage);
   }
-  return cgCached(`markets:${page}:${perPage}:${sparkline}`, { freshMs: 10 * MIN, staleMs: 2 * DAY }, () => rawGetMarkets(page, perPage, sparkline));
+  return cgCached(`markets:${page}:${perPage}:${sparkline}`, { freshMs: 20 * MIN, staleMs: 2 * DAY }, () => rawGetMarkets(page, perPage, sparkline));
 }
 
 export async function getMarketsByIds(ids: string[]): Promise<CoinRow[]> {
